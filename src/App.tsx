@@ -84,6 +84,12 @@ function LoorsStudioInner() {
   const onConnect = useGraphStore((s) => s.onConnect);
   const addNode = useGraphStore((s) => s.addNode);
   const autoLayout = useGraphStore((s) => s.autoLayout);
+  const harnessTabs = useGraphStore((s) => s.harnessTabs);
+  const activeHarnessTabId = useGraphStore((s) => s.activeHarnessTabId);
+  const createHarnessTab = useGraphStore((s) => s.createHarnessTab);
+  const switchHarnessTab = useGraphStore((s) => s.switchHarnessTab);
+  const closeHarnessTab = useGraphStore((s) => s.closeHarnessTab);
+  const pendingGate = useGraphStore((s) => s.pendingGate);
   const setSelectedNodeId = useGraphStore((s) => s.setSelectedNodeId);
   const exportWorkflow = useGraphStore((s) => s.exportWorkflow);
   const importWorkflow = useGraphStore((s) => s.importWorkflow);
@@ -451,6 +457,7 @@ function LoorsStudioInner() {
         graph,
         backend: selectedBackend,
         startNodeId: startNodeId ?? null,
+        tabId: activeHarnessTabId,
       });
     } catch (err) {
       setBanner(
@@ -460,6 +467,7 @@ function LoorsStudioInner() {
       );
       applyEngineEvent({
         type: "run_finished",
+        tabId: activeHarnessTabId,
         run_id: "local",
         outcome: "failed",
         total_iterations: 0,
@@ -468,9 +476,10 @@ function LoorsStudioInner() {
     }
   };
 
-  const handleStop = async () => {
+  const handleStop = async (targetTabId?: string) => {
+    const tid = targetTabId ?? activeHarnessTabId;
     try {
-      await invoke("stop_workflow");
+      await invoke("stop_workflow", { tabId: tid });
       await invoke("stop_interval_trigger");
       await invoke("stop_webhook_trigger");
       await invoke("stop_telegram_trigger");
@@ -535,6 +544,11 @@ function LoorsStudioInner() {
 
   const isRunning = runStatus === "running";
 
+  const runningHarnessCount = harnessTabs.filter(
+    (tab) => (tab.id === activeHarnessTabId ? runStatus : tab.runStatus) === "running"
+  ).length;
+  const anyHarnessRunning = runningHarnessCount > 0;
+
   return (
     <div className="loors-shell">
       <header className="loors-topbar">
@@ -542,7 +556,7 @@ function LoorsStudioInner() {
           <div className="brand">
             <RefreshCw
               size={17}
-              className={`brand-icon ${isRunning || agentRunning ? "spin" : ""}`}
+              className={`brand-icon ${anyHarnessRunning || agentRunning ? "spin" : ""}`}
             />
             <span>Loors</span>
           </div>
@@ -570,7 +584,7 @@ function LoorsStudioInner() {
             >
               <Workflow size={13} />
               <span>{t("nav.harnesses")}</span>
-              {isRunning && <span className="mode-live-dot amber" />}
+              {anyHarnessRunning && <span className="mode-live-dot amber" />}
             </button>
           </div>
 
@@ -607,22 +621,30 @@ function LoorsStudioInner() {
             </>
           )}
 
-          {appMode === "agent" && isRunning && (
+          {appMode === "agent" && anyHarnessRunning && (
             <div className="bg-run-pill is-harness">
               <span className="live-pulse" />
-              <span>Arnés ejecutándose</span>
+              <span>
+                {locale === "es"
+                  ? runningHarnessCount > 1
+                    ? `${runningHarnessCount} arneses ejecutándose`
+                    : "Arnés ejecutándose"
+                  : runningHarnessCount > 1
+                    ? `${runningHarnessCount} harnesses running`
+                    : "Harness running"}
+              </span>
               <button
                 type="button"
                 className="bg-pill-link"
                 onClick={() => setAppMode("harness")}
               >
-                Ver
+                {locale === "es" ? "Ver" : "View"}
               </button>
               <button
                 type="button"
                 className="vram-unload"
-                title="Detener arnés"
-                onClick={handleStop}
+                title={locale === "es" ? "Detener todos los arneses" : "Stop all harnesses"}
+                onClick={() => void invoke("stop_workflow", { tabId: null }).catch(() => {})}
               >
                 <Square size={11} />
               </button>
@@ -759,7 +781,7 @@ function LoorsStudioInner() {
         {appMode === "harness" && (
           <div className="topbar-run">
             {isRunning || triggerArmed ? (
-              <button type="button" className="btn-danger" onClick={handleStop}>
+              <button type="button" className="btn-danger" onClick={() => void handleStop()}>
                 <Square size={14} />
                 <span>{t("nav.stop")}</span>
               </button>
@@ -785,11 +807,11 @@ function LoorsStudioInner() {
         style={{
           display: appMode === "harness" ? "grid" : "none",
           gridTemplateColumns: [
-            sidebarCollapsed ? null : `${harnessLeftWidth}px`,
+            sidebarCollapsed ? null : `minmax(180px, ${harnessLeftWidth}px)`,
             sidebarCollapsed ? null : "4px",
-            "1fr",
+            "minmax(320px, 1fr)",
             rightPanelCollapsed ? null : "4px",
-            rightPanelCollapsed ? null : `${harnessRightWidth}px`,
+            rightPanelCollapsed ? null : `minmax(240px, ${harnessRightWidth}px)`,
           ]
             .filter(Boolean)
             .join(" "),
@@ -814,6 +836,77 @@ function LoorsStudioInner() {
         )}
 
         <div className="loors-center">
+          <div className="harness-tabbar" role="tablist" aria-label="Harness tabs">
+            <div className="harness-tabs-scroll">
+              {harnessTabs.map((tab) => {
+                const isActive = tab.id === activeHarnessTabId;
+                const status = isActive ? runStatus : tab.runStatus;
+                const title = isActive ? workflowName : tab.workflowName;
+                const hasGate = Boolean(isActive ? pendingGate : tab.pendingGate);
+                return (
+                  <div
+                    key={tab.id}
+                    role="tab"
+                    aria-selected={isActive}
+                    className={`harness-tab ${isActive ? "active" : ""} ${status === "running" ? "is-running" : ""}`}
+                    title={title}
+                    onClick={() => {
+                      if (!isActive) {
+                        switchHarnessTab(tab.id);
+                        setTimeout(() => fitView({ padding: 0.18, duration: 180 }), 40);
+                      }
+                    }}
+                  >
+                    <span
+                      className={`harness-tab-dot ${
+                        hasGate
+                          ? "gate"
+                          : status === "running"
+                            ? "running"
+                            : status === "completed"
+                              ? "done"
+                              : status === "failed"
+                                ? "failed"
+                                : ""
+                      }`}
+                    />
+                    <span className="harness-tab-title truncate-text">
+                      {title || "harness"}
+                    </span>
+                    {harnessTabs.length > 1 && (
+                      <button
+                        type="button"
+                        className="harness-tab-close"
+                        title={locale === "es" ? "Cerrar pestaña" : "Close tab"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (status === "running") {
+                            void handleStop(tab.id);
+                          }
+                          closeHarnessTab(tab.id);
+                        }}
+                      >
+                        <X size={11} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                className="harness-tab-add"
+                title={locale === "es" ? "Nueva pestaña de arnés" : "New harness tab"}
+                onClick={() => {
+                  createHarnessTab();
+                  setRightPanelTab("inspector");
+                  setTimeout(() => fitView({ padding: 0.18, duration: 180 }), 40);
+                }}
+              >
+                <Plus size={13} />
+              </button>
+            </div>
+          </div>
+
           <main
             className="loors-canvas"
             onDragOver={(e) => e.preventDefault()}

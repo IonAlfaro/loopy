@@ -8169,3 +8169,128 @@ body,
   padding: 2px 6px;
   outline: none;
 }
+
+/* ── Multi-Harness Tab Bar ── */
+.harness-tabbar {
+  height: 34px;
+  background: #0b0b0e;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+
+.harness-tabs-scroll {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.harness-tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.harness-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  max-width: 210px;
+  min-width: 84px;
+  padding: 0 8px 0 9px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.harness-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+.harness-tab.active {
+  background: var(--panel-2);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.harness-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #52525b;
+  flex-shrink: 0;
+}
+
+.harness-tab-dot.running {
+  background: #a78bfa;
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.8);
+  animation: browserAgentPulse 1.2s ease-in-out infinite;
+}
+
+.harness-tab-dot.gate {
+  background: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.7);
+}
+
+.harness-tab-dot.done {
+  background: #34d399;
+}
+
+.harness-tab-dot.failed {
+  background: #f87171;
+}
+
+.harness-tab-title {
+  min-width: 0;
+}
+
+.harness-tab-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 2px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  margin-left: auto;
+  opacity: 0.55;
+}
+
+.harness-tab-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  opacity: 1;
+}
+
+.harness-tab-add {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.harness-tab-add:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}

@@ -50,19 +50,20 @@ fn drain_live_instructions() -> Vec<String> {
         .unwrap_or_default()
 }
 
-pub struct EngineManager {
-    active_cancel: Mutex<Option<Arc<AtomicBool>>>,
-    running: Arc<AtomicBool>,
+struct ActiveRun {
+    cancel: Arc<AtomicBool>,
     pending_gate: GateSlot,
+}
+
+pub struct EngineManager {
+    runs: Arc<Mutex<HashMap<String, ActiveRun>>>,
     pub llama: LlamaCppManager,
 }
 
 impl Default for EngineManager {
     fn default() -> Self {
         Self {
-            active_cancel: Mutex::new(None),
-            running: Arc::new(AtomicBool::new(false)),
-            pending_gate: Arc::new(Mutex::new(None)),
+            runs: Arc::new(Mutex::new(HashMap::new())),
             llama: LlamaCppManager::new(),
         }
     }
@@ -143,7 +144,10 @@ fn format_duration_ms(ms: u128) -> String {
 
 impl EngineManager {
     pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
+        self.runs
+            .lock()
+            .map(|m| !m.is_empty())
+            .unwrap_or(false)
     }
 
     pub fn start_run<F>(
@@ -155,7 +159,7 @@ impl EngineManager {
     where
         F: Fn(EngineEvent) + Send + Sync + 'static,
     {
-        self.start_run_from(graph, backend, None, emit)
+        self.start_run_in_tab(None, graph, backend, None, emit)
     }
 
     pub fn start_run_from<F>(
@@ -168,22 +172,50 @@ impl EngineManager {
     where
         F: Fn(EngineEvent) + Send + Sync + 'static,
     {
-        let mut guard = self
-            .active_cancel
-            .lock()
-            .map_err(|_| "Engine lock poisoned".to_string())?;
+        self.start_run_in_tab(None, graph, backend, start_node_id, emit)
+    }
 
-        if let Some(prev) = guard.take() {
-            prev.store(true, Ordering::SeqCst);
-        }
-        if let Ok(mut gate) = self.pending_gate.lock() {
-            gate.take();
-        }
-        let _ = drain_live_instructions();
+    pub fn start_run_in_tab<F>(
+        &self,
+        tab_id: Option<String>,
+        graph: WorkflowGraph,
+        backend: RuntimeBackendKind,
+        start_node_id: Option<String>,
+        emit: F,
+    ) -> Result<String, String>
+    where
+        F: Fn(EngineEvent) + Send + Sync + 'static,
+    {
+        let tab_key = tab_id
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "default".to_string());
 
         let cancel_flag = Arc::new(AtomicBool::new(false));
-        *guard = Some(cancel_flag.clone());
-        drop(guard);
+        let gate_slot: GateSlot = Arc::new(Mutex::new(None));
+
+        {
+            let mut guard = self
+                .runs
+                .lock()
+                .map_err(|_| "Engine lock poisoned".to_string())?;
+            // Cancel only a previous run on this exact tab, leaving all other tabs running in parallel
+            if let Some(prev) = guard.remove(&tab_key) {
+                prev.cancel.store(true, Ordering::SeqCst);
+                if let Ok(mut g) = prev.pending_gate.lock() {
+                    g.take();
+                }
+            }
+            guard.insert(
+                tab_key.clone(),
+                ActiveRun {
+                    cancel: cancel_flag.clone(),
+                    pending_gate: gate_slot.clone(),
+                },
+            );
+        }
+
+        let _ = drain_live_instructions();
 
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -192,21 +224,36 @@ impl EngineManager {
         let run_id = format!("run-{now_ms}");
         let run_id_clone = run_id.clone();
         let llama = self.llama.clone();
-        let gate_slot = self.pending_gate.clone();
+        let runs_map = self.runs.clone();
+        let cancel_for_cleanup = cancel_flag.clone();
 
         // Prepare live log file in %LOCALAPPDATA%/loors/logs/latest.log
         let log_file = open_run_log_file(&run_id);
-        self.running.store(true, Ordering::SeqCst);
-        let running_flag = self.running.clone();
 
         tauri::async_runtime::spawn(async move {
-            struct ResetRunning(Arc<AtomicBool>);
-            impl Drop for ResetRunning {
+            struct CleanupRun {
+                runs: Arc<Mutex<HashMap<String, ActiveRun>>>,
+                tab_key: String,
+                cancel: Arc<AtomicBool>,
+            }
+            impl Drop for CleanupRun {
                 fn drop(&mut self) {
-                    self.0.store(false, Ordering::SeqCst);
+                    if let Ok(mut m) = self.runs.lock() {
+                        let is_same = m
+                            .get(&self.tab_key)
+                            .map(|r| Arc::ptr_eq(&r.cancel, &self.cancel))
+                            .unwrap_or(false);
+                        if is_same {
+                            m.remove(&self.tab_key);
+                        }
+                    }
                 }
             }
-            let _guard = ResetRunning(running_flag);
+            let _guard = CleanupRun {
+                runs: runs_map,
+                tab_key,
+                cancel: cancel_for_cleanup,
+            };
             let log_file_arc = Arc::new(Mutex::new(log_file));
             let emitter: EventEmitter = Arc::new(move |ev| {
                 write_event_to_log(&log_file_arc, &ev);
@@ -230,30 +277,71 @@ impl EngineManager {
     }
 
     pub fn stop_run(&self) -> Result<(), String> {
-        let guard = self
-            .active_cancel
+        self.stop_run_for(None)
+    }
+
+    pub fn stop_run_for(&self, tab_id: Option<&str>) -> Result<(), String> {
+        let mut guard = self
+            .runs
             .lock()
             .map_err(|_| "Engine lock poisoned".to_string())?;
-        if let Some(flag) = guard.as_ref() {
-            flag.store(true, Ordering::SeqCst);
-        }
-        if let Ok(mut gate) = self.pending_gate.lock() {
-            gate.take();
+        if let Some(tid) = tab_id.map(str::trim).filter(|s| !s.is_empty()) {
+            if let Some(run) = guard.remove(tid) {
+                run.cancel.store(true, Ordering::SeqCst);
+                if let Ok(mut gate) = run.pending_gate.lock() {
+                    gate.take();
+                }
+            }
+        } else {
+            for (_, run) in guard.drain() {
+                run.cancel.store(true, Ordering::SeqCst);
+                if let Ok(mut gate) = run.pending_gate.lock() {
+                    gate.take();
+                }
+            }
         }
         let _ = drain_live_instructions();
         Ok(())
     }
 
     pub fn resolve_human_gate(&self, decision: HumanDecision) -> Result<(), String> {
-        let mut gate = self
-            .pending_gate
+        self.resolve_human_gate_for(None, decision)
+    }
+
+    pub fn resolve_human_gate_for(
+        &self,
+        tab_id: Option<&str>,
+        decision: HumanDecision,
+    ) -> Result<(), String> {
+        let guard = self
+            .runs
             .lock()
-            .map_err(|_| "Gate lock poisoned".to_string())?;
-        let Some(tx) = gate.take() else {
-            return Err("No hay ningún Human Gate esperando respuesta.".to_string());
-        };
-        tx.send(decision)
-            .map_err(|_| "El Human Gate ya no estaba activo.".to_string())
+            .map_err(|_| "Engine lock poisoned".to_string())?;
+        if let Some(tid) = tab_id.map(str::trim).filter(|s| !s.is_empty()) {
+            let Some(run) = guard.get(tid) else {
+                return Err("No hay ningún Human Gate esperando respuesta en esta pestaña.".to_string());
+            };
+            let mut gate = run
+                .pending_gate
+                .lock()
+                .map_err(|_| "Gate lock poisoned".to_string())?;
+            let Some(tx) = gate.take() else {
+                return Err("No hay ningún Human Gate esperando respuesta.".to_string());
+            };
+            return tx
+                .send(decision)
+                .map_err(|_| "El Human Gate ya no estaba activo.".to_string());
+        }
+        for run in guard.values() {
+            if let Ok(mut gate) = run.pending_gate.lock() {
+                if let Some(tx) = gate.take() {
+                    return tx
+                        .send(decision)
+                        .map_err(|_| "El Human Gate ya no estaba activo.".to_string());
+                }
+            }
+        }
+        Err("No hay ningún Human Gate esperando respuesta.".to_string())
     }
 }
 

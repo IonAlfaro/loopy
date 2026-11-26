@@ -164,7 +164,28 @@ const INITIAL_EDGES: LoorsFlowEdge[] = [
   },
 ];
 
+export interface HarnessTabState {
+  id: string;
+  workflowName: string;
+  nodes: LoorsFlowNode[];
+  edges: LoorsFlowEdge[];
+  selectedNodeId: string | null;
+  runStatus: RunStatus;
+  activeRunId: string | null;
+  currentIteration: number;
+  maxIterations: number | null;
+  runSummary: string | null;
+  activeActivity: string | null;
+  logs: RunLogEntry[];
+  pendingGate: HumanGatePrompt | null;
+}
+
 interface GraphStoreState {
+  harnessTabs: HarnessTabState[];
+  activeHarnessTabId: string;
+  createHarnessTab: () => void;
+  switchHarnessTab: (tabId: string) => void;
+  closeHarnessTab: (tabId: string) => void;
   workflowName: string;
   nodes: LoorsFlowNode[];
   edges: LoorsFlowEdge[];
@@ -224,7 +245,7 @@ interface GraphStoreState {
   newWorkflow: () => void;
   loadTemplate: (templateId: string) => void;
   prepareRun: () => void;
-  applyEngineEvent: (event: EngineEvent) => void;
+  applyEngineEvent: (event: EngineEvent & { tabId?: string }) => void;
   onNodesChange: (changes: NodeChange<LoorsFlowNode>[]) => void;
   onEdgesChange: (changes: EdgeChange<LoorsFlowEdge>[]) => void;
   onConnect: (connection: Connection) => void;
@@ -242,7 +263,130 @@ function formatNow(): string {
   return d.toTimeString().slice(0, 8);
 }
 
+function makeHarnessTabId(): string {
+  return `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`;
+}
+
+function snapshotActiveTab(s: GraphStoreState): HarnessTabState {
+  return {
+    id: s.activeHarnessTabId,
+    workflowName: s.workflowName,
+    nodes: s.nodes,
+    edges: s.edges,
+    selectedNodeId: s.selectedNodeId,
+    runStatus: s.runStatus,
+    activeRunId: s.activeRunId,
+    currentIteration: s.currentIteration,
+    maxIterations: s.maxIterations,
+    runSummary: s.runSummary,
+    activeActivity: s.activeActivity,
+    logs: s.logs,
+    pendingGate: s.pendingGate,
+  };
+}
+
+function applyEventToTabState(tab: HarnessTabState, event: EngineEvent): HarnessTabState {
+  switch (event.type) {
+    case "run_started":
+      return {
+        ...tab,
+        activeRunId: event.run_id,
+        runStatus: "running",
+        currentIteration: 1,
+        runSummary: null,
+      };
+    case "node_status": {
+      const targetNode = tab.nodes.find((n) => n.id === event.node_id);
+      const activity =
+        event.status === "running"
+          ? `${targetNode?.data.title ?? event.node_id}${event.message ? ` · ${event.message}` : ""}`
+          : tab.activeActivity;
+      return {
+        ...tab,
+        currentIteration: event.iteration,
+        activeActivity: activity,
+        nodes: tab.nodes.map((n) =>
+          n.id === event.node_id
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  status: event.status,
+                  statusMessage: event.status === "running" ? event.message : null,
+                },
+              }
+            : n
+        ),
+      };
+    }
+    case "node_log": {
+      const entry: RunLogEntry = {
+        id: `${event.run_id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: formatNow(),
+        nodeId: event.node_id,
+        nodeTitle: event.node_title,
+        iteration: event.iteration,
+        stream: event.stream,
+        text: event.text,
+      };
+      return {
+        ...tab,
+        logs: [...tab.logs.slice(-500), entry],
+      };
+    }
+    case "iteration_changed":
+      return {
+        ...tab,
+        currentIteration: event.iteration,
+        maxIterations: event.max_iterations,
+      };
+    case "human_gate_waiting":
+      return {
+        ...tab,
+        pendingGate: {
+          runId: event.run_id,
+          nodeId: event.node_id,
+          nodeTitle: event.node_title,
+          iteration: event.iteration,
+          message: event.message,
+          gitDiff: event.git_diff,
+        },
+      };
+    case "run_finished":
+      return {
+        ...tab,
+        runStatus: event.outcome,
+        currentIteration: event.total_iterations,
+        runSummary: event.summary,
+        activeActivity: null,
+        pendingGate: null,
+      };
+    default:
+      return tab;
+  }
+}
+
+const INITIAL_TAB_ID = "tab-1";
+
 export const useGraphStore = create<GraphStoreState>((set, get) => ({
+  harnessTabs: [
+    {
+      id: INITIAL_TAB_ID,
+      workflowName: "fix-tests-loop",
+      nodes: INITIAL_NODES,
+      edges: INITIAL_EDGES,
+      selectedNodeId: null,
+      runStatus: "idle",
+      activeRunId: null,
+      currentIteration: 0,
+      maxIterations: null,
+      runSummary: null,
+      activeActivity: null,
+      logs: [],
+      pendingGate: null,
+    },
+  ],
+  activeHarnessTabId: INITIAL_TAB_ID,
   workflowName: "fix-tests-loop",
   nodes: INITIAL_NODES,
   edges: INITIAL_EDGES,
@@ -260,6 +404,163 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   logs: [],
   consoleOpen: false,
   pendingGate: null,
+
+  createHarnessTab: () => {
+    const s = get();
+    const savedActive = snapshotActiveTab(s);
+    const updatedTabs = s.harnessTabs.map((t) =>
+      t.id === s.activeHarnessTabId ? savedActive : t
+    );
+    const activeModel = s.activeModelPath.trim();
+    const shortModelTitle =
+      activeModel.split(/[\\/]/).pop()?.replace(/\.gguf$/i, "") || "Local Model (GGUF)";
+    const newId = makeHarnessTabId();
+    const newNodes: LoorsFlowNode[] = [
+      {
+        id: "in-1",
+        type: "loorsNode",
+        position: { x: 40, y: 160 },
+        data: {
+          kind: "task_input",
+          title: "Task Input",
+          status: "idle",
+          config: { ...NODE_BLUEPRINTS.task_input.defaultConfig },
+        },
+      },
+      {
+        id: "model-1",
+        type: "loorsNode",
+        position: { x: 40, y: 360 },
+        data: {
+          kind: "local_model",
+          title: shortModelTitle,
+          status: "idle",
+          config: {
+            ...NODE_BLUEPRINTS.local_model.defaultConfig,
+            ...(activeModel ? { modelPath: activeModel } : {}),
+          },
+        },
+      },
+      {
+        id: "agent-1",
+        type: "loorsNode",
+        position: { x: 360, y: 160 },
+        data: {
+          kind: "agent",
+          title: "Agent",
+          status: "idle",
+          config: { ...NODE_BLUEPRINTS.agent.defaultConfig },
+        },
+      },
+      {
+        id: "out-1",
+        type: "loorsNode",
+        position: { x: 680, y: 160 },
+        data: {
+          kind: "output",
+          title: "Output",
+          status: "idle",
+          config: { ...NODE_BLUEPRINTS.output.defaultConfig },
+        },
+      },
+    ];
+    const newEdges: LoorsFlowEdge[] = [
+      { id: "e-1", source: "in-1", sourceHandle: "exec", target: "agent-1", targetHandle: "exec" },
+      { id: "e-m", source: "model-1", sourceHandle: "model_ref", target: "agent-1", targetHandle: "model_ref", style: { stroke: "#a855f7", strokeDasharray: "5 4" } },
+      { id: "e-2", source: "agent-1", sourceHandle: "exec", target: "out-1", targetHandle: "exec" },
+    ];
+    const newTab: HarnessTabState = {
+      id: newId,
+      workflowName: `harness-${updatedTabs.length + 1}`,
+      nodes: newNodes,
+      edges: newEdges,
+      selectedNodeId: null,
+      runStatus: "idle",
+      activeRunId: null,
+      currentIteration: 0,
+      maxIterations: null,
+      runSummary: null,
+      activeActivity: null,
+      logs: [],
+      pendingGate: null,
+    };
+    set({
+      harnessTabs: [...updatedTabs, newTab],
+      activeHarnessTabId: newId,
+      workflowName: newTab.workflowName,
+      nodes: newTab.nodes,
+      edges: newTab.edges,
+      selectedNodeId: null,
+      runStatus: "idle",
+      activeRunId: null,
+      currentIteration: 0,
+      maxIterations: null,
+      runSummary: null,
+      activeActivity: null,
+      logs: [],
+      pendingGate: null,
+    });
+  },
+
+  switchHarnessTab: (tabId) => {
+    const s = get();
+    if (tabId === s.activeHarnessTabId) return;
+    const savedActive = snapshotActiveTab(s);
+    const syncedTabs = s.harnessTabs.map((t) =>
+      t.id === s.activeHarnessTabId ? savedActive : t
+    );
+    const target = syncedTabs.find((t) => t.id === tabId);
+    if (!target) return;
+    set({
+      harnessTabs: syncedTabs,
+      activeHarnessTabId: target.id,
+      workflowName: target.workflowName,
+      nodes: target.nodes,
+      edges: target.edges,
+      selectedNodeId: target.selectedNodeId,
+      runStatus: target.runStatus,
+      activeRunId: target.activeRunId,
+      currentIteration: target.currentIteration,
+      maxIterations: target.maxIterations,
+      runSummary: target.runSummary,
+      activeActivity: target.activeActivity,
+      logs: target.logs,
+      pendingGate: target.pendingGate,
+    });
+  },
+
+  closeHarnessTab: (tabId) => {
+    const s = get();
+    if (s.harnessTabs.length <= 1) return;
+    const savedActive = snapshotActiveTab(s);
+    const syncedTabs = s.harnessTabs.map((t) =>
+      t.id === s.activeHarnessTabId ? savedActive : t
+    );
+    const idx = syncedTabs.findIndex((t) => t.id === tabId);
+    if (idx === -1) return;
+    const remaining = syncedTabs.filter((t) => t.id !== tabId);
+    if (tabId !== s.activeHarnessTabId) {
+      set({ harnessTabs: remaining });
+      return;
+    }
+    const next = remaining[Math.max(0, idx - 1)] ?? remaining[0];
+    set({
+      harnessTabs: remaining,
+      activeHarnessTabId: next.id,
+      workflowName: next.workflowName,
+      nodes: next.nodes,
+      edges: next.edges,
+      selectedNodeId: next.selectedNodeId,
+      runStatus: next.runStatus,
+      activeRunId: next.activeRunId,
+      currentIteration: next.currentIteration,
+      maxIterations: next.maxIterations,
+      runSummary: next.runSummary,
+      activeActivity: next.activeActivity,
+      logs: next.logs,
+      pendingGate: next.pendingGate,
+    });
+  },
   customNodes: [],
   appMode: (typeof window !== "undefined" && window.localStorage.getItem("loors_app_mode") === "harness")
     ? "harness"
@@ -470,7 +771,15 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     });
   },
 
-  setWorkflowName: (workflowName) => set({ workflowName }),
+  setWorkflowName: (workflowName) => {
+    const s = get();
+    set({
+      workflowName,
+      harnessTabs: s.harnessTabs.map((t) =>
+        t.id === s.activeHarnessTabId ? { ...t, workflowName } : t
+      ),
+    });
+  },
   setSelectedNodeId: (selectedNodeId) => set({ selectedNodeId }),
   setSelectedBackend: (selectedBackend) => set({ selectedBackend }),
   setConsoleOpen: (consoleOpen) => set({ consoleOpen }),
@@ -572,6 +881,11 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       runStatus: "idle",
       runSummary: null,
       pendingGate: null,
+      harnessTabs: get().harnessTabs.map((t) =>
+        t.id === get().activeHarnessTabId
+          ? { ...t, workflowName: "nuevo-arnes", runStatus: "idle", pendingGate: null }
+          : t
+      ),
     });
   },
 
@@ -618,10 +932,20 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       runStatus: "idle",
       runSummary: null,
       pendingGate: null,
+      harnessTabs: get().harnessTabs.map((t) =>
+        t.id === get().activeHarnessTabId
+          ? { ...t, workflowName: tpl.name, runStatus: "idle", pendingGate: null }
+          : t
+      ),
     });
   },
 
-  prepareRun: () =>
+  prepareRun: () => {
+    const s = get();
+    const resetNodes = s.nodes.map((n) => ({
+      ...n,
+      data: { ...n.data, status: "idle" as const, statusMessage: null },
+    }));
     set({
       runStatus: "running",
       currentIteration: 1,
@@ -631,99 +955,58 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       logs: [],
       consoleOpen: true,
       pendingGate: null,
-      nodes: get().nodes.map((n) => ({
-        ...n,
-        data: { ...n.data, status: "idle", statusMessage: null },
-      })),
-    }),
+      nodes: resetNodes,
+      harnessTabs: s.harnessTabs.map((t) =>
+        t.id === s.activeHarnessTabId
+          ? {
+              ...snapshotActiveTab(s),
+              runStatus: "running",
+              currentIteration: 1,
+              maxIterations: null,
+              runSummary: null,
+              activeActivity: "Iniciando arnés...",
+              logs: [],
+              pendingGate: null,
+              nodes: resetNodes,
+            }
+          : t
+      ),
+    });
+  },
 
   applyEngineEvent: (event) => {
-    switch (event.type) {
-      case "run_started":
-        set({
-          activeRunId: event.run_id,
-          runStatus: "running",
-          currentIteration: 1,
-          runSummary: null,
-        });
-        break;
+    if (event.type === "model_state") {
+      set({
+        loadedModelName: event.loaded ? event.model_name : null,
+        loadedContextSize: event.loaded ? event.context_size : null,
+      });
+      return;
+    }
 
-      case "node_status": {
-        const targetNode = get().nodes.find((n) => n.id === event.node_id);
-        const activity =
-          event.status === "running"
-            ? `${targetNode?.data.title ?? event.node_id}${event.message ? ` · ${event.message}` : ""}`
-            : get().activeActivity;
-        set({
-          currentIteration: event.iteration,
-          activeActivity: activity,
-          nodes: get().nodes.map((n) =>
-            n.id === event.node_id
-              ? {
-                  ...n,
-                  data: {
-                    ...n.data,
-                    status: event.status,
-                    statusMessage:
-                      event.status === "running" ? event.message : null,
-                  },
-                }
-              : n
-          ),
-        });
-        break;
-      }
+    const s = get();
+    const targetTabId = event.tabId || s.activeHarnessTabId;
 
-      case "model_state":
-        set({
-          loadedModelName: event.loaded ? event.model_name : null,
-          loadedContextSize: event.loaded ? event.context_size : null,
-        });
-        break;
-
-      case "node_log": {
-        const entry: RunLogEntry = {
-          id: `${event.run_id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          timestamp: formatNow(),
-          nodeId: event.node_id,
-          nodeTitle: event.node_title,
-          iteration: event.iteration,
-          stream: event.stream,
-          text: event.text,
-        };
-        set({ logs: [...get().logs.slice(-500), entry] });
-        break;
-      }
-
-      case "iteration_changed":
-        set({
-          currentIteration: event.iteration,
-          maxIterations: event.max_iterations,
-        });
-        break;
-
-      case "human_gate_waiting":
-        set({
-          pendingGate: {
-            runId: event.run_id,
-            nodeId: event.node_id,
-            nodeTitle: event.node_title,
-            iteration: event.iteration,
-            message: event.message,
-            gitDiff: event.git_diff,
-          },
-        });
-        break;
-
-      case "run_finished":
-        set({
-          runStatus: event.outcome,
-          currentIteration: event.total_iterations,
-          runSummary: event.summary,
-          activeActivity: null,
-          pendingGate: null,
-        });
-        break;
+    if (targetTabId === s.activeHarnessTabId) {
+      const updated = applyEventToTabState(snapshotActiveTab(s), event);
+      set({
+        runStatus: updated.runStatus,
+        activeRunId: updated.activeRunId,
+        currentIteration: updated.currentIteration,
+        maxIterations: updated.maxIterations,
+        runSummary: updated.runSummary,
+        activeActivity: updated.activeActivity,
+        nodes: updated.nodes,
+        logs: updated.logs,
+        pendingGate: updated.pendingGate,
+        harnessTabs: s.harnessTabs.map((t) => (t.id === targetTabId ? updated : t)),
+      });
+    } else {
+      // Background harness tab event: update that tab cleanly without disturbing the active canvas
+      set({
+        harnessTabs: s.harnessTabs.map((t) =>
+          t.id === targetTabId ? applyEventToTabState(t, event) : t
+        ),
+      });
     }
   },
 
@@ -918,6 +1201,11 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       runStatus: "idle",
       runSummary: null,
       pendingGate: null,
+      harnessTabs: get().harnessTabs.map((t) =>
+        t.id === get().activeHarnessTabId
+          ? { ...t, workflowName: file.name || "imported-workflow", runStatus: "idle", pendingGate: null }
+          : t
+      ),
     });
   },
 }));

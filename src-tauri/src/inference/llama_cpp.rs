@@ -146,6 +146,14 @@ impl LlamaCppManager {
         if config.no_mmap {
             cmd.arg("--no-mmap");
         }
+        let has_parallel_override = config
+            .extra_args
+            .split_whitespace()
+            .any(|f| f == "--parallel" || f == "-np");
+        if !has_parallel_override {
+            // Enable 2 concurrent inference slots so Agent Mode and a Harness can share the loaded model
+            cmd.args(["--parallel", "2"]);
+        }
         for flag in config.extra_args.split_whitespace() {
             if !flag.is_empty() {
                 cmd.arg(flag);

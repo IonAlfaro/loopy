@@ -5,6 +5,7 @@ import { useGraphStore } from "../store/useGraphStore";
 
 export function HumanGateModal() {
   const pendingGate = useGraphStore((s) => s.pendingGate);
+  const activeHarnessTabId = useGraphStore((s) => s.activeHarnessTabId);
   const clearPendingGate = useGraphStore((s) => s.clearPendingGate);
   const [feedback, setFeedback] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -15,6 +16,7 @@ export function HumanGateModal() {
     setSubmitting(true);
     try {
       await invoke("resolve_human_gate", {
+        tabId: activeHarnessTabId,
         decision: {
           approved,
           feedback: approved ? null : feedback.trim() || null,
