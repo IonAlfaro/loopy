@@ -112,7 +112,12 @@ fn extract_xlsx(path: &Path) -> Result<String, String> {
     }
 
     let mut sheet_names: Vec<String> = (0..archive.len())
-        .filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string()))
+        .filter_map(|i| {
+            archive
+                .by_index(i)
+                .ok()
+                .and_then(|f| f.name().ok().map(|n| n.into_owned()))
+        })
         .filter(|name| name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml"))
         .collect();
     sheet_names.sort();
@@ -172,7 +177,12 @@ fn extract_pptx(path: &Path) -> Result<String, String> {
     let file = File::open(path).map_err(|e| format!("No se pudo abrir PPTX: {e}"))?;
     let mut archive = ZipArchive::new(file).map_err(|e| format!("PPTX ZIP inválido: {e}"))?;
     let mut slide_names: Vec<String> = (0..archive.len())
-        .filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string()))
+        .filter_map(|i| {
+            archive
+                .by_index(i)
+                .ok()
+                .and_then(|f| f.name().ok().map(|n| n.into_owned()))
+        })
         .filter(|n| n.starts_with("ppt/slides/slide") && n.ends_with(".xml"))
         .collect();
     slide_names.sort_by_key(|n| {
@@ -214,7 +224,12 @@ fn extract_epub(path: &Path) -> Result<String, String> {
     let file = File::open(path).map_err(|e| format!("No se pudo abrir EPUB: {e}"))?;
     let mut archive = ZipArchive::new(file).map_err(|e| format!("EPUB ZIP inválido: {e}"))?;
     let mut html_files: Vec<String> = (0..archive.len())
-        .filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string()))
+        .filter_map(|i| {
+            archive
+                .by_index(i)
+                .ok()
+                .and_then(|f| f.name().ok().map(|n| n.into_owned()))
+        })
         .filter(|n| n.ends_with(".xhtml") || n.ends_with(".html") || n.ends_with(".htm"))
         .collect();
     html_files.sort();
