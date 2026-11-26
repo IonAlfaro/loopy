@@ -3178,21 +3178,30 @@ export function AgentWorkspaceView() {
           <div className="modal-backdrop" onClick={dismissOnboarding}>
             <div
               className="modal-card"
-              style={{ maxWidth: 480, padding: 20 }}
+              style={{ maxWidth: 460, padding: "20px 22px 18px" }}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="modal-head" style={{ marginBottom: 14 }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <h3 style={{ margin: 0, fontSize: 15 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  marginBottom: 18,
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, letterSpacing: "-0.01em" }}>
                     {locale === "es" ? "Bienvenido a Loors" : "Welcome to Loors"}
                   </h3>
-                  <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                  <span style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.4 }}>
                     {t("onboarding.title")}
                   </span>
                 </div>
                 <button
                   type="button"
                   className="icon-btn"
+                  style={{ flexShrink: 0, marginTop: -2, marginRight: -4 }}
                   onClick={dismissOnboarding}
                   title={locale === "es" ? "Cerrar" : "Close"}
                 >
@@ -3200,8 +3209,8 @@ export function AgentWorkspaceView() {
                 </button>
               </div>
 
-              <div className="onboarding-card" style={{ border: "none", padding: 0, background: "transparent", width: "100%", maxWidth: "none" }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              <div className="onboarding-card" style={{ border: "none", padding: 0, background: "transparent", width: "100%", maxWidth: "none", gap: 8 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                   {t("onboarding.optA")}
                 </div>
 
@@ -3271,7 +3280,7 @@ export function AgentWorkspaceView() {
                   </div>
                 </button>
 
-                <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em", marginTop: 6 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 8 }}>
                   {t("onboarding.optB")}
                 </div>
 
@@ -3297,7 +3306,15 @@ export function AgentWorkspaceView() {
                 </button>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  marginTop: 16,
+                  paddingTop: 12,
+                  borderTop: "1px solid var(--border)",
+                }}
+              >
                 <button
                   type="button"
                   className="btn-secondary"
