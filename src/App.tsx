@@ -807,11 +807,11 @@ function LoorsStudioInner() {
         style={{
           display: appMode === "harness" ? "grid" : "none",
           gridTemplateColumns: [
-            sidebarCollapsed ? null : `${harnessLeftWidth}px`,
+            sidebarCollapsed ? null : `minmax(180px, ${harnessLeftWidth}px)`,
             sidebarCollapsed ? null : "4px",
-            "1fr",
+            "minmax(320px, 1fr)",
             rightPanelCollapsed ? null : "4px",
-            rightPanelCollapsed ? null : `${harnessRightWidth}px`,
+            rightPanelCollapsed ? null : `minmax(240px, ${harnessRightWidth}px)`,
           ]
             .filter(Boolean)
             .join(" "),
