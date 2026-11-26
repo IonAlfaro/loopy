@@ -325,24 +325,42 @@ fn ping_engine() -> String {
     "loors-core ready (phase 4)".to_string()
 }
 
+#[derive(Serialize, Clone)]
+struct EngineTabEvent {
+    #[serde(rename = "tabId")]
+    tab_id: String,
+    #[serde(flatten)]
+    event: engine::types::EngineEvent,
+}
+
 #[tauri::command]
 async fn start_workflow(
     app: AppHandle,
     engine: State<'_, EngineManager>,
-    agent_state: State<'_, AgentChatState>,
     graph: WorkflowGraph,
     backend: Option<RuntimeBackendKind>,
     start_node_id: Option<String>,
+    tab_id: Option<String>,
 ) -> Result<String, String> {
-    if agent_state.is_running() {
-        return Err("__GPU_BUSY_AGENT__".to_string());
-    }
-    engine.start_run_from(
+    let tid = tab_id
+        .clone()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "default".to_string());
+    let emit_tid = tid.clone();
+    engine.start_run_in_tab(
+        Some(tid),
         graph,
         backend.unwrap_or(RuntimeBackendKind::Auto),
         start_node_id,
         move |event| {
-            let _ = app.emit("loors://engine-event", event);
+            let _ = app.emit(
+                "loors://engine-event",
+                EngineTabEvent {
+                    tab_id: emit_tid.clone(),
+                    event,
+                },
+            );
         },
     )
 }
@@ -792,8 +810,8 @@ async fn delete_local_model(
 }
 
 #[tauri::command]
-fn stop_workflow(engine: State<'_, EngineManager>) -> Result<(), String> {
-    engine.stop_run()
+fn stop_workflow(engine: State<'_, EngineManager>, tab_id: Option<String>) -> Result<(), String> {
+    engine.stop_run_for(tab_id.as_deref())
 }
 
 #[tauri::command]
@@ -810,8 +828,9 @@ fn send_agent_instruction(instruction: String) -> Result<(), String> {
 fn resolve_human_gate(
     engine: State<'_, EngineManager>,
     decision: HumanDecision,
+    tab_id: Option<String>,
 ) -> Result<(), String> {
-    engine.resolve_human_gate(decision)
+    engine.resolve_human_gate_for(tab_id.as_deref(), decision)
 }
 
 #[tauri::command]
@@ -915,9 +934,6 @@ async fn run_agent_turn(
     override_ctx: Option<u32>,
     attachments: Option<Vec<String>>,
 ) -> Result<AgentSession, String> {
-    if engine.is_running() {
-        return Err("__GPU_BUSY_HARNESS__".to_string());
-    }
     let is_cloud = inference::cloud::is_cloud_model(&session.model_path);
     if !is_cloud
         && (session.model_path.trim().is_empty() || !Path::new(&session.model_path).exists())

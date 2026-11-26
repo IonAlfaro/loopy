@@ -582,19 +582,28 @@ pub async fn dispatch_rpc(
                     .map_err(|e| format!("Invalid workflow graph: {e}"))?;
             let backend = parse_backend(&args);
             let start_node_id = get_opt_str(&args, &["startNodeId", "start_node_id"]);
+            let tab_id = get_opt_str(&args, &["tabId", "tab_id"])
+                .unwrap_or_else(|| "default".to_string());
+            let emit_tid = tab_id.clone();
             let st = state.clone();
-            let run_id = state.engine.start_run_from(
+            let run_id = state.engine.start_run_in_tab(
+                Some(tab_id),
                 graph,
                 backend,
                 start_node_id,
                 move |ev| {
-                    st.emit_event("loors://engine-event", ev);
+                    let mut val = serde_json::to_value(&ev).unwrap_or_else(|_| json!({}));
+                    if let Some(obj) = val.as_object_mut() {
+                        obj.insert("tabId".to_string(), json!(emit_tid));
+                    }
+                    st.emit_event("loors://engine-event", val);
                 },
             )?;
             Ok(json!(run_id))
         }
         "stop_workflow" => {
-            let _ = state.engine.stop_run();
+            let tab_id = get_opt_str(&args, &["tabId", "tab_id"]);
+            let _ = state.engine.stop_run_for(tab_id.as_deref());
             Ok(json!(null))
         }
         "send_agent_instruction" => {
@@ -608,7 +617,10 @@ pub async fn dispatch_rpc(
             let decision: HumanDecision =
                 serde_json::from_value(args.get("decision").cloned().unwrap_or(Value::Null))
                     .map_err(|e| format!("Invalid decision: {e}"))?;
-            state.engine.resolve_human_gate(decision)?;
+            let tab_id = get_opt_str(&args, &["tabId", "tab_id"]);
+            state
+                .engine
+                .resolve_human_gate_for(tab_id.as_deref(), decision)?;
             Ok(json!(null))
         }
         "get_engine_busy_state" => Ok(json!({
