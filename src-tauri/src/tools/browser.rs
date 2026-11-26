@@ -402,17 +402,17 @@ fn normalize_browser_url(raw: &str) -> String {
 
 fn choose_profile_dir(port: u16) -> (PathBuf, bool) {
     if cfg!(test) {
-        let dir = std::env::temp_dir().join(format!("loopy-cdp-{port}"));
+        let dir = std::env::temp_dir().join(format!("loors-cdp-{port}"));
         let _ = fs::create_dir_all(&dir);
         return (dir, false);
     }
     if let Some(base) = dirs::data_local_dir() {
-        let dir = base.join("loopy").join("browser-profile");
+        let dir = base.join("loors").join("browser-profile");
         if fs::create_dir_all(&dir).is_ok() {
             return (dir, true);
         }
     }
-    let dir = std::env::temp_dir().join(format!("loopy-cdp-{port}"));
+    let dir = std::env::temp_dir().join(format!("loors-cdp-{port}"));
     let _ = fs::create_dir_all(&dir);
     (dir, false)
 }
@@ -503,7 +503,7 @@ async fn start_persistent_browser(width: u32, height: u32) -> Result<PersistentB
         Err(first_err) if persistent_profile => {
             // Persistent profile may be locked by an orphaned browser instance — fall back cleanly to an isolated temp profile
             let fallback_port = pick_free_port()?;
-            let temp_dir = std::env::temp_dir().join(format!("loopy-cdp-{fallback_port}"));
+            let temp_dir = std::env::temp_dir().join(format!("loors-cdp-{fallback_port}"));
             let _ = fs::create_dir_all(&temp_dir);
             spawn_browser_with_profile(&browser_bin, fallback_port, temp_dir, false, vw, vh)
                 .await
@@ -1226,7 +1226,7 @@ pub async fn browser_interact(req: BrowserInteractRequest) -> Result<BrowserInte
 }
 
 /// Pure-Rust embedded browser driver using Chrome DevTools Protocol (CDP).
-/// Zero Node.js or Playwright dependencies: compiles directly into loopy.exe
+/// Zero Node.js or Playwright dependencies: compiles directly into loors.exe
 /// and keeps a persistent Edge/Chrome session alive across steps with live mouse cursor overlay.
 pub async fn run_browser_action(workspace: &str, args: &Value) -> String {
     let action = args
@@ -1239,7 +1239,7 @@ pub async fn run_browser_action(workspace: &str, args: &Value) -> String {
         return json!({ "ok": true, "closed": true }).to_string();
     }
 
-    // Always run headless so the browser stays embedded inside Loopy's Live Browser panel
+    // Always run headless so the browser stays embedded inside Loors's Live Browser panel
     // instead of popping open external Edge/Chrome windows on the desktop.
     let want_headless = true;
     let selector = args.get("selector").and_then(|v| v.as_str()).unwrap_or("");
@@ -1262,7 +1262,7 @@ pub async fn run_browser_action(workspace: &str, args: &Value) -> String {
     } else {
         PathBuf::from(workspace)
     };
-    let state_path = ws_root.join(".loopy").join("browser_state.json");
+    let state_path = ws_root.join(".loors").join("browser_state.json");
 
     let mut guard = session_mutex().lock().await;
 
@@ -1414,29 +1414,29 @@ async fn wait_for_page_target_checked(
 }
 
 const HOOK_SCRIPT: &str = r##"(() => {
-    if (window.__loopyHooked) return;
-    window.__loopyHooked = true;
-    window.__loopyConsoleErrors = window.__loopyConsoleErrors || [];
-    window.__loopyNetworkErrors = window.__loopyNetworkErrors || [];
+    if (window.__loorsHooked) return;
+    window.__loorsHooked = true;
+    window.__loorsConsoleErrors = window.__loorsConsoleErrors || [];
+    window.__loorsNetworkErrors = window.__loorsNetworkErrors || [];
     const origError = console.error;
     console.error = function(...args) {
         try {
             const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ').slice(0, 240);
-            window.__loopyConsoleErrors.push(msg);
-            if (window.__loopyConsoleErrors.length > 30) window.__loopyConsoleErrors.shift();
+            window.__loorsConsoleErrors.push(msg);
+            if (window.__loorsConsoleErrors.length > 30) window.__loorsConsoleErrors.shift();
         } catch {}
         return origError.apply(console, args);
     };
     window.addEventListener('error', (e) => {
         try {
-            window.__loopyConsoleErrors.push((e.message || 'JS Error') + ' @' + (e.filename || '') + ':' + (e.lineno || 0));
-            if (window.__loopyConsoleErrors.length > 30) window.__loopyConsoleErrors.shift();
+            window.__loorsConsoleErrors.push((e.message || 'JS Error') + ' @' + (e.filename || '') + ':' + (e.lineno || 0));
+            if (window.__loorsConsoleErrors.length > 30) window.__loorsConsoleErrors.shift();
         } catch {}
     });
     window.addEventListener('unhandledrejection', (e) => {
         try {
-            window.__loopyConsoleErrors.push('UnhandledRejection: ' + String(e.reason || '').slice(0, 200));
-            if (window.__loopyConsoleErrors.length > 30) window.__loopyConsoleErrors.shift();
+            window.__loorsConsoleErrors.push('UnhandledRejection: ' + String(e.reason || '').slice(0, 200));
+            if (window.__loorsConsoleErrors.length > 30) window.__loorsConsoleErrors.shift();
         } catch {}
     });
     if (window.fetch) {
@@ -1445,13 +1445,13 @@ const HOOK_SCRIPT: &str = r##"(() => {
             try {
                 const resp = await origFetch.apply(this, args);
                 if (!resp.ok && resp.status >= 400) {
-                    window.__loopyNetworkErrors.push(`HTTP ${resp.status} ${resp.url || ''}`.slice(0, 200));
-                    if (window.__loopyNetworkErrors.length > 30) window.__loopyNetworkErrors.shift();
+                    window.__loorsNetworkErrors.push(`HTTP ${resp.status} ${resp.url || ''}`.slice(0, 200));
+                    if (window.__loorsNetworkErrors.length > 30) window.__loorsNetworkErrors.shift();
                 }
                 return resp;
             } catch (err) {
-                window.__loopyNetworkErrors.push(`FETCH FAIL ${String(args[0] || '')}: ${String(err)}`.slice(0, 200));
-                if (window.__loopyNetworkErrors.length > 30) window.__loopyNetworkErrors.shift();
+                window.__loorsNetworkErrors.push(`FETCH FAIL ${String(args[0] || '')}: ${String(err)}`.slice(0, 200));
+                if (window.__loorsNetworkErrors.length > 30) window.__loorsNetworkErrors.shift();
                 throw err;
             }
         };
@@ -1577,10 +1577,10 @@ async fn drive_cdp_action(
                     const cx = Math.round(r.left + r.width / 2);
                     const cy = Math.round(r.top + r.height / 2);
                     const lbl = (el.innerText || el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.tagName).replace(/\s+/g, " ").trim().slice(0, 48);
-                    let ov = document.getElementById("__loopy_ai_cursor__");
+                    let ov = document.getElementById("__loors_ai_cursor__");
                     if (ov) ov.remove();
                     ov = document.createElement("div");
-                    ov.id = "__loopy_ai_cursor__";
+                    ov.id = "__loors_ai_cursor__";
                     ov.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:2147483647;";
                     ov.innerHTML = `
                         <div style="position:fixed;left:${{r.left-2}}px;top:${{r.top-2}}px;width:${{r.width+4}}px;height:${{r.height+4}}px;border:2px solid #8b5cf6;background:rgba(139,92,246,0.18);border-radius:6px;box-shadow:0 0 14px rgba(139,92,246,0.55);"></div>
@@ -1656,7 +1656,7 @@ async fn drive_cdp_action(
                 let _ = cdp_eval(
                     &mut ws,
                     &mut next_id,
-                    "document.getElementById('__loopy_ai_cursor__')?.remove()",
+                    "document.getElementById('__loors_ai_cursor__')?.remove()",
                 )
                 .await;
                 action_note = format!("{act_label} at ({cx}, {cy}) on {}", target_label.clone().unwrap_or_default());
@@ -1701,10 +1701,10 @@ async fn drive_cdp_action(
                     const r = el.getBoundingClientRect();
                     const cx = Math.round(r.left + r.width/2);
                     const cy = Math.round(r.top + r.height/2);
-                    let ov = document.getElementById("__loopy_ai_cursor__");
+                    let ov = document.getElementById("__loors_ai_cursor__");
                     if (ov) ov.remove();
                     ov = document.createElement("div");
-                    ov.id = "__loopy_ai_cursor__";
+                    ov.id = "__loors_ai_cursor__";
                     ov.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:2147483647;";
                     ov.innerHTML = `<div style="position:fixed;left:${{r.left-2}}px;top:${{r.top-2}}px;width:${{r.width+4}}px;height:${{r.height+4}}px;border:2px solid #8b5cf6;background:rgba(139,92,246,0.12);border-radius:6px;box-shadow:0 0 12px rgba(139,92,246,0.45);"></div>`;
                     document.documentElement.appendChild(ov);
@@ -1731,7 +1731,7 @@ async fn drive_cdp_action(
             let _ = cdp_eval(
                 &mut ws,
                 &mut next_id,
-                "document.getElementById('__loopy_ai_cursor__')?.remove()",
+                "document.getElementById('__loors_ai_cursor__')?.remove()",
             )
             .await;
             action_note = format!("Typed into {selector}");
@@ -1807,8 +1807,8 @@ async fn drive_cdp_action(
             title: document.title,
             interactive,
             text,
-            console_errors: window.__loopyConsoleErrors || [],
-            network_errors: window.__loopyNetworkErrors || []
+            console_errors: window.__loorsConsoleErrors || [],
+            network_errors: window.__loorsNetworkErrors || []
         };
     })())"##;
 
@@ -1884,7 +1884,7 @@ async fn drive_cdp_action(
 
     let warning = if needs_human_takeover {
         Some(format!(
-            "HUMAN INTERVENTION REQUIRED: The page '{}' is showing a human verification, CAPTCHA, or login gate. Do NOT attempt to click through or bypass it. Pause and ask the user to sign in or complete the verification directly in Loopy's right-side Browser panel, then continue once the user confirms.",
+            "HUMAN INTERVENTION REQUIRED: The page '{}' is showing a human verification, CAPTCHA, or login gate. Do NOT attempt to click through or bypass it. Pause and ask the user to sign in or complete the verification directly in Loors's right-side Browser panel, then continue once the user confirms.",
             final_url
         ))
     } else if looks_parked_or_blank {
@@ -1986,7 +1986,7 @@ where
 
     let mut saved_path = None;
     if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
-        let rel = screenshot_rel.unwrap_or(".loopy/screenshot.png");
+        let rel = screenshot_rel.unwrap_or(".loors/screenshot.png");
         let out_path = ws_root.join(rel);
         if let Some(parent) = out_path.parent() {
             let _ = fs::create_dir_all(parent);
@@ -2093,7 +2093,7 @@ where
 fn portable_browser_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("loopy")
+        .join("loors")
         .join("browser")
 }
 
@@ -2154,7 +2154,7 @@ async fn ensure_portable_browser() -> Result<PathBuf, String> {
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(300))
-        .user_agent("Loopy-Desktop/0.1")
+        .user_agent("Loors-Desktop/0.1")
         .build()
         .map_err(|e| format!("Error creando cliente HTTP: {e}"))?;
 
@@ -2308,7 +2308,7 @@ mod tests {
             .expect("bind local test server");
         let port = listener.local_addr().unwrap().port();
         let html = r#"<!doctype html><html><body style="font-family:sans-serif;padding:24px;">
-            <h1>Loopy Browser E2E</h1>
+            <h1>Loors Browser E2E</h1>
             <input id="name-input" type="text" placeholder="Type name" style="padding:8px;font-size:16px;" />
             <button id="submit-btn" type="button" style="padding:8px 16px;font-size:16px;"
                 onclick="document.getElementById('status-out').textContent = 'Clicked: ' + document.getElementById('name-input').value">
@@ -2341,7 +2341,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis();
-        let ws = std::env::temp_dir().join(format!("loopy-browser-e2e-{ts}"));
+        let ws = std::env::temp_dir().join(format!("loors-browser-e2e-{ts}"));
         fs::create_dir_all(&ws).unwrap();
         let ws_str = ws.to_string_lossy().to_string();
         let url = format!("http://127.0.0.1:{port}/");
@@ -2357,7 +2357,7 @@ mod tests {
         assert_eq!(goto_val["ok"], true, "goto failed: {goto_raw}");
         let initial_text = goto_val["text"].as_str().unwrap_or("");
         assert!(
-            initial_text.contains("Loopy Browser E2E") && initial_text.contains("Idle"),
+            initial_text.contains("Loors Browser E2E") && initial_text.contains("Idle"),
             "Unexpected initial text: {initial_text}"
         );
         let shot1 = goto_val["screenshot"].as_str().unwrap_or("");
@@ -2369,7 +2369,7 @@ mod tests {
         // 2. Type into #name-input
         let type_raw = run_browser_action(
             &ws_str,
-            &json!({ "action": "type", "selector": "#name-input", "text": "Loopy Agent" }),
+            &json!({ "action": "type", "selector": "#name-input", "text": "Loors Agent" }),
         )
         .await;
         let type_val: Value = serde_json::from_str(&type_raw)
@@ -2387,8 +2387,8 @@ mod tests {
         assert_eq!(click_val["ok"], true, "click failed: {click_raw}");
         let after_text = click_val["text"].as_str().unwrap_or("");
         assert!(
-            after_text.contains("Clicked: Loopy Agent"),
-            "Expected click to update DOM to 'Clicked: Loopy Agent', got: {after_text}"
+            after_text.contains("Clicked: Loors Agent"),
+            "Expected click to update DOM to 'Clicked: Loors Agent', got: {after_text}"
         );
         let cx = click_val["cursor"]["x"].as_f64().unwrap_or(0.0);
         let cy = click_val["cursor"]["y"].as_f64().unwrap_or(0.0);

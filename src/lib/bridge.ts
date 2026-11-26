@@ -1,7 +1,7 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen, type Event, type UnlistenFn } from "@tauri-apps/api/event";
 
-const TOKEN_STORAGE_KEY = "loopy_headless_token";
+const TOKEN_STORAGE_KEY = "loors_headless_token";
 
 export function isTauriDesktop(): boolean {
   return (
@@ -102,7 +102,7 @@ export async function invoke<T>(
   });
 
   if (resp.status === 401) {
-    window.dispatchEvent(new CustomEvent("loopy:auth-required"));
+    window.dispatchEvent(new CustomEvent("loors:auth-required"));
     throw new Error("Authentication required");
   }
 

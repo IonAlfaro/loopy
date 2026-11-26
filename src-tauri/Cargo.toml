@@ -1,13 +1,13 @@
 [package]
-name = "loopy"
+name = "loors"
 version = "0.1.0"
 description = "Visual agentic development loop studio with embedded local inference"
-authors = ["Loopy"]
+authors = ["Loors"]
 edition = "2021"
-default-run = "loopy"
+default-run = "loors"
 
 [lib]
-name = "loopy_lib"
+name = "loors_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

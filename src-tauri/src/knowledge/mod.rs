@@ -7,7 +7,7 @@ use std::time::UNIX_EPOCH;
 
 const IGNORED_DIRS: &[&str] = &[
     ".git",
-    ".loopy",
+    ".loors",
     "node_modules",
     "target",
     "dist",
@@ -272,7 +272,7 @@ pub fn build_or_update_index(
         ));
     }
 
-    let cache_path = ws_root.join(".loopy").join("rag-index.json");
+    let cache_path = ws_root.join(".loors").join("rag-index.json");
     let cached: HashMap<String, IndexedFile> = fs::read_to_string(&cache_path)
         .ok()
         .and_then(|raw| serde_json::from_str::<KnowledgeIndex>(&raw).ok())
@@ -546,7 +546,7 @@ mod tests {
     #[test]
     fn builds_tree_and_bm25_search_on_temp_repo() {
         let dir = std::env::temp_dir().join(format!(
-            "loopy-rag-test-{}",
+            "loors-rag-test-{}",
             std::time::SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()

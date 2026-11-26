@@ -22,7 +22,7 @@ import {
   parseWorkflowJson,
   type CloudProviderConfig,
   type LocalModelFile,
-  type LoopyWorkflowFile,
+  type LoorsWorkflowFile,
 } from "../types/graph";
 import {
   MarkdownContent,
@@ -42,7 +42,7 @@ interface ChatMsg {
   attachments?: string[];
   thinking?: string;
   toolCalls?: ActivityToolItem[];
-  workflow?: LoopyWorkflowFile | null;
+  workflow?: LoorsWorkflowFile | null;
 }
 
 type ArchitectStreamEvent =
@@ -65,7 +65,7 @@ interface ArchitectSkillInfo {
 
 interface ArchitectChatProps {
   open: boolean;
-  onApplyGraph: (wf: LoopyWorkflowFile) => void;
+  onApplyGraph: (wf: LoorsWorkflowFile) => void;
 }
 
 function getAttachTag(pathOrName: string): { tag: string; cls: string } {
@@ -83,7 +83,7 @@ function getAttachTag(pathOrName: string): { tag: string; cls: string } {
   };
 }
 
-function extractWorkflowFromReply(text: string): LoopyWorkflowFile | null {
+function extractWorkflowFromReply(text: string): LoorsWorkflowFile | null {
   const regex = /```(?:json)?\s*([\s\S]*?)```/gi;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(text)) !== null) {
@@ -135,7 +135,7 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
   const modelMenuRef = useRef<HTMLDivElement>(null);
   const [reasoningEffort, setReasoningEffort] = useState<"off" | "low" | "medium" | "high">(() => {
     try {
-      const saved = localStorage.getItem("loopy_architect_effort");
+      const saved = localStorage.getItem("loors_architect_effort");
       if (saved === "off" || saved === "low" || saved === "medium" || saved === "high") {
         return saved;
       }
@@ -218,18 +218,18 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
     })
       .then(setSkillInfo)
       .catch(() => {});
-    window.addEventListener("loopy:models-changed", refresh);
-    window.addEventListener("loopy:providers-changed", refresh);
+    window.addEventListener("loors:models-changed", refresh);
+    window.addEventListener("loors:providers-changed", refresh);
     return () => {
-      window.removeEventListener("loopy:models-changed", refresh);
-      window.removeEventListener("loopy:providers-changed", refresh);
+      window.removeEventListener("loors:models-changed", refresh);
+      window.removeEventListener("loors:providers-changed", refresh);
     };
   }, [open, graphWorkspace]);
 
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
-    listen<ArchitectStreamEvent>("loopy://architect-event", (ev) => {
+    listen<ArchitectStreamEvent>("loors://architect-event", (ev) => {
       if (cancelled) return;
       const p = ev.payload;
       if (p.type === "token") {
@@ -498,7 +498,7 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
             justifyContent: "space-between",
             gap: 8,
           }}
-          title={`Skill cargada: ${skillInfo.path}\nHerramientas activas: list_files, find_files, grep_search, read_file, list_loopy_capabilities, read_skill`}
+          title={`Skill cargada: ${skillInfo.path}\nHerramientas activas: list_files, find_files, grep_search, read_file, list_loors_capabilities, read_skill`}
         >
           <span>
             Skill: <strong style={{ color: "#c084fc" }}>{skillInfo.name}</strong> ({skillInfo.source})
@@ -546,8 +546,8 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
                     ? "Tú"
                     : "You"
                   : locale === "es"
-                    ? "Arquitecto Loopy"
-                    : "Loopy Architect"}
+                    ? "Arquitecto Loors"
+                    : "Loors Architect"}
               </div>
               {m.attachments && m.attachments.length > 0 && (
                 <div className="user-msg-attachments" style={{ marginBottom: 6 }}>
@@ -624,7 +624,7 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
         {sending && (
           <div className="chat-bubble role-assistant">
             <div className="chat-role">
-              {locale === "es" ? "Arquitecto Loopy" : "Loopy Architect"}
+              {locale === "es" ? "Arquitecto Loors" : "Loors Architect"}
             </div>
             {streamThinking && (
               <ThinkingDisclosure
@@ -874,7 +874,7 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
                     onClick={() => {
                       setModelMenuOpen(false);
                       window.dispatchEvent(
-                        new CustomEvent("loopy:open-models-modal", {
+                        new CustomEvent("loors:open-models-modal", {
                           detail: { tab: "cloud" },
                         })
                       );
@@ -896,7 +896,7 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
               onChange={(next) => {
                 setReasoningEffort(next);
                 try {
-                  localStorage.setItem("loopy_architect_effort", next);
+                  localStorage.setItem("loors_architect_effort", next);
                 } catch {
                   // ignore
                 }

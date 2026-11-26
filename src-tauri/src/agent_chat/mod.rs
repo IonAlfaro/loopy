@@ -305,7 +305,7 @@ impl AgentChatState {
 pub fn sessions_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("loopy")
+        .join("loors")
         .join("agent_sessions")
 }
 
@@ -569,7 +569,7 @@ where
     let mut rag_index: Option<KnowledgeIndex> = None;
     let mut system_prompt = if has_workspace {
         format!(
-            "Eres el Agente de IngenierÃ­a de Loopy trabajando directamente sobre el proyecto del usuario.\n\
+            "Eres el Agente de IngenierÃ­a de Loors trabajando directamente sobre el proyecto del usuario.\n\
              Workspace activo: `{}`\n\
              Modo de permisos: {:?}\n\n\
              REGLAS DE TRABAJO:\n\
@@ -580,7 +580,7 @@ where
             session.workspace, session.permission_mode
         )
     } else {
-        "Eres el Agente de Loopy en una conversaciÃ³n libre (sin proyecto enlazado).\n\
+        "Eres el Agente de Loors en una conversaciÃ³n libre (sin proyecto enlazado).\n\
          REGLAS DE TRABAJO:\n\
          - Ayuda directamente con preguntas, anÃ¡lisis, redacciÃ³n, programaciÃ³n, documentos adjuntos o bÃºsqueda en internet.\n\
          - Si el usuario te pide buscar informaciÃ³n actual, precios, noticias o navegar por una web, usa `browser_action`, `web_search` o `fetch_url`.\n\
@@ -864,7 +864,7 @@ where
         "type": "function",
         "function": {
             "name": "write_artifact",
-            "description": "Creates or updates a rich persistent artifact in .loopy/artifacts/ (Markdown .md or interactive HTML .html) and displays it to the user.",
+            "description": "Creates or updates a rich persistent artifact in .loors/artifacts/ (Markdown .md or interactive HTML .html) and displays it to the user.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -880,7 +880,7 @@ where
         "type": "function",
         "function": {
             "name": "list_artifacts",
-            "description": "Lists saved artifacts in .loopy/artifacts/.",
+            "description": "Lists saved artifacts in .loors/artifacts/.",
             "parameters": { "type": "object", "properties": {} }
         }
     }));
@@ -929,7 +929,7 @@ where
             "type": "function",
             "function": {
                 "name": "generate_image",
-                "description": "Generates a PNG image using the configured OpenAI-compatible image provider and saves it into .loopy/generated/.",
+                "description": "Generates a PNG image using the configured OpenAI-compatible image provider and saves it into .loors/generated/.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -1589,7 +1589,7 @@ where
         } else {
             PathBuf::from(workspace)
         };
-        let dir = base.join(".loopy").join("artifacts");
+        let dir = base.join(".loors").join("artifacts");
         if let Err(e) = fs::create_dir_all(&dir) {
             record.status = "error".to_string();
             return format!("Failed creating artifacts dir: {e}");
@@ -1621,7 +1621,7 @@ where
         } else {
             PathBuf::from(workspace)
         };
-        let dir = base.join(".loopy").join("artifacts");
+        let dir = base.join(".loors").join("artifacts");
         let Ok(entries) = fs::read_dir(&dir) else {
             return "No artifacts saved yet.".to_string();
         };
@@ -1669,7 +1669,7 @@ where
         } else {
             PathBuf::from(workspace)
         };
-        let out_dir = base.join(".loopy").join("generated");
+        let out_dir = base.join(".loors").join("generated");
         return match crate::inference::cloud::generate_image_cloud(prompt, size, model_opt, &out_dir).await {
             Ok(path) => {
                 record.screenshot_path = Some(path.clone());
@@ -2124,8 +2124,8 @@ pub fn read_workspace_memory_files(workspace: &str) -> Vec<WorkspaceMemoryFileIn
     } else {
         PathBuf::from(workspace)
     };
-    let loopy_dir = base.join(".loopy");
-    let Ok(entries) = fs::read_dir(&loopy_dir) else {
+    let loors_dir = base.join(".loors");
+    let Ok(entries) = fs::read_dir(&loors_dir) else {
         return Vec::new();
     };
     let mut files = Vec::new();
@@ -2148,7 +2148,7 @@ pub fn read_workspace_memory_files(workspace: &str) -> Vec<WorkspaceMemoryFileIn
                 raw
             };
             files.push(WorkspaceMemoryFileInfo {
-                rel_path: format!(".loopy/{name}"),
+                rel_path: format!(".loors/{name}"),
                 name,
                 content,
                 size_bytes,
@@ -2188,7 +2188,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let base_dir = std::env::temp_dir().join(format!("loopy-agent-undo-{stamp}"));
+        let base_dir = std::env::temp_dir().join(format!("loors-agent-undo-{stamp}"));
         let sess_dir = base_dir.join("sessions");
         let ws_dir = base_dir.join("repo");
         fs::create_dir_all(&ws_dir).unwrap();
@@ -2356,7 +2356,7 @@ mod e2e_new_tools_tests {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis();
-        let ws = std::env::temp_dir().join(format!("loopy-agent-tools-{ts}"));
+        let ws = std::env::temp_dir().join(format!("loors-agent-tools-{ts}"));
         fs::create_dir_all(&ws).unwrap();
         let ws_str = ws.to_string_lossy().to_string();
 
@@ -2442,7 +2442,7 @@ mod e2e_new_tools_tests {
         )
         .await;
         assert!(out2.contains("Audit Report"));
-        assert!(ws.join(".loopy/artifacts/report.md").exists());
+        assert!(ws.join(".loors/artifacts/report.md").exists());
 
         let mut r2b = make_rec("write_artifact");
         let _ = dispatch_agent_tool(

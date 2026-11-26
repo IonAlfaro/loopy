@@ -544,7 +544,7 @@ mod tests {
     #[tokio::test]
     async fn extracts_docx_xml_paragraphs() {
         let p = std::env::temp_dir().join(format!(
-            "loopy-docx-test-{}.docx",
+            "loors-docx-test-{}.docx",
             SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
         ));
         {

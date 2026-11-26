@@ -21,7 +21,7 @@ pub struct LoadedSkill {
 pub fn global_skills_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("loopy")
+        .join("loors")
         .join("skills")
 }
 
@@ -34,7 +34,7 @@ pub fn discover_skills(workspace: &str) -> Vec<SkillSummary> {
         PathBuf::from(workspace)
     };
 
-    roots.push((ws.join(".loopy").join("skills"), "workspace"));
+    roots.push((ws.join(".loors").join("skills"), "workspace"));
     roots.push((ws.join(".agents").join("skills"), "workspace"));
     roots.push((ws.join(".claude").join("skills"), "workspace"));
 

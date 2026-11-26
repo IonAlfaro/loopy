@@ -419,7 +419,7 @@ export function Inspector() {
 
   if (!node) {
     return (
-      <div className="loopy-inspector">
+      <div className="loors-inspector">
         <div className="muted-empty" style={{ padding: "32px 14px", textAlign: "center" }}>
           {t("canvas.selectNodeHint")}
         </div>
@@ -486,7 +486,7 @@ export function Inspector() {
   };
 
   return (
-    <div className="loopy-inspector">
+    <div className="loors-inspector">
       <div className="inspector-head">
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="panel-title">
@@ -525,7 +525,7 @@ export function Inspector() {
               }
               onClick={() =>
                 window.dispatchEvent(
-                  new CustomEvent("loopy:run-workflow", {
+                  new CustomEvent("loors:run-workflow", {
                     detail: { startNodeId: node.id },
                   })
                 )
@@ -830,7 +830,7 @@ export function Inspector() {
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val === "__open_hub__") {
-                      window.dispatchEvent(new CustomEvent("loopy:open-models-modal"));
+                      window.dispatchEvent(new CustomEvent("loors:open-models-modal"));
                       return;
                     }
                     const shortTitle = val.startsWith("cloud::")
@@ -917,7 +917,7 @@ export function Inspector() {
               <span>{L("Path to SKILL.md (optional if using inline)", "Ruta a SKILL.md (opcional si usas inline)")}</span>
               <input
                 type="text"
-                placeholder="Ej: .loopy/skills/android-tdd/SKILL.md"
+                placeholder="Ej: .loors/skills/android-tdd/SKILL.md"
                 value={String(cfg.skillPath ?? "")}
                 onChange={(e) =>
                   updateNodeConfig(node.id, { skillPath: e.target.value })
@@ -937,8 +937,8 @@ export function Inspector() {
                 {discoveredSkills.length === 0 ? (
                   <div className="hw-note">
                     No se encontraron SKILL.md en{" "}
-                    <code>%LOCALAPPDATA%/loopy/skills</code> ni en{" "}
-                    <code>.loopy/skills</code>, <code>.agents/skills</code> o{" "}
+                    <code>%LOCALAPPDATA%/loors/skills</code> ni en{" "}
+                    <code>.loors/skills</code>, <code>.agents/skills</code> o{" "}
                     <code>.claude/skills</code>.
                   </div>
                 ) : (
@@ -1240,7 +1240,7 @@ export function Inspector() {
               </span>
               <input
                 type="text"
-                placeholder={locale === "es" ? "Ej: .loopy/screenshot.png" : "e.g. .loopy/screenshot.png"}
+                placeholder={locale === "es" ? "Ej: .loors/screenshot.png" : "e.g. .loors/screenshot.png"}
                 value={String(cfg.imagePath ?? "")}
                 onChange={(e) =>
                   updateNodeConfig(node.id, { imagePath: e.target.value })
@@ -1712,7 +1712,7 @@ export function Inspector() {
               <span>Imagen / Screenshot a evaluar (opcional, VLM)</span>
               <input
                 type="text"
-                placeholder="Ej: .loopy/screenshot.png"
+                placeholder="Ej: .loors/screenshot.png"
                 value={String(cfg.imagePath ?? "")}
                 onChange={(e) =>
                   updateNodeConfig(node.id, { imagePath: e.target.value })
@@ -1821,10 +1821,10 @@ export function Inspector() {
         {node.data.kind === "subgraph" && (
           <>
             <label className="field">
-              <span>{L("Sub-harness .loopy.json file", "Archivo .loopy.json del Sub-arnés")}</span>
+              <span>{L("Sub-harness .loors.json file", "Archivo .loors.json del Sub-arnés")}</span>
               <input
                 type="text"
-                placeholder={L("Path to a .loopy.json harness", "Ruta a un flujo .loopy.json")}
+                placeholder={L("Path to a .loors.json harness", "Ruta a un flujo .loors.json")}
                 value={String(cfg.workflowPath ?? "")}
                 onChange={(e) =>
                   updateNodeConfig(node.id, { workflowPath: e.target.value })
@@ -1860,7 +1860,7 @@ export function Inspector() {
                       }}
                     >
                       <span className="model-pick-name">{wf.name}</span>
-                      <span className="model-pick-size">.loopy.json</span>
+                      <span className="model-pick-size">.loors.json</span>
                     </button>
                   ))
                 )}

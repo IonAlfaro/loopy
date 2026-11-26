@@ -34,20 +34,20 @@ pub const ALL_AGENT_TOOLS: &[&str] = &[
 ];
 
 pub const DEFAULT_ARCHITECT_SKILL_MD: &str = r#"---
-name: architect-loopy
-description: "Guía completa de arquitectura de arneses Loopy: nodos, puertos, variables, herramientas, patrones cíclicos y reglas de generación .loopy.json."
+name: architect-loors
+description: "Guía completa de arquitectura de arneses Loors: nodos, puertos, variables, herramientas, patrones cíclicos y reglas de generación .loors.json."
 ---
 
-# Arquitecto de Arneses Loopy (v4)
+# Arquitecto de Arneses Loors (v4)
 
-Eres el **Arquitecto de Arneses de Loopy**, una aplicación visual de grafos cíclicos para ejecutar agentes autónomos locales con `llama.cpp`. Tu trabajo es ayudar al usuario a diseñar, auditar, depurar y mejorar arneses (`.loopy.json`).
+Eres el **Arquitecto de Arneses de Loors**, una aplicación visual de grafos cíclicos para ejecutar agentes autónomos locales con `llama.cpp`. Tu trabajo es ayudar al usuario a diseñar, auditar, depurar y mejorar arneses (`.loors.json`).
 
 ## 1. Cómo trabajar (MUY IMPORTANTE)
-- **Inspección rápida y acotada (máx. 2–3 lecturas)**: Tienes herramientas de solo lectura (`list_files`, `find_files`, `grep_search`, `read_file`, `list_loopy_capabilities`, `read_skill`).
+- **Inspección rápida y acotada (máx. 2–3 lecturas)**: Tienes herramientas de solo lectura (`list_files`, `find_files`, `grep_search`, `read_file`, `list_loors_capabilities`, `read_skill`).
   - Revisa primero la sección **Repositorios locales detectados** del inventario antes de buscar carpetas a ciegas.
   - Si el usuario menciona un proyecto concreto, haz como máximo **2 o 3 lecturas rápidas** (`README.md`, `AGENTS.md` o `SKILL.md`). **NO** leas carpetas `output/`, registros históricos, logs ni código fuente extenso.
 - **Pregunta antes de generar si el diseño tiene decisiones abiertas**:
-  - Cuando el usuario pida crear un arnés nuevo o transformar un proyecto en arnés y NO haya especificado todas las piezas (o diga algo abierto), **NO sueltes todavía el `.loopy.json` gigante**.
+  - Cuando el usuario pida crear un arnés nuevo o transformar un proyecto en arnés y NO haya especificado todas las piezas (o diga algo abierto), **NO sueltes todavía el `.loors.json` gigante**.
   - En su lugar, tras tu inspección rápida, presenta un resumen breve con **2 opciones claras** (p. ej. **Opción A: Pipeline modular por fases** —recomendada— vs **Opción B: Flujo compacto**) y **2–3 preguntas rápidas** (disparador: Cron / Telegram / Manual; si quiere `llm_judge` + `loop_guard`; si quiere notificación `notify` por Telegram/Discord).
   - En cuanto el usuario responda (o si desde el principio pide explícitamente *"genéralo ya sin preguntar"* o da la arquitectura cerrada), genera directamente el bloque ```json ... ``` completo y válido.
 - **Arquitectura modular por fases (evita mega-agentes monolíticos)**:
@@ -114,7 +114,7 @@ Soportadas en `agent.systemPrompt`, `shell.command`, `memory_file.template`, `lo
 - **Web y Navegador**: `web_search`, `fetch_url`, `browser_action` (CDP en vivo)
 - **Datos y Contenedores**: `sql_query`, `docker_exec`
 
-## 6. Patrones de diseño probados en Loopy
+## 6. Patrones de diseño probados en Loors
 1. **Sin cortes artificiales**: Usa `contextSize: 0` (Auto RAM), `maxTokens: 0` (sin límite por paso en `local_model`) y `maxSteps: 0` (Auto) en `agent`. Para bucles indefinidos de auditoría usa `maxIterations: 0` en `loop_guard`.
 2. **Arneses programados (Cron / Webhook)**: Coloca `trigger` (`triggerType: "interval"`, `intervalMinutes: 60`) -> `task_input` (o conecta ambos al primer `shell`/`agent`).
 3. **Memoria persistente anti-repetición**: Usa `memory_file` (`mode: "append"`) y léelo al inicio con `memory_file` (`mode: "read"`).
@@ -132,7 +132,7 @@ Cuando el usuario pida crear, modificar o mejorar un arnés:
      "nodes": [
        {
          "id": "n-1",
-         "type": "loopyNode",
+         "type": "loorsNode",
          "position": { "x": 80, "y": 140 },
          "data": { "kind": "task_input", "title": "Task Input", "status": "idle", "config": { "workspace": ".", "prompt": "..." } }
        }
@@ -215,7 +215,7 @@ impl ArchitectState {
 fn workflows_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("loopy")
+        .join("loors")
         .join("workflows")
 }
 
@@ -248,12 +248,12 @@ pub fn extract_workspace_from_graph(graph_json: &str) -> String {
 }
 
 pub fn ensure_and_load_architect_skill(workspace: &str) -> (String, ArchitectSkillInfo) {
-    // 1. Check workspace override first: <workspace>/.loopy/skills/architect-loopy/SKILL.md
+    // 1. Check workspace override first: <workspace>/.loors/skills/architect-loors/SKILL.md
     if !workspace.trim().is_empty() && workspace != "." {
         let ws_skill = PathBuf::from(workspace)
-            .join(".loopy")
+            .join(".loors")
             .join("skills")
-            .join("architect-loopy")
+            .join("architect-loors")
             .join("SKILL.md");
         if ws_skill.is_file() {
             if let Ok(loaded) = load_skill_file(&ws_skill) {
@@ -269,14 +269,14 @@ pub fn ensure_and_load_architect_skill(workspace: &str) -> (String, ArchitectSki
         }
     }
 
-    // 2. Global skill: %LOCALAPPDATA%\loopy\skills\architect-loopy\SKILL.md (auto-seeded and auto-upgraded if old v1)
-    let global_dir = global_skills_dir().join("architect-loopy");
+    // 2. Global skill: %LOCALAPPDATA%\loors\skills\architect-loors\SKILL.md (auto-seeded and auto-upgraded if old v1)
+    let global_dir = global_skills_dir().join("architect-loors");
     let global_skill = global_dir.join("SKILL.md");
 
     let needs_seed = if !global_skill.is_file() {
         true
     } else if let Ok(existing) = fs::read_to_string(&global_skill) {
-        existing.contains("# Arquitecto de Arneses Loopy") && !existing.contains("(v4)")
+        existing.contains("# Arquitecto de Arneses Loors") && !existing.contains("(v4)")
     } else {
         false
     };
@@ -298,7 +298,7 @@ pub fn ensure_and_load_architect_skill(workspace: &str) -> (String, ArchitectSki
     }
 
     // 3. Built-in fallback
-    let parsed = parse_skill_md(DEFAULT_ARCHITECT_SKILL_MD, "architect-loopy", "builtin");
+    let parsed = parse_skill_md(DEFAULT_ARCHITECT_SKILL_MD, "architect-loors", "builtin");
     (
         parsed.body,
         ArchitectSkillInfo {
@@ -329,14 +329,14 @@ fn scan_workflows_summary() -> Vec<String> {
         if path
             .file_name()
             .and_then(|n| n.to_str())
-            .map(|n| n.ends_with(".loopy.json"))
+            .map(|n| n.ends_with(".loors.json"))
             .unwrap_or(false)
         {
             let name = path
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("")
-                .trim_end_matches(".loopy.json");
+                .trim_end_matches(".loors.json");
             out.push(format!("- {name} => {}", path.display()));
         }
     }
@@ -402,7 +402,7 @@ pub fn build_environment_inventory(workspace: &str, skill_info: &ArchitectSkillI
         out.push_str("- (ninguna)\n");
     } else {
         for s in skills.iter().take(30) {
-            if s.name == "architect-loopy" {
+            if s.name == "architect-loors" {
                 continue;
             }
             out.push_str(&format!(
@@ -449,7 +449,7 @@ fn architect_tool_definitions() -> Vec<Value> {
     defs.push(json!({
         "type": "function",
         "function": {
-            "name": "list_loopy_capabilities",
+            "name": "list_loors_capabilities",
             "description": "Devuelve el catálogo detallado de las 18 herramientas nativas de agente (con sus parámetros exactos), modelos locales, skills, custom nodes y workflows guardados.",
             "parameters": {
                 "type": "object",
@@ -473,7 +473,7 @@ fn architect_tool_definitions() -> Vec<Value> {
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Ruta exacta al SKILL.md (obtenida del inventario o de list_loopy_capabilities)"
+                        "description": "Ruta exacta al SKILL.md (obtenida del inventario o de list_loors_capabilities)"
                     }
                 },
                 "required": ["path"]
@@ -485,7 +485,7 @@ fn architect_tool_definitions() -> Vec<Value> {
 }
 
 fn open_architect_log() -> Option<std::fs::File> {
-    let dir = dirs::data_local_dir()?.join("loopy").join("logs");
+    let dir = dirs::data_local_dir()?.join("loors").join("logs");
     let _ = fs::create_dir_all(&dir);
     std::fs::OpenOptions::new()
         .create(true)
@@ -592,7 +592,7 @@ async fn execute_architect_tool(workspace: &str, skill_info: &ArchitectSkillInfo
             }
             tools::execute_tool(workspace, name, args).await
         }
-        "list_loopy_capabilities" => {
+        "list_loors_capabilities" => {
             let filter = args
                 .get("filter")
                 .and_then(|v| v.as_str())
@@ -968,7 +968,7 @@ mod tests {
             "schemaVersion": 1,
             "name": "Test",
             "nodes": [
-                { "id": "1", "type": "loopyNode", "position": {"x":0,"y":0}, "data": { "kind": "task_input", "title": "In", "status": "idle", "config": { "workspace": "C:/repo/demo", "prompt": "hi" } } }
+                { "id": "1", "type": "loorsNode", "position": {"x":0,"y":0}, "data": { "kind": "task_input", "title": "In", "status": "idle", "config": { "workspace": "C:/repo/demo", "prompt": "hi" } } }
             ],
             "edges": []
         }"#;
@@ -979,8 +979,8 @@ mod tests {
     #[test]
     fn default_architect_skill_parses_cleanly() {
         let parsed = parse_skill_md(DEFAULT_ARCHITECT_SKILL_MD, "fallback", "builtin");
-        assert_eq!(parsed.name, "architect-loopy");
+        assert_eq!(parsed.name, "architect-loors");
         assert!(parsed.body.contains("{{current_prompt}}"));
-        assert!(parsed.body.contains("list_loopy_capabilities"));
+        assert!(parsed.body.contains("list_loors_capabilities"));
     }
 }

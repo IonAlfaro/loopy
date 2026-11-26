@@ -161,7 +161,7 @@ impl TriggerManager {
                 let app_clone = app.clone();
                 let resp_body = if let Some(engine) = app.try_state::<EngineManager>() {
                     match engine.start_run(run_graph, backend.clone(), move |ev| {
-                        let _ = app_clone.emit("loopy://engine-event", ev);
+                        let _ = app_clone.emit("loors://engine-event", ev);
                     }) {
                         Ok(run_id) => format!("{{\"status\":\"triggered\",\"run_id\":\"{run_id}\"}}"),
                         Err(e) => format!("{{\"status\":\"error\",\"error\":\"{e}\"}}"),
@@ -213,7 +213,7 @@ impl TriggerManager {
                         if let Some(engine) = app.try_state::<EngineManager>() {
                             let app_clone = app.clone();
                             let _ = engine.start_run(graph.clone(), backend.clone(), move |ev| {
-                                let _ = app_clone.emit("loopy://engine-event", ev);
+                                let _ = app_clone.emit("loors://engine-event", ev);
                             });
                         }
                     }
@@ -378,7 +378,7 @@ impl TriggerManager {
                     if let Some(engine) = app.try_state::<EngineManager>() {
                         let app_clone = app.clone();
                         let _ = engine.start_run(run_graph, backend.clone(), move |ev| {
-                            let _ = app_clone.emit("loopy://engine-event", ev);
+                            let _ = app_clone.emit("loors://engine-event", ev);
                         });
                     }
                 }

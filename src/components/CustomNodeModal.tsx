@@ -40,7 +40,7 @@ export function CustomNodeModal({
   const [httpHeaders, setHttpHeaders] = useState("{}");
   const [httpBody, setHttpBody] = useState('{"text": "{{message}}"}');
   const [fields, setFields] = useState<CustomFieldDef[]>([
-    { key: "message", label: "Message", fieldType: "text", defaultValue: "Hello from Loopy" },
+    { key: "message", label: "Message", fieldType: "text", defaultValue: "Hello from Loors" },
   ]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +87,7 @@ export function CustomNodeModal({
           key: "message",
           label: L("Message", "Mensaje"),
           fieldType: "text",
-          defaultValue: L("Hello from Loopy", "Hola desde Loopy"),
+          defaultValue: L("Hello from Loors", "Hola desde Loors"),
         },
       ]);
     }
@@ -152,8 +152,8 @@ export function CustomNodeModal({
         typeof err === "string"
           ? err
           : L(
-              "Run Loopy in desktop mode (Tauri) to save custom nodes to disk.",
-              "Ejecuta Loopy en modo escritorio (Tauri) para guardar nodos custom en disco."
+              "Run Loors in desktop mode (Tauri) to save custom nodes to disk.",
+              "Ejecuta Loors en modo escritorio (Tauri) para guardar nodos custom en disco."
             )
       );
     } finally {

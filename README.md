@@ -1,6 +1,6 @@
 <div align="center">
-  <img src="docs/logo.png" alt="Loopy Logo" width="88" height="88" />
-  <h1>Loopy</h1>
+  <img src="docs/logo.png" alt="Loors Logo" width="88" height="88" />
+  <h1>Loors</h1>
   <p><strong>Local-first AI Agent, Visual Cyclic Harness Studio &amp; Headless Server</strong></p>
   <p>
     Run autonomous coding &amp; research agents, design cyclic multi-step AI workflows, browse interactively alongside your agent, and deploy headlessly on any server — powered by 100% local GGUF models (embedded <code>llama.cpp</code>) or your favorite cloud APIs.
@@ -28,17 +28,17 @@
 ---
 
 <p align="center">
-  <img src="docs/screenshots/harness-studio.png" alt="Loopy Visual Harness Studio" width="100%" />
+  <img src="docs/screenshots/harness-studio.png" alt="Loors Visual Harness Studio" width="100%" />
 </p>
 
-## Why Loopy?
+## Why Loors?
 
-Most AI tools force you to choose between a simple chat window and brittle CLI scripts — or lock you into a single cloud provider. **Loopy** brings desktop polish, visual cyclic harnesses, an interactive shared browser, and a headless server binary together in a lightweight native stack (~4.4 MB desktop installer):
+Most AI tools force you to choose between a simple chat window and brittle CLI scripts — or lock you into a single cloud provider. **Loors** brings desktop polish, visual cyclic harnesses, an interactive shared browser, and a headless server binary together in a lightweight native stack (~4.4 MB desktop installer):
 
 - **Agent Mode** — A clean, Codex/Cursor-inspired workspace with file tree, live Git diff, **interactive embedded browser**, subagents, live checklists, persistent artifacts, global MCP servers, and 4-tier safety permissions.
 - **Visual Harness Studio** — Build repeatable, **cyclic** agent loops (e.g., *Coder → Tests → LLM Judge → Loop Guard → Human Gate → Done*) with `For Each` iterators, `JSON Validator`, global run budgets, *Run from here* resume, webhooks, cron, and Telegram triggers.
-- **AI Architect** — Built-in assistant that inspects your workspace and designs or refactors `.loopy.json` harnesses for you.
-- **Headless CLI & Self-Hosted Web Panel (`loopy-cli`)** — Execute harnesses in CI/CD, cron, or SSH (`loopy-cli run`) or launch `loopy-cli serve` to access the full Loopy Web UI remotely with Bearer token auth and SSE streaming.
+- **AI Architect** — Built-in assistant that inspects your workspace and designs or refactors `.loors.json` harnesses for you.
+- **Headless CLI & Self-Hosted Web Panel (`loors-cli`)** — Execute harnesses in CI/CD, cron, or SSH (`loors-cli run`) or launch `loors-cli serve` to access the full Loors Web UI remotely with Bearer token auth and SSE streaming.
 - **Local AI or Cloud APIs — Your Choice** — Run 100% private local GGUF models with 1-click `llama.cpp` GPU installation (CUDA, Vulkan, Metal, CPU), dynamic Hugging Face discovery, or connect OpenAI, Anthropic (Claude), Google Gemini, GitHub Models/Copilot, OpenRouter, LM Studio, Ollama, or any custom endpoint.
 
 ---
@@ -52,7 +52,7 @@ Most AI tools force you to choose between a simple chat window and brittle CLI s
 | **Autonomous Agent Mode** | 4-tier safety permissions (**Read-only**, **Ask**, **Auto** with AI safety reviewer, **Turbo**), isolated & parallel subagents, live todo checklist, background process manager, scheduled tasks, interactive user questions, persistent Markdown/HTML artifacts, global MCP servers, Thinking/Effort selector, and live context counter. |
 | **Interactive Embedded Browser** | Pure-Rust Chrome DevTools Protocol (CDP) browser with Chrome-style tabs, editable omnibox, direct click/type/scroll forwarding, and a persistent profile shared live between you and the AI Agent (log in manually and let the agent continue on the same authenticated page). Zero Node.js or Playwright dependencies. |
 | **Cyclic Visual Harnesses** | Drag-and-drop React Flow canvas with `Agent`, `Shell / Test`, `For Each / Iterator`, `JSON Validator`, `LLM Judge`, `Loop Guard`, `Human Gate`, `Git Checkpoint`, `Context Compactor`, `Knowledge / RAG`, `Memory / State`, `HTTP Request`, `Notify`, `Trigger` (Webhook / Cron / Telegram), `MCP Server`, `Skills`, `Parallel Fan-Out`, `Subgraph`, and `Custom Nodes` — plus global run budgets, per-node latency badges, 1-click resource wiring, and *Run from here* resume. |
-| **Headless CLI & Web Server** | Dedicated `loopy-cli` binary sharing 100% of the Rust engine: run harnesses one-shot (`run --jsonl` / `--quiet`), host the full React Web Panel over HTTP + SSE (`serve --host 0.0.0.0 --port 7700 --token ...`), and trigger runs via REST API (`/api/health`, `/api/workflows`, `/api/runs`). |
+| **Headless CLI & Web Server** | Dedicated `loors-cli` binary sharing 100% of the Rust engine: run harnesses one-shot (`run --jsonl` / `--quiet`), host the full React Web Panel over HTTP + SSE (`serve --host 0.0.0.0 --port 7700 --token ...`), and trigger runs via REST API (`/api/health`, `/api/workflows`, `/api/runs`). |
 
 ---
 
@@ -61,44 +61,44 @@ Most AI tools force you to choose between a simple chat window and brittle CLI s
 ### Agent Mode
 Autonomous coding, research, and interactive browser workflows with 4-tier permissions and 1-click local or cloud setup.
 <p align="center">
-  <img src="docs/screenshots/agent-mode.png" alt="Loopy Agent Mode" width="100%" />
+  <img src="docs/screenshots/agent-mode.png" alt="Loors Agent Mode" width="100%" />
 </p>
 
 ### Visual Harness Studio
 Design cyclic, self-healing multi-agent pipelines with live inspection, variable chips, and an integrated AI Architect.
 <p align="center">
-  <img src="docs/screenshots/harness-studio.png" alt="Loopy Visual Harness Studio" width="100%" />
+  <img src="docs/screenshots/harness-studio.png" alt="Loors Visual Harness Studio" width="100%" />
 </p>
 
 ### Unified Settings & API Discovery
 Manage local GGUF models, dynamic Hugging Face downloads, MCP servers, `llama.cpp` runtimes, and cloud/local APIs in one place.
 <p align="center">
-  <img src="docs/screenshots/settings-apis.png" alt="Loopy Settings" width="100%" />
+  <img src="docs/screenshots/settings-apis.png" alt="Loors Settings" width="100%" />
 </p>
 
 ---
 
 ## Headless CLI & Web Server
 
-Loopy ships with a dedicated headless binary (`loopy-cli`) for servers, SSH, cron jobs, and CI/CD pipelines:
+Loors ships with a dedicated headless binary (`loors-cli`) for servers, SSH, cron jobs, and CI/CD pipelines:
 
 ```bash
 # Run a harness once (with optional overrides & structured JSONL output)
-loopy-cli run ./my-harness.loopy.json --workspace ./repo --prompt "Fix failing tests" --jsonl
+loors-cli run ./my-harness.loors.json --workspace ./repo --prompt "Fix failing tests" --jsonl
 
 # Print only the final output (great for Unix pipes)
-loopy-cli run ./my-harness.loopy.json --quiet
+loors-cli run ./my-harness.loors.json --quiet
 
 # Start the headless HTTP/SSE server + full Web Panel (localhost by default)
-loopy-cli serve --port 7700
+loors-cli serve --port 7700
 
 # Expose on a server / LAN (automatically enforces Bearer token authentication)
-loopy-cli serve --host 0.0.0.0 --port 7700 --token "$LOOPY_TOKEN"
+loors-cli serve --host 0.0.0.0 --port 7700 --token "$LOORS_TOKEN"
 
 # Inspect server state
-loopy-cli status
-loopy-cli workflows
-loopy-cli models
+loors-cli status
+loors-cli workflows
+loors-cli models
 ```
 
 | Exit Code | Meaning |
@@ -114,9 +114,9 @@ loopy-cli models
 
 ### Prebuilt Installers
 Download the latest installer for your operating system from [**GitHub Releases**](../../releases):
-- **Windows**: `Loopy_*_x64-setup.exe` (branded NSIS installer) or `.msi`
-- **macOS**: `Loopy_*_aarch64.dmg`
-- **Linux**: `Loopy_*.AppImage` or `.deb`
+- **Windows**: `Loors_*_x64-setup.exe` (branded NSIS installer) or `.msi`
+- **macOS**: `Loors_*_aarch64.dmg`
+- **Linux**: `Loors_*.AppImage` or `.deb`
 
 On first launch, choose either:
 1. **100% Local AI** — Click **"Install llama.cpp automatically (1 click)"** to detect your GPU and download the inference engine, then download or reuse any GGUF model.
@@ -143,7 +143,7 @@ npm run tauri dev
 npm run build
 
 # Build headless CLI & server binary
-cargo build --release --bin loopy-cli --manifest-path src-tauri/Cargo.toml
+cargo build --release --bin loors-cli --manifest-path src-tauri/Cargo.toml
 
 # Run Rust test suite
 cargo test --manifest-path src-tauri/Cargo.toml
@@ -157,7 +157,7 @@ npm run tauri build
 ## Architecture
 
 ```text
-loopy/
+loors/
 ├── src/                                  # React 19 + TypeScript + React Flow + Zustand UI
 │   ├── lib/bridge.ts                     # Unified Tauri IPC / Web HTTP+SSE transport adapter
 │   ├── components/
@@ -172,7 +172,7 @@ loopy/
 │   └── i18n.ts                           # English (default) & Spanish translations
 ├── src-tauri/                            # Rust + Tauri v2 native backend
 │   └── src/
-│       ├── bin/loopy-cli.rs              # Headless CLI & self-hosted web server entrypoint
+│       ├── bin/loors-cli.rs              # Headless CLI & self-hosted web server entrypoint
 │       ├── headless.rs                   # Unified RPC dispatcher, HTTP/SSE server & CLI runner
 │       ├── agent_chat/                   # Autonomous agent loop, subagents, permissions & artifacts
 │       ├── architect/                    # AI Architect graph designer + read-only workspace tools
@@ -184,7 +184,7 @@ loopy/
 │       ├── triggers/                     # Webhook HTTP, Cron interval & Telegram Bot triggers
 │       └── updater.rs                    # Native GitHub Releases auto-updater
 ├── .github/workflows/
-│   ├── ci.yml                            # PR & push CI (frontend build + Rust tests + loopy-cli)
+│   ├── ci.yml                            # PR & push CI (frontend build + Rust tests + loors-cli)
 │   └── release.yml                       # Multi-OS release builds + SignPath Windows code signing
 └── docs/                                 # Logo & showcase screenshots
 ```
@@ -212,4 +212,4 @@ loopy/
 
 ## License
 
-Loopy is open-source software licensed under the [MIT License](LICENSE).
+Loors is open-source software licensed under the [MIT License](LICENSE).

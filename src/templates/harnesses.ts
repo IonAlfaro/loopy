@@ -1,15 +1,15 @@
 import {
   NODE_BLUEPRINTS,
-  type LoopyFlowEdge,
-  type LoopyFlowNode,
+  type LoorsFlowEdge,
+  type LoorsFlowNode,
 } from "../types/graph";
 
 export interface HarnessTemplate {
   id: string;
   name: string;
   label: string;
-  nodes: LoopyFlowNode[];
-  edges: LoopyFlowEdge[];
+  nodes: LoorsFlowNode[];
+  edges: LoorsFlowEdge[];
 }
 
 export const HARNESS_TEMPLATES: HarnessTemplate[] = [
@@ -20,7 +20,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
     nodes: [
       {
         id: "input-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 40, y: 180 },
         data: {
           kind: "task_input",
@@ -31,7 +31,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "model-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 40, y: 380 },
         data: {
           kind: "local_model",
@@ -42,7 +42,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "agent-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 340, y: 200 },
         data: {
           kind: "agent",
@@ -53,7 +53,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "shell-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 640, y: 200 },
         data: {
           kind: "shell",
@@ -64,7 +64,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "cond-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 920, y: 200 },
         data: {
           kind: "condition",
@@ -75,7 +75,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "guard-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 640, y: 420 },
         data: {
           kind: "loop_guard",
@@ -86,7 +86,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "out-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1200, y: 150 },
         data: {
           kind: "output",
@@ -113,7 +113,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
     nodes: [
       {
         id: "in-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 30, y: 160 },
         data: {
           kind: "task_input",
@@ -124,7 +124,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "m-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 30, y: 360 },
         data: {
           kind: "local_model",
@@ -135,7 +135,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "coder-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 310, y: 180 },
         data: {
           kind: "agent",
@@ -146,7 +146,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "git-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 590, y: 180 },
         data: {
           kind: "git_checkpoint",
@@ -157,7 +157,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "gate-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 870, y: 180 },
         data: {
           kind: "human_gate",
@@ -168,7 +168,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "done-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1160, y: 140 },
         data: {
           kind: "output",
@@ -194,7 +194,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
     nodes: [
       {
         id: "sr-in",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 20, y: 180 },
         data: {
           kind: "task_input",
@@ -205,7 +205,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "sr-snap",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 280, y: 180 },
         data: {
           kind: "git_checkpoint",
@@ -216,7 +216,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "sr-agent",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 540, y: 180 },
         data: {
           kind: "agent",
@@ -227,7 +227,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "sr-shell",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 800, y: 180 },
         data: {
           kind: "shell",
@@ -238,7 +238,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "sr-cond",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1060, y: 180 },
         data: {
           kind: "condition",
@@ -249,7 +249,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "sr-rb",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 960, y: 390 },
         data: {
           kind: "git_checkpoint",
@@ -260,7 +260,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "sr-comp",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 700, y: 390 },
         data: {
           kind: "context_compactor",
@@ -271,7 +271,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "sr-guard",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 430, y: 390 },
         data: {
           kind: "loop_guard",
@@ -282,7 +282,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "sr-out",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1320, y: 140 },
         data: {
           kind: "output",
@@ -311,7 +311,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
     nodes: [
       {
         id: "ad-in",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 20, y: 180 },
         data: {
           kind: "task_input",
@@ -326,7 +326,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "ad-model",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 20, y: 390 },
         data: {
           kind: "local_model",
@@ -337,18 +337,18 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "ad-mem-r",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 290, y: 180 },
         data: {
           kind: "memory_file",
           title: "Leer BACKLOG.md",
           status: "idle",
-          config: { mode: "read", filePath: ".loopy/BACKLOG.md", template: "" },
+          config: { mode: "read", filePath: ".loors/BACKLOG.md", template: "" },
         },
       },
       {
         id: "ad-reflect",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 560, y: 180 },
         data: {
           kind: "agent",
@@ -364,7 +364,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "ad-test",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 840, y: 180 },
         data: {
           kind: "shell",
@@ -375,7 +375,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "ad-diff",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1110, y: 180 },
         data: {
           kind: "git_checkpoint",
@@ -386,7 +386,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "ad-judge",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1380, y: 180 },
         data: {
           kind: "llm_judge",
@@ -402,7 +402,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "ad-mem-w",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1110, y: 410 },
         data: {
           kind: "memory_file",
@@ -410,7 +410,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
           status: "idle",
           config: {
             mode: "append",
-            filePath: ".loopy/BACKLOG.md",
+            filePath: ".loors/BACKLOG.md",
             template:
               "## Ciclo {{iteration}} (KEEP)\n- Cambio: {{agent_output}}\n- Judge: {{judge_reason}}\n",
           },
@@ -418,7 +418,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "ad-rb",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1380, y: 410 },
         data: {
           kind: "git_checkpoint",
@@ -429,7 +429,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "ad-guard",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 560, y: 410 },
         data: {
           kind: "loop_guard",
@@ -444,7 +444,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "ad-out",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 290, y: 410 },
         data: {
           kind: "output",
@@ -477,7 +477,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
     nodes: [
       {
         id: "jr-in",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 20, y: 180 },
         data: {
           kind: "task_input",
@@ -491,7 +491,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "jr-model",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 20, y: 390 },
         data: {
           kind: "local_model",
@@ -502,7 +502,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "jr-fetch",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 290, y: 180 },
         data: {
           kind: "http_request",
@@ -518,7 +518,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "jr-comp",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 560, y: 180 },
         data: {
           kind: "context_compactor",
@@ -532,7 +532,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "jr-coder",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 830, y: 180 },
         data: {
           kind: "agent",
@@ -548,7 +548,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "jr-test",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1100, y: 180 },
         data: {
           kind: "shell",
@@ -559,7 +559,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "jr-judge",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1370, y: 180 },
         data: {
           kind: "llm_judge",
@@ -573,7 +573,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "jr-guard",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1100, y: 400 },
         data: {
           kind: "loop_guard",
@@ -588,7 +588,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "jr-comment",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1640, y: 150 },
         data: {
           kind: "http_request",
@@ -598,13 +598,13 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
             method: "POST",
             url: "https://tu-empresa.atlassian.net/rest/api/3/issue/PROJ-123/comment",
             headersJson: "{\n  \"Authorization\": \"Basic ${JIRA_AUTH_B64}\"\n}",
-            bodyTemplate: "{\n  \"body\": \"Fix aplicado y verificado por Loopy: {{judge_reason}}\"\n}",
+            bodyTemplate: "{\n  \"body\": \"Fix aplicado y verificado por Loors: {{judge_reason}}\"\n}",
           },
         },
       },
       {
         id: "jr-out",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1910, y: 150 },
         data: {
           kind: "output",
@@ -635,7 +635,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
     nodes: [
       {
         id: "bj-in",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 20, y: 180 },
         data: {
           kind: "task_input",
@@ -652,7 +652,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "bj-list",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 280, y: 180 },
         data: {
           kind: "shell",
@@ -666,7 +666,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "bj-each",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 540, y: 180 },
         data: {
           kind: "for_each",
@@ -681,7 +681,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "bj-model",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 540, y: 400 },
         data: {
           kind: "local_model",
@@ -692,7 +692,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "bj-skill",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 540, y: 560 },
         data: {
           kind: "skill",
@@ -708,7 +708,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "bj-agent",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 830, y: 180 },
         data: {
           kind: "agent",
@@ -724,7 +724,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "bj-val",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1120, y: 180 },
         data: {
           kind: "json_validator",
@@ -739,7 +739,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "bj-guard",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 830, y: 420 },
         data: {
           kind: "loop_guard",
@@ -754,7 +754,7 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       },
       {
         id: "bj-mem",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 1400, y: 180 },
         data: {
           kind: "memory_file",
@@ -762,21 +762,21 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
           status: "idle",
           config: {
             mode: "append",
-            filePath: ".loopy/batch-results.jsonl",
+            filePath: ".loors/batch-results.jsonl",
             template: "{{custom_output}}",
           },
         },
       },
       {
         id: "bj-out",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 830, y: 20 },
         data: {
           kind: "output",
           title: "Batch Complete",
           status: "idle",
           config: {
-            label: "All items processed and validated into .loopy/batch-results.jsonl",
+            label: "All items processed and validated into .loors/batch-results.jsonl",
           },
         },
       },

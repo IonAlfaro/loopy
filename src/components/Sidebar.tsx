@@ -12,13 +12,13 @@ import { invoke } from "../lib/bridge";
 import {
   NODE_BLUEPRINTS,
   type CustomNodeDef,
-  type LoopyNodeKind,
+  type LoorsNodeKind,
 } from "../types/graph";
 import { useGraphStore } from "../store/useGraphStore";
 import { getNodeDescription, getNodeLabel, useI18n, type TranslationKey } from "../i18n";
 import { CustomNodeModal } from "./CustomNodeModal";
 
-const NODE_SECTIONS: { id: string; titleKey: TranslationKey; kinds: LoopyNodeKind[] }[] = [
+const NODE_SECTIONS: { id: string; titleKey: TranslationKey; kinds: LoorsNodeKind[] }[] = [
   {
     id: "essentials",
     titleKey: "sidebar.essentials",
@@ -106,7 +106,7 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <>
       {!collapsed && (
-        <aside className="loopy-sidebar">
+        <aside className="loors-sidebar">
           <div className="sidebar-search">
             <Search size={13} className="sidebar-search-icon" />
             <input
@@ -151,7 +151,7 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
                       type="button"
                       draggable
                       onDragStart={(e) => {
-                        e.dataTransfer.setData("application/loopy-node-kind", kind);
+                        e.dataTransfer.setData("application/loors-node-kind", kind);
                         e.dataTransfer.effectAllowed = "move";
                       }}
                       className="palette-item compact-row"

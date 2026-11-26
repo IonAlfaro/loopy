@@ -26,8 +26,8 @@ import {
 import {
   isResourceKind,
   NODE_BLUEPRINTS,
-  type LoopyFlowNode,
-  type LoopyNodeKind,
+  type LoorsFlowNode,
+  type LoorsNodeKind,
   type PortKind,
 } from "../../types/graph";
 import { useGraphStore } from "../../store/useGraphStore";
@@ -43,7 +43,7 @@ const PORT_COLORS: Record<PortKind, string> = {
   retry: "#4ade80",
 };
 
-function NodeIcon({ kind }: { kind: LoopyNodeKind }) {
+function NodeIcon({ kind }: { kind: LoorsNodeKind }) {
   const props = { size: 13, strokeWidth: 2.1 };
   switch (kind) {
     case "task_input":
@@ -95,7 +95,7 @@ function NodeIcon({ kind }: { kind: LoopyNodeKind }) {
   }
 }
 
-function summarizeConfig(node: LoopyFlowNode["data"], locale: "en" | "es"): string {
+function summarizeConfig(node: LoorsFlowNode["data"], locale: "en" | "es"): string {
   const es = locale === "es";
   const c = node.config;
   switch (node.kind) {
@@ -173,7 +173,7 @@ function summarizeConfig(node: LoopyFlowNode["data"], locale: "en" | "es"): stri
         ? es ? "2 ramas · git worktrees aislados" : "2 branches · isolated git worktrees"
         : es ? "2 ramas en paralelo" : "2 parallel branches";
     case "subgraph":
-      return String(c.workflowPath || (es ? "Sin .loopy.json asignado" : "No .loopy.json assigned")).slice(0, 56);
+      return String(c.workflowPath || (es ? "Sin .loors.json asignado" : "No .loors.json assigned")).slice(0, 56);
     case "custom":
       return `${String(c.runner ?? "shell")} · ${String(c.commandTemplate || c.httpUrl || c.promptTemplate || "custom")}`.slice(
         0,
@@ -203,7 +203,7 @@ function summarizeConfig(node: LoopyFlowNode["data"], locale: "en" | "es"): stri
   }
 }
 
-export function LoopyNode({ id, data, selected }: NodeProps<LoopyFlowNode>) {
+export function LoorsNode({ id, data, selected }: NodeProps<LoorsFlowNode>) {
   const edges = useGraphStore((s) => s.edges);
   const locale = useGraphStore((s) => s.locale);
   const bp = NODE_BLUEPRINTS[data.kind];
@@ -233,16 +233,16 @@ export function LoopyNode({ id, data, selected }: NodeProps<LoopyFlowNode>) {
 
   return (
     <div
-      className={`loopy-node ${isResource ? "is-resource" : "is-step"} ${
+      className={`loors-node ${isResource ? "is-resource" : "is-step"} ${
         selected ? "is-selected" : ""
       } status-${data.status}`}
       style={{ ["--node-accent" as string]: accent }}
     >
-      <div className="loopy-node-header">
-        <span className="loopy-node-icon" style={{ color: accent }}>
+      <div className="loors-node-header">
+        <span className="loors-node-icon" style={{ color: accent }}>
           <NodeIcon kind={data.kind} />
         </span>
-        <span className="loopy-node-title">{data.title}</span>
+        <span className="loors-node-title">{data.title}</span>
         {data.status === "success" ? (
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
             {data.statusMessage && (
@@ -254,7 +254,7 @@ export function LoopyNode({ id, data, selected }: NodeProps<LoopyFlowNode>) {
           </span>
         ) : (
           <span
-            className={`loopy-node-badge ${
+            className={`loors-node-badge ${
               isResource ? "badge-resource" : "badge-step"
             }`}
           >
@@ -269,46 +269,46 @@ export function LoopyNode({ id, data, selected }: NodeProps<LoopyFlowNode>) {
         )}
       </div>
 
-      <div className="loopy-node-summary">{summarizeConfig(data, locale)}</div>
+      <div className="loors-node-summary">{summarizeConfig(data, locale)}</div>
 
       {data.status === "running" && data.statusMessage && (
-        <div className="loopy-node-live">
+        <div className="loors-node-live">
           <span className="live-pulse" />
           <span>{data.statusMessage}</span>
         </div>
       )}
 
-      <div className="loopy-node-ports">
+      <div className="loors-node-ports">
         {Array.from({ length: rows }).map((_, idx) => {
           const inp = visibleInputs[idx];
           const out = visibleOutputs[idx];
           return (
-            <div key={idx} className="loopy-port-row">
-              <div className="loopy-port-left">
+            <div key={idx} className="loors-port-row">
+              <div className="loors-port-left">
                 {inp && (
                   <>
                     <Handle
                       type="target"
                       position={Position.Left}
                       id={inp.id}
-                      className={`loopy-handle ${
+                      className={`loors-handle ${
                         inp.kind === "exec" ? "handle-exec" : "handle-data"
                       }`}
                       style={{ background: PORT_COLORS[inp.kind] }}
                     />
-                    <span className="loopy-port-label">{inp.label}</span>
+                    <span className="loors-port-label">{inp.label}</span>
                   </>
                 )}
               </div>
-              <div className="loopy-port-right">
+              <div className="loors-port-right">
                 {out && (
                   <>
-                    <span className="loopy-port-label">{out.label}</span>
+                    <span className="loors-port-label">{out.label}</span>
                     <Handle
                       type="source"
                       position={Position.Right}
                       id={out.id}
-                      className={`loopy-handle ${
+                      className={`loors-handle ${
                         out.kind === "exec" ? "handle-exec" : "handle-data"
                       }`}
                       style={{ background: PORT_COLORS[out.kind] }}

@@ -67,7 +67,7 @@ pub struct SavedWorkflowEntry {
 pub(crate) fn workflows_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("loopy")
+        .join("loors")
         .join("workflows")
 }
 
@@ -86,9 +86,9 @@ fn list_saved_workflows() -> Vec<SavedWorkflowEntry> {
                 .and_then(|n| n.to_str())
                 .unwrap_or_default()
                 .to_string();
-            if fname.ends_with(".loopy.json") || fname.ends_with(".json") {
+            if fname.ends_with(".loors.json") || fname.ends_with(".json") {
                 let name = fname
-                    .trim_end_matches(".loopy.json")
+                    .trim_end_matches(".loors.json")
                     .trim_end_matches(".json")
                     .to_string();
                 list.push(SavedWorkflowEntry {
@@ -121,7 +121,7 @@ fn save_workflow_to_library(name: String, content: String) -> Result<String, Str
     } else {
         safe_name
     };
-    let path = dir.join(format!("{final_name}.loopy.json"));
+    let path = dir.join(format!("{final_name}.loors.json"));
     fs::write(&path, content).map_err(|e| format!("Error guardando flujo: {e}"))?;
     Ok(path.to_string_lossy().to_string())
 }
@@ -156,7 +156,7 @@ async fn install_runtime(
     backend: RuntimeBackendKind,
 ) -> Result<RuntimeInstallInfo, String> {
     do_install_runtime(backend, move |progress| {
-        let _ = app.emit("loopy://runtime-download", progress);
+        let _ = app.emit("loors://runtime-download", progress);
     })
     .await
 }
@@ -191,7 +191,7 @@ async fn download_hf_model(
     filename: String,
 ) -> Result<String, String> {
     do_download_hf_model(&repo_id, &filename, move |progress| {
-        let _ = app.emit("loopy://model-download", progress);
+        let _ = app.emit("loors://model-download", progress);
     })
     .await
 }
@@ -204,7 +204,7 @@ fn scan_local_models() -> Vec<LocalModelFile> {
         candidate_roots.push(home.join(".cache").join("lm-studio").join("models"));
     }
     if let Some(local) = dirs::data_local_dir() {
-        candidate_roots.push(local.join("loopy").join("models"));
+        candidate_roots.push(local.join("loors").join("models"));
     }
     candidate_roots.push(PathBuf::from("models"));
 
@@ -322,7 +322,7 @@ async fn test_mcp_server(
 
 #[tauri::command]
 fn ping_engine() -> String {
-    "loopy-core ready (phase 4)".to_string()
+    "loors-core ready (phase 4)".to_string()
 }
 
 #[tauri::command]
@@ -342,7 +342,7 @@ async fn start_workflow(
         backend.unwrap_or(RuntimeBackendKind::Auto),
         start_node_id,
         move |event| {
-            let _ = app.emit("loopy://engine-event", event);
+            let _ = app.emit("loors://engine-event", event);
         },
     )
 }
@@ -481,7 +481,7 @@ async fn pick_files(initial_dir: Option<String>) -> Result<Vec<String>, String> 
 fn stage_uploaded_file(name: String, bytes: Vec<u8>) -> Result<String, String> {
     let uploads_dir = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("loopy")
+        .join("loors")
         .join("uploads");
     fs::create_dir_all(&uploads_dir)
         .map_err(|e| format!("No se pudo crear carpeta uploads: {e}"))?;
@@ -554,7 +554,7 @@ async fn install_app_update(
 ) -> Result<String, String> {
     let app_prog = app.clone();
     let installer_path = updater::download_update_installer(&asset_url, &asset_name, move |ev| {
-        let _ = app_prog.emit("loopy://update-progress", ev);
+        let _ = app_prog.emit("loors://update-progress", ev);
     })
     .await?;
 
@@ -620,7 +620,7 @@ async fn architect_chat(
             .map(|(p, m)| format!("{p}/{m}"))
             .unwrap_or_else(|| model_path.clone());
         let _ = app.emit(
-            "loopy://engine-event",
+            "loors://engine-event",
             engine::types::EngineEvent::ModelState {
                 loaded: true,
                 model_name: Some(model_short),
@@ -658,7 +658,7 @@ async fn architect_chat(
         let port = engine.llama.ensure_loaded(load_cfg).await?;
 
         let _ = app.emit(
-            "loopy://engine-event",
+            "loors://engine-event",
             engine::types::EngineEvent::ModelState {
                 loaded: true,
                 model_name: Some(model_short),
@@ -680,7 +680,7 @@ async fn architect_chat(
         current_graph_json,
         Some(&cancel),
         move |ev| {
-            let _ = app_stream.emit("loopy://architect-event", ev);
+            let _ = app_stream.emit("loors://architect-event", ev);
         },
     )
     .await;
@@ -732,7 +732,7 @@ async fn reload_model_with_profile(
     engine.llama.shutdown().await;
     engine.llama.ensure_loaded(load_cfg).await?;
     let _ = app.emit(
-        "loopy://engine-event",
+        "loors://engine-event",
         engine::types::EngineEvent::ModelState {
             loaded: true,
             model_name: Some(model_short),
@@ -749,7 +749,7 @@ async fn unload_model(
 ) -> Result<(), String> {
     engine.llama.shutdown().await;
     let _ = app.emit(
-        "loopy://engine-event",
+        "loors://engine-event",
         engine::types::EngineEvent::ModelState {
             loaded: false,
             model_name: None,
@@ -779,7 +779,7 @@ async fn delete_local_model(
     }
     engine.llama.shutdown().await;
     let _ = app.emit(
-        "loopy://engine-event",
+        "loors://engine-event",
         engine::types::EngineEvent::ModelState {
             loaded: false,
             model_name: None,
@@ -933,7 +933,7 @@ async fn run_agent_turn(
             .map(|(p, m)| format!("{p}/{m}"))
             .unwrap_or_else(|| session.model_path.clone());
         let _ = app.emit(
-            "loopy://engine-event",
+            "loors://engine-event",
             engine::types::EngineEvent::ModelState {
                 loaded: true,
                 model_name: Some(model_short),
@@ -958,7 +958,7 @@ async fn run_agent_turn(
             None,
         );
         let _ = app.emit(
-            "loopy://engine-event",
+            "loors://engine-event",
             engine::types::EngineEvent::ModelState {
                 loaded: true,
                 model_name: Some(model_short),
@@ -979,7 +979,7 @@ async fn run_agent_turn(
         override_ctx,
         attachments.unwrap_or_default(),
         move |ev| {
-            let _ = app_events.emit("loopy://agent-chat-event", ev);
+            let _ = app_events.emit("loors://agent-chat-event", ev);
         },
     )
     .await
@@ -1082,8 +1082,8 @@ fn read_screenshot_base64(path: String) -> Result<String, String> {
     let p = Path::new(&path);
     let lower = path.to_lowercase();
     let is_img = lower.ends_with(".png") || lower.ends_with(".jpg") || lower.ends_with(".jpeg") || lower.ends_with(".webp");
-    if !is_img || (!lower.contains(".loopy") && !p.is_relative()) {
-        return Err("Solo se permite previsualizar capturas dentro de .loopy/.".to_string());
+    if !is_img || (!lower.contains(".loors") && !p.is_relative()) {
+        return Err("Solo se permite previsualizar capturas dentro de .loors/.".to_string());
     }
     let bytes = fs::read(p).map_err(|e| format!("Error leyendo captura: {e}"))?;
     Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
@@ -1104,13 +1104,13 @@ pub fn run() {
                 let _ = win.maximize();
             }
             tools::set_browser_frame_listener(move |ev| {
-                let _ = handle.emit("loopy://browser-frame", ev);
+                let _ = handle.emit("loors://browser-frame", ev);
             });
             tools::set_browser_screencast_listener(move |ev| {
-                let _ = handle_cast.emit("loopy://browser-screencast", ev);
+                let _ = handle_cast.emit("loors://browser-screencast", ev);
             });
             inference::llama_cpp::set_model_load_listener(move |ev| {
-                let _ = handle_load.emit("loopy://model-load-progress", ev);
+                let _ = handle_load.emit("loors://model-load-progress", ev);
             });
             Ok(())
         })
@@ -1185,7 +1185,7 @@ pub fn run() {
             browser_interact
         ])
         .build(tauri::generate_context!())
-        .expect("error while building Loopy Tauri application");
+        .expect("error while building Loors Tauri application");
 
     app.run(|app_handle, event| {
         if let RunEvent::Exit = event {

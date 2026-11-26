@@ -1,6 +1,6 @@
-# Contributing to Loopy
+# Contributing to Loors
 
-Thank you for your interest in contributing to **Loopy**! We welcome bug reports, feature suggestions, documentation improvements, custom node templates, and pull requests.
+Thank you for your interest in contributing to **Loors**! We welcome bug reports, feature suggestions, documentation improvements, custom node templates, and pull requests.
 
 ## Development Setup
 

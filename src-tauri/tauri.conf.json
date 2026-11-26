@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Loopy",
+  "productName": "Loors",
   "version": "0.1.0",
-  "identifier": "dev.loopy.studio",
+  "identifier": "dev.loors.studio",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Loopy — Agentic Loop Studio",
+        "title": "Loors — Agentic Loop Studio",
         "width": 1280,
         "height": 740,
         "minWidth": 960,
@@ -30,9 +30,9 @@
     "active": true,
     "targets": "all",
     "shortDescription": "Local-first AI agent and cyclic harness studio powered by llama.cpp",
-    "longDescription": "Loopy is a local-first desktop studio for autonomous AI agents and visual cyclic harnesses powered by an embedded llama.cpp runtime.",
+    "longDescription": "Loors is a local-first desktop studio for autonomous AI agents and visual cyclic harnesses powered by an embedded llama.cpp runtime.",
     "category": "DeveloperTool",
-    "copyright": "Copyright (c) 2026 Loopy Contributors",
+    "copyright": "Copyright (c) 2026 Loors Contributors",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -45,7 +45,7 @@
         "installerIcon": "icons/icon.ico",
         "headerImage": "icons/nsis-header.bmp",
         "sidebarImage": "icons/nsis-sidebar.bmp",
-        "startMenuFolder": "Loopy",
+        "startMenuFolder": "Loors",
         "compression": "lzma",
         "displayLanguageSelector": false,
         "languages": ["English", "Spanish"]

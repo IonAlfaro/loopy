@@ -194,7 +194,7 @@ impl EngineManager {
         let llama = self.llama.clone();
         let gate_slot = self.pending_gate.clone();
 
-        // Prepare live log file in %LOCALAPPDATA%/loopy/logs/latest.log
+        // Prepare live log file in %LOCALAPPDATA%/loors/logs/latest.log
         let log_file = open_run_log_file(&run_id);
         self.running.store(true, Ordering::SeqCst);
         let running_flag = self.running.clone();
@@ -1666,7 +1666,7 @@ async fn run_node(
 
         "memory_file" => {
             let mode = config_str(node, "mode", "read");
-            let rel_path = config_str(node, "filePath", ".loopy/BACKLOG.md");
+            let rel_path = config_str(node, "filePath", ".loors/BACKLOG.md");
             let template = config_str(
                 node,
                 "template",
@@ -1909,14 +1909,14 @@ async fn run_node(
             let msg_tpl = config_str(node, "messageTemplate", "{{agent_output}}");
             let rendered_msg = ctx.render_template(&msg_tpl);
             let message = if rendered_msg.trim().is_empty() {
-                "Ejecución de arnés Loopy finalizada.".to_string()
+                "Ejecución de arnés Loors finalizada.".to_string()
             } else {
                 rendered_msg
             };
             let iter = ctx.iteration;
 
             let client = match reqwest::Client::builder()
-                .user_agent("loopy-studio/0.1")
+                .user_agent("loors-studio/0.1")
                 .timeout(Duration::from_secs(20))
                 .build()
             {
@@ -2053,7 +2053,7 @@ async fn run_node(
             );
 
             let client = reqwest::Client::builder()
-                .user_agent("loopy-studio/0.1")
+                .user_agent("loors-studio/0.1")
                 .timeout(Duration::from_secs(30))
                 .build();
 
@@ -2231,7 +2231,7 @@ async fn run_node(
                     log(iter, LogStreamKind::System, format!("Custom HTTP {method} {url}"));
 
                     let Ok(client) = reqwest::Client::builder()
-                        .user_agent("loopy-studio/0.1")
+                        .user_agent("loors-studio/0.1")
                         .timeout(Duration::from_secs(30))
                         .build()
                     else {
@@ -2328,7 +2328,7 @@ async fn run_node(
                 log(
                     iter,
                     LogStreamKind::Stderr,
-                    "Sub-arnés sin ruta .loopy.json configurada.".into(),
+                    "Sub-arnés sin ruta .loors.json configurada.".into(),
                 );
                 return NodeStepOutcome::Continue("error".to_string());
             }
@@ -2462,7 +2462,7 @@ async fn run_node(
                             .duration_since(UNIX_EPOCH)
                             .unwrap_or_default()
                             .as_millis();
-                        let wt = std::env::temp_dir().join(format!("loopy-wt-{label}-{ts}"));
+                        let wt = std::env::temp_dir().join(format!("loors-wt-{label}-{ts}"));
                         let wt_str = wt.to_string_lossy().to_string();
                         let out = run_git(&ws_orig, &["worktree", "add", "--detach", &wt_str, "HEAD"]).await;
                         if wt.exists() {
@@ -3102,7 +3102,7 @@ fn render_with_node_fields(template: &str, ctx: &ExecutionContext, node: &GraphN
 
 fn open_run_log_file(run_id: &str) -> Option<(std::fs::File, std::fs::File)> {
     let dir = dirs::data_local_dir()?
-        .join("loopy")
+        .join("loors")
         .join("logs");
     std::fs::create_dir_all(&dir).ok()?;
     let latest = std::fs::OpenOptions::new()
@@ -3500,12 +3500,12 @@ mod tests {
         let hf_repos = crate::models::search_hf_models("Qwen3.6-35B-A3B", None).await;
         println!("[E2E] HF search Qwen3.6-35B-A3B => {:?}", hf_repos.as_ref().map(|v| v.len()));
 
-        let model_path = std::env::var("LOOPY_E2E_MODEL")
-            .expect("Set LOOPY_E2E_MODEL to a local .gguf path before running this ignored E2E test");
+        let model_path = std::env::var("LOORS_E2E_MODEL")
+            .expect("Set LOORS_E2E_MODEL to a local .gguf path before running this ignored E2E test");
         assert!(Path::new(&model_path).exists(), "Model GGUF not found at {model_path}");
 
-        let ws = std::env::var("LOOPY_E2E_WORKSPACE")
-            .expect("Set LOOPY_E2E_WORKSPACE to a test repo directory before running this ignored E2E test");
+        let ws = std::env::var("LOORS_E2E_WORKSPACE")
+            .expect("Set LOORS_E2E_WORKSPACE to a test repo directory before running this ignored E2E test");
         assert!(Path::new(&ws).exists(), "E2E test workspace not found");
 
         let graph = WorkflowGraph {
@@ -3520,7 +3520,7 @@ mod tests {
                             ("workspace".into(), json!(ws)),
                             (
                                 "prompt".into(),
-                                json!("Audita Source/JavaScriptCore/wasm en WebKit 605. Usa list_files o find_files para ver archivos, lee 1 archivo clave con read_file (usa start_line y end_line para no leer todo) y busca un posible bug de bounds-check, integer overflow o UAF. Escribe un reporte conciso en .loopy/REPORT.md con write_file."),
+                                json!("Audita Source/JavaScriptCore/wasm en WebKit 605. Usa list_files o find_files para ver archivos, lee 1 archivo clave con read_file (usa start_line y end_line para no leer todo) y busca un posible bug de bounds-check, integer overflow o UAF. Escribe un reporte conciso en .loors/REPORT.md con write_file."),
                             ),
                         ]),
                     },
@@ -3560,7 +3560,7 @@ mod tests {
                         config: HashMap::from([
                             (
                                 "systemPrompt".into(),
-                                json!("Eres un auditor de seguridad de WebKit/C++. Usa las herramientas de forma eficiente (máximo 5 pasos) y escribe el hallazgo en .loopy/REPORT.md."),
+                                json!("Eres un auditor de seguridad de WebKit/C++. Usa las herramientas de forma eficiente (máximo 5 pasos) y escribe el hallazgo en .loors/REPORT.md."),
                             ),
                             (
                                 "tools".into(),
@@ -3677,7 +3677,7 @@ mod tests {
             println!("[AUDIT] Modelo ya descargado: {}", expected_path.display());
             expected_path.to_string_lossy().to_string()
         } else {
-            println!("[AUDIT] Descargando {repo_id}/{filename} con Loopy models::download_hf_model...");
+            println!("[AUDIT] Descargando {repo_id}/{filename} con Loors models::download_hf_model...");
             let last_pct = std::sync::atomic::AtomicU32::new(0);
             crate::models::download_hf_model(repo_id, filename, move |ev| {
                 if let Some(p) = ev.percent {
@@ -3695,9 +3695,9 @@ mod tests {
         let auto_ctx = compute_auto_context_size(&model_path);
         println!("[AUDIT] Auto context size calculado para este equipo: {auto_ctx} tokens");
 
-        let ws = std::env::var("LOOPY_E2E_WORKSPACE")
-            .expect("Set LOOPY_E2E_WORKSPACE to a test repo directory before running this ignored E2E test");
-        let _ = std::fs::remove_dir_all(Path::new(&ws).join(".loopy"));
+        let ws = std::env::var("LOORS_E2E_WORKSPACE")
+            .expect("Set LOORS_E2E_WORKSPACE to a test repo directory before running this ignored E2E test");
+        let _ = std::fs::remove_dir_all(Path::new(&ws).join(".loors"));
 
         let graph = WorkflowGraph {
             name: "webkit-605-qwen38-audit".into(),
@@ -3711,7 +3711,7 @@ mod tests {
                             ("workspace".into(), json!(ws)),
                             (
                                 "prompt".into(),
-                                json!("Audita Source/JavaScriptCore/wasm y Source/JavaScriptCore/dfg en AppleWebKit 605. En cada ciclo: 1) revisa la memoria para no repetir, 2) inspecciona un archivo con grep_search/read_file, 3) escribe tu hallazgo concreto en .loopy/REPORT.md usando write_file, y responde un resumen breve."),
+                                json!("Audita Source/JavaScriptCore/wasm y Source/JavaScriptCore/dfg en AppleWebKit 605. En cada ciclo: 1) revisa la memoria para no repetir, 2) inspecciona un archivo con grep_search/read_file, 3) escribe tu hallazgo concreto en .loors/REPORT.md usando write_file, y responde un resumen breve."),
                             ),
                         ]),
                     },
@@ -3740,7 +3740,7 @@ mod tests {
                             ("mode".into(), json!("inject")),
                             (
                                 "inlineInstructions".into(),
-                                json!("En WebKit/JSC busca integer overflows, bounds checks faltantes o raw pointers sin RefPtr/CheckedPtr. Usa como máximo 4 tool calls antes de escribir .loopy/REPORT.md con write_file."),
+                                json!("En WebKit/JSC busca integer overflows, bounds checks faltantes o raw pointers sin RefPtr/CheckedPtr. Usa como máximo 4 tool calls antes de escribir .loors/REPORT.md con write_file."),
                             ),
                         ]),
                     },
@@ -3752,7 +3752,7 @@ mod tests {
                         title: "Leer AUDITED.md".into(),
                         config: HashMap::from([
                             ("mode".into(), json!("read")),
-                            ("filePath".into(), json!(".loopy/AUDITED.md")),
+                            ("filePath".into(), json!(".loors/AUDITED.md")),
                         ]),
                     },
                 },
@@ -3764,7 +3764,7 @@ mod tests {
                         config: HashMap::from([
                             (
                                 "systemPrompt".into(),
-                                json!("Eres un auditor de seguridad C++/WebKit. Memoria previa:\n{{memory}}\nNo repitas archivos ya auditados. Escribe el reporte en .loopy/REPORT.md y devuelve un resumen concreto."),
+                                json!("Eres un auditor de seguridad C++/WebKit. Memoria previa:\n{{memory}}\nNo repitas archivos ya auditados. Escribe el reporte en .loors/REPORT.md y devuelve un resumen concreto."),
                             ),
                             (
                                 "tools".into(),
@@ -3795,7 +3795,7 @@ mod tests {
                         title: "Guardar AUDITED.md".into(),
                         config: HashMap::from([
                             ("mode".into(), json!("append")),
-                            ("filePath".into(), json!(".loopy/AUDITED.md")),
+                            ("filePath".into(), json!(".loors/AUDITED.md")),
                             (
                                 "template".into(),
                                 json!("## Ciclo {{iteration}}\n- Judge: {{judge_reason}}\n- Resumen: {{agent_output}}\n"),
@@ -3900,16 +3900,16 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis();
-        let ws = std::env::temp_dir().join(format!("loopy-test-loop-{ts}"));
+        let ws = std::env::temp_dir().join(format!("loors-test-loop-{ts}"));
         std::fs::create_dir_all(&ws).unwrap();
         let ws_str = ws.to_string_lossy().to_string();
 
         // Worker command: emits invalid JSON (missing keys) on the first attempt for "beta",
         // then valid JSON wrapped in markdown fences for every other call.
         let worker_cmd = if cfg!(target_os = "windows") {
-            "$flag = '.loopy\\beta_failed'; if ('{{item}}' -eq 'beta' -and -not (Test-Path $flag)) { New-Item -ItemType Directory -Force -Path '.loopy' | Out-Null; Set-Content -Path $flag -Value '1'; Write-Output '{\"item\":\"beta\"}' } else { Write-Output ('```json\n{\"item\":\"{{item}}\",\"status\":\"ok\",\"idx\":\"{{item_index}}/{{item_total}}\"}\n```') }"
+            "$flag = '.loors\\beta_failed'; if ('{{item}}' -eq 'beta' -and -not (Test-Path $flag)) { New-Item -ItemType Directory -Force -Path '.loors' | Out-Null; Set-Content -Path $flag -Value '1'; Write-Output '{\"item\":\"beta\"}' } else { Write-Output ('```json\n{\"item\":\"{{item}}\",\"status\":\"ok\",\"idx\":\"{{item_index}}/{{item_total}}\"}\n```') }"
         } else {
-            "if [ '{{item}}' = 'beta' ] && [ ! -f .loopy/beta_failed ]; then mkdir -p .loopy && touch .loopy/beta_failed && echo '{\"item\":\"beta\"}'; else printf '```json\\n{\"item\":\"{{item}}\",\"status\":\"ok\",\"idx\":\"{{item_index}}/{{item_total}}\"}\\n```\\n'; fi"
+            "if [ '{{item}}' = 'beta' ] && [ ! -f .loors/beta_failed ]; then mkdir -p .loors && touch .loors/beta_failed && echo '{\"item\":\"beta\"}'; else printf '```json\\n{\"item\":\"{{item}}\",\"status\":\"ok\",\"idx\":\"{{item_index}}/{{item_total}}\"}\\n```\\n'; fi"
         };
 
         let gen_cmd = if cfg!(target_os = "windows") {
@@ -3992,7 +3992,7 @@ mod tests {
                         title: "Save Valid JSON".into(),
                         config: HashMap::from([
                             ("mode".into(), json!("append")),
-                            ("filePath".into(), json!(".loopy/results.jsonl")),
+                            ("filePath".into(), json!(".loors/results.jsonl")),
                             ("template".into(), json!("{{custom_output}}")),
                         ]),
                     },
@@ -4039,7 +4039,7 @@ mod tests {
         assert!(matches!(outcome, RunOutcomeKind::Completed));
 
         // 1. Verify all 3 items were processed and persisted as valid JSON
-        let saved = std::fs::read_to_string(ws.join(".loopy/results.jsonl"))
+        let saved = std::fs::read_to_string(ws.join(".loors/results.jsonl"))
             .expect("results.jsonl should exist");
         let lines: Vec<&str> = saved.lines().filter(|l| !l.trim().is_empty()).collect();
         assert_eq!(lines.len(), 3, "Expected 3 validated items, got:\n{saved}");
@@ -4090,7 +4090,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis();
-        let ws = std::env::temp_dir().join(format!("loopy-test-resume-{ts}"));
+        let ws = std::env::temp_dir().join(format!("loors-test-resume-{ts}"));
         std::fs::create_dir_all(&ws).unwrap();
         let ws_str = ws.to_string_lossy().to_string();
 

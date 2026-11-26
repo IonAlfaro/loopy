@@ -344,8 +344,8 @@ export function ModelsModal({
           typeof err === "string"
             ? err
             : locale === "es"
-              ? "Ejecuta Loopy en modo escritorio (Tauri) para buscar y descargar modelos de Hugging Face."
-              : "Run Loopy in desktop mode (Tauri) to browse and download models from Hugging Face."
+              ? "Ejecuta Loors en modo escritorio (Tauri) para buscar y descargar modelos de Hugging Face."
+              : "Run Loors in desktop mode (Tauri) to browse and download models from Hugging Face."
         );
       } finally {
         setSearching(false);
@@ -368,7 +368,7 @@ export function ModelsModal({
 
     let cancelled = false;
     let unlisten: (() => void) | undefined;
-    listen<ModelDownloadEvent>("loopy://model-download", (ev) => {
+    listen<ModelDownloadEvent>("loors://model-download", (ev) => {
       if (cancelled) return;
       const p = ev.payload;
       const key = `${p.repo_id}::${p.filename}`;
@@ -383,11 +383,11 @@ export function ModelsModal({
       .catch(() => {});
 
     const onModelsChanged = () => refreshLocal();
-    window.addEventListener("loopy:models-changed", onModelsChanged);
+    window.addEventListener("loors:models-changed", onModelsChanged);
 
     return () => {
       cancelled = true;
-      window.removeEventListener("loopy:models-changed", onModelsChanged);
+      window.removeEventListener("loors:models-changed", onModelsChanged);
       if (unlisten) unlisten();
     };
   }, [open, initialTab, refreshLocal, refreshCloudProviders]);
@@ -525,7 +525,7 @@ export function ModelsModal({
       );
       setCloudProviders(updated);
       await invoke("save_cloud_providers", { providers: updated });
-      window.dispatchEvent(new CustomEvent("loopy:providers-changed"));
+      window.dispatchEvent(new CustomEvent("loors:providers-changed"));
       onNotice(`${prov.name}: ${models.length} modelos cargados`);
     } catch (err) {
       setProviderErrors((prev) => ({
@@ -546,7 +546,7 @@ export function ModelsModal({
     setError(null);
     try {
       await invoke("save_cloud_providers", { providers: cloudProviders });
-      window.dispatchEvent(new CustomEvent("loopy:providers-changed"));
+      window.dispatchEvent(new CustomEvent("loors:providers-changed"));
       if (!silent) {
         onNotice("Proveedores Cloud / API guardados");
       }
@@ -564,7 +564,7 @@ export function ModelsModal({
     setCloudProviders(updated);
     try {
       await invoke("save_cloud_providers", { providers: updated });
-      window.dispatchEvent(new CustomEvent("loopy:providers-changed"));
+      window.dispatchEvent(new CustomEvent("loors:providers-changed"));
     } catch {
       // ignore
     }
@@ -588,7 +588,7 @@ export function ModelsModal({
         setActiveModelPath("");
       }
       refreshLocal();
-      window.dispatchEvent(new CustomEvent("loopy:models-changed"));
+      window.dispatchEvent(new CustomEvent("loors:models-changed"));
       onNotice(`Modelo eliminado: ${file.name}`);
     } catch (err) {
       setError(typeof err === "string" ? err : String(err));
@@ -1087,7 +1087,7 @@ export function ModelsModal({
                 <button
                   type="button"
                   className="btn-secondary"
-                  title="Volver a escanear carpetas de LM Studio y Loopy"
+                  title="Volver a escanear carpetas de LM Studio y Loors"
                   onClick={refreshLocal}
                 >
                   <RefreshCw size={13} />
@@ -1125,8 +1125,8 @@ export function ModelsModal({
                   <p>
                     {localModels.length === 0
                       ? locale === "es"
-                        ? "Loopy detecta automáticamente modelos descargados en LM Studio y en su carpeta local, o puedes descargar cuantizaciones ahora desde Hugging Face."
-                        : "Loopy automatically detects GGUF models from LM Studio and its local folder, or you can download quantizations directly from Hugging Face."
+                        ? "Loors detecta automáticamente modelos descargados en LM Studio y en su carpeta local, o puedes descargar cuantizaciones ahora desde Hugging Face."
+                        : "Loors automatically detects GGUF models from LM Studio and its local folder, or you can download quantizations directly from Hugging Face."
                       : locale === "es"
                         ? "Prueba limpiando el filtro o explorando nuevos modelos en Hugging Face."
                         : "Try clearing the filter or exploring models on Hugging Face."}

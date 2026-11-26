@@ -99,13 +99,13 @@ export function SettingsModal({
       code: "en",
       name: "English",
       native: "English (Default)",
-      desc: "Use Loopy in English across all views and modals.",
+      desc: "Use Loors in English across all views and modals.",
     },
     {
       code: "es",
       name: "Spanish",
       native: "Español",
-      desc: "Usa Loopy en español en todas las pantallas y modales.",
+      desc: "Usa Loors en español en todas las pantallas y modales.",
     },
   ];
 

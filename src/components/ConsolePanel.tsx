@@ -178,8 +178,8 @@ export function ConsolePanel() {
       setConsoleOpen(true);
       void refreshReports();
     };
-    window.addEventListener("loopy:open-reports", onOpenReports);
-    return () => window.removeEventListener("loopy:open-reports", onOpenReports);
+    window.addEventListener("loors:open-reports", onOpenReports);
+    return () => window.removeEventListener("loors:open-reports", onOpenReports);
   }, [setConsoleOpen, refreshReports]);
 
   const openDiffTab = () => {
@@ -378,14 +378,14 @@ export function ConsolePanel() {
             loadingReports ? (
               <div className="console-empty">
                 {locale === "es"
-                  ? "Leyendo reportes en `.loopy/`…"
-                  : "Reading reports in `.loopy/`…"}
+                  ? "Leyendo reportes en `.loors/`…"
+                  : "Reading reports in `.loors/`…"}
               </div>
             ) : reportFiles.length === 0 ? (
               <div className="console-empty">
                 {locale === "es"
-                  ? "No se encontraron archivos Markdown en `.loopy/` del workspace actual."
-                  : "No Markdown files found in `.loopy/` for the current workspace."}
+                  ? "No se encontraron archivos Markdown en `.loors/` del workspace actual."
+                  : "No Markdown files found in `.loors/` for the current workspace."}
               </div>
             ) : (
               <div className="reports-viewer">

@@ -106,10 +106,10 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${data.name || "workflow"}.loopy.json`;
+    a.download = `${data.name || "workflow"}.loors.json`;
     a.click();
     URL.revokeObjectURL(url);
-    setStatusMsg(`Exportado ${data.name || "workflow"}.loopy.json`);
+    setStatusMsg(`Exportado ${data.name || "workflow"}.loors.json`);
   };
 
   const handleCopyJson = async () => {
@@ -201,7 +201,7 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
             <input
               ref={fileRef}
               type="file"
-              accept=".json,.loopy.json"
+              accept=".json,.loors.json"
               hidden
               onChange={handleImportFile}
             />
@@ -215,7 +215,7 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
             {savedList.length === 0 ? (
               <div className="hw-note">
                 Aún no has guardado arneses en tu biblioteca local. También
-                puedes arrastrar y soltar un archivo <code>.loopy.json</code>{" "}
+                puedes arrastrar y soltar un archivo <code>.loors.json</code>{" "}
                 directamente sobre el canvas.
               </div>
             ) : (
@@ -271,7 +271,7 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
             <span>Importar pegando JSON directamente</span>
             <textarea
               rows={4}
-              placeholder='Pega aquí el contenido de un .loopy.json {"schemaVersion": 1, "name": "...", "nodes": [...], "edges": [...]}'
+              placeholder='Pega aquí el contenido de un .loors.json {"schemaVersion": 1, "name": "...", "nodes": [...], "edges": [...]}'
               value={pasteJson}
               onChange={(e) => setPasteJson(e.target.value)}
             />

@@ -102,7 +102,7 @@ function formatRelativeAge(epochSecs: number, locale: string): string {
 
 function loadStoredProjects(): string[] {
   try {
-    const raw = localStorage.getItem("loopy_agent_projects");
+    const raw = localStorage.getItem("loors_agent_projects");
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed)
@@ -115,7 +115,7 @@ function loadStoredProjects(): string[] {
 
 function saveStoredProjects(list: string[]) {
   try {
-    localStorage.setItem("loopy_agent_projects", JSON.stringify(list));
+    localStorage.setItem("loors_agent_projects", JSON.stringify(list));
   } catch {
     // ignore
   }
@@ -184,11 +184,11 @@ export function AgentWorkspaceView() {
   const rightPanelOpen = useGraphStore((s) => s.rightPanelOpen);
   const setRightPanelOpen = useGraphStore((s) => s.setRightPanelOpen);
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
-    const saved = Number(localStorage.getItem("loopy_agent_left_w"));
+    const saved = Number(localStorage.getItem("loors_agent_left_w"));
     return Number.isFinite(saved) && saved >= 190 && saved <= 420 ? saved : 252;
   });
   const [rightPanelWidth, setRightPanelWidth] = useState<number>(() => {
-    const saved = Number(localStorage.getItem("loopy_agent_right_w"));
+    const saved = Number(localStorage.getItem("loors_agent_right_w"));
     return Number.isFinite(saved) && saved >= 260 && saved <= 680 ? saved : 390;
   });
 
@@ -201,11 +201,11 @@ export function AgentWorkspaceView() {
       if (side === "left") {
         const next = Math.min(420, Math.max(190, initial + dx));
         setSidebarWidth(next);
-        localStorage.setItem("loopy_agent_left_w", String(next));
+        localStorage.setItem("loors_agent_left_w", String(next));
       } else {
         const next = Math.min(680, Math.max(260, initial - dx));
         setRightPanelWidth(next);
-        localStorage.setItem("loopy_agent_right_w", String(next));
+        localStorage.setItem("loors_agent_right_w", String(next));
       }
     };
     const onUp = () => {
@@ -379,11 +379,11 @@ export function AgentWorkspaceView() {
     refreshCloudProviders();
     const onModelsChanged = () => refreshLocalModels();
     const onProvidersChanged = () => refreshCloudProviders();
-    window.addEventListener("loopy:models-changed", onModelsChanged);
-    window.addEventListener("loopy:providers-changed", onProvidersChanged);
+    window.addEventListener("loors:models-changed", onModelsChanged);
+    window.addEventListener("loors:providers-changed", onProvidersChanged);
     return () => {
-      window.removeEventListener("loopy:models-changed", onModelsChanged);
-      window.removeEventListener("loopy:providers-changed", onProvidersChanged);
+      window.removeEventListener("loors:models-changed", onModelsChanged);
+      window.removeEventListener("loors:providers-changed", onProvidersChanged);
     };
   }, [refreshSessions, refreshLocalModels, refreshCloudProviders]);
 
@@ -393,7 +393,7 @@ export function AgentWorkspaceView() {
     setRtInstallProgress(null);
     let unlisten: (() => void) | undefined;
     try {
-      unlisten = await listen<RuntimeDownloadEvent>("loopy://runtime-download", (ev) => {
+      unlisten = await listen<RuntimeDownloadEvent>("loors://runtime-download", (ev) => {
         setRtInstallProgress(ev.payload);
       });
       const hw = await invoke<HardwareProfile>("detect_hardware");
@@ -479,9 +479,9 @@ export function AgentWorkspaceView() {
         syncFromProfile(detail.profile);
       }
     };
-    window.addEventListener("loopy:model-profile-updated", onProfileUpdated);
+    window.addEventListener("loors:model-profile-updated", onProfileUpdated);
     return () =>
-      window.removeEventListener("loopy:model-profile-updated", onProfileUpdated);
+      window.removeEventListener("loors:model-profile-updated", onProfileUpdated);
   }, [session.modelPath, loadedContextSize]);
 
   useEffect(() => {
@@ -583,7 +583,7 @@ export function AgentWorkspaceView() {
 
   useEffect(() => {
     invoke<SkillSummary[]>("list_skills", { workspace: session.workspace || "." })
-      .then((s) => setSkills(s.filter((item) => item.name !== "architect-loopy")))
+      .then((s) => setSkills(s.filter((item) => item.name !== "architect-loors")))
       .catch(() => setSkills([]));
     if (session.workspace && session.workspace !== ".") {
       invoke<string[]>("find_workspace_files", {
@@ -605,7 +605,7 @@ export function AgentWorkspaceView() {
     let unlistenAgent: (() => void) | undefined;
     let unlistenBrowser: (() => void) | undefined;
 
-    listen<AgentChatEvent>("loopy://agent-chat-event", (ev) => {
+    listen<AgentChatEvent>("loors://agent-chat-event", (ev) => {
       if (cancelled) return;
       const p = ev.payload;
       if (p.session_id !== activeSessionIdRef.current) return;
@@ -720,7 +720,7 @@ export function AgentWorkspaceView() {
       })
       .catch(() => {});
 
-    listen<BrowserFrameEvent>("loopy://browser-frame", (ev) => {
+    listen<BrowserFrameEvent>("loors://browser-frame", (ev) => {
       if (!cancelled) {
         setLiveBrowserFrame(ev.payload);
         setRightPanelOpen(true);
@@ -1663,7 +1663,7 @@ export function AgentWorkspaceView() {
             }}
             onDoubleClick={() => {
               setSidebarWidth(252);
-              localStorage.setItem("loopy_agent_left_w", "252");
+              localStorage.setItem("loors_agent_left_w", "252");
             }}
           />
         </>
@@ -1776,7 +1776,7 @@ export function AgentWorkspaceView() {
                         disabled={autoInstallingRt}
                         onClick={() => {
                           if (installedBackends.length > 0) {
-                            window.dispatchEvent(new CustomEvent("loopy:open-runtime-modal"));
+                            window.dispatchEvent(new CustomEvent("loors:open-runtime-modal"));
                           } else {
                             void handleAutoInstallRuntime();
                           }
@@ -1818,7 +1818,7 @@ export function AgentWorkspaceView() {
                         type="button"
                         className={`onboarding-step ${localModels.length > 0 ? "is-done" : ""}`}
                         onClick={() =>
-                          window.dispatchEvent(new CustomEvent("loopy:open-models-modal"))
+                          window.dispatchEvent(new CustomEvent("loors:open-models-modal"))
                         }
                       >
                         <span className="onboarding-step-num">
@@ -1843,7 +1843,7 @@ export function AgentWorkspaceView() {
                         className="onboarding-step"
                         onClick={() =>
                           window.dispatchEvent(
-                            new CustomEvent("loopy:open-models-modal", {
+                            new CustomEvent("loors:open-models-modal", {
                               detail: { tab: "cloud" },
                             })
                           )
@@ -1938,7 +1938,7 @@ export function AgentWorkspaceView() {
                       <span className="agent-model-tag">
                         <Bot size={13} style={{ color: "#a855f7" }} />
                         <span>
-                          {session.modelPath.split(/[\\/]/).pop() || "Agente Loopy"}
+                          {session.modelPath.split(/[\\/]/).pop() || "Agente Loors"}
                         </span>
                       </span>
                       {msg.content && (
@@ -2695,7 +2695,7 @@ export function AgentWorkspaceView() {
                             onClick={() => {
                               setModelPickerOpen(false);
                               window.dispatchEvent(
-                                new CustomEvent("loopy:open-models-modal")
+                                new CustomEvent("loors:open-models-modal")
                               );
                             }}
                           >
@@ -2708,7 +2708,7 @@ export function AgentWorkspaceView() {
                             onClick={() => {
                               setModelPickerOpen(false);
                               window.dispatchEvent(
-                                new CustomEvent("loopy:open-models-modal", {
+                                new CustomEvent("loors:open-models-modal", {
                                   detail: { tab: "cloud" },
                                 })
                               );
@@ -3070,7 +3070,7 @@ export function AgentWorkspaceView() {
                 }}
                 onDoubleClick={() => {
                   setRightPanelWidth(390);
-                  localStorage.setItem("loopy_agent_right_w", "390");
+                  localStorage.setItem("loors_agent_right_w", "390");
                 }}
               />
               )}

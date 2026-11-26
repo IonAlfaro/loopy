@@ -50,10 +50,10 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          LOOPY_UPDATE_REPO: ${{ github.repository }}
+          LOORS_UPDATE_REPO: ${{ github.repository }}
         with:
           tagName: v__VERSION__
-          releaseName: "Loopy v__VERSION__"
+          releaseName: "Loors v__VERSION__"
           releaseBody: "Native installers for Windows (.exe / .msi), macOS (.dmg), and Linux (.AppImage / .deb)."
           releaseDraft: true
           prerelease: false
@@ -79,7 +79,7 @@ jobs:
 
       - name: Build Windows installers (NSIS & MSI)
         env:
-          LOOPY_UPDATE_REPO: ${{ github.repository }}
+          LOORS_UPDATE_REPO: ${{ github.repository }}
         run: npm run tauri build -- --bundles nsis,msi
 
       - name: Stage unsigned Windows installers
@@ -94,7 +94,7 @@ jobs:
         id: upload-unsigned
         uses: actions/upload-artifact@v4
         with:
-          name: loopy-windows-unsigned
+          name: loors-windows-unsigned
           path: staging/
           retention-days: 1
 
@@ -117,7 +117,7 @@ jobs:
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'loopy' }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'loors' }}
           signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG || 'release-signing' }}
           github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
           wait-for-completion: true
@@ -139,7 +139,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.1.0' }}
-          name: "Loopy ${{ github.ref_type == 'tag' && github.ref_name || 'v0.1.0' }}"
+          name: "Loors ${{ github.ref_type == 'tag' && github.ref_name || 'v0.1.0' }}"
           body: "Native installers for Windows (.exe / .msi), macOS (.dmg), and Linux (.AppImage / .deb)."
           draft: true
           files: ${{ steps.pick-files.outputs.dir }}
