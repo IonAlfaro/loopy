@@ -38,7 +38,7 @@ struct UpdaterConfig {
 fn updater_config_path() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("loopy")
+        .join("loors")
         .join("updater.json")
 }
 
@@ -70,12 +70,12 @@ pub fn configured_update_repo() -> Option<String> {
     if let Some(saved) = load_saved_repo() {
         return Some(saved);
     }
-    if let Ok(v) = std::env::var("LOOPY_UPDATE_REPO") {
+    if let Ok(v) = std::env::var("LOORS_UPDATE_REPO") {
         if !v.trim().is_empty() {
             return Some(v.trim().to_string());
         }
     }
-    if let Some(v) = option_env!("LOOPY_UPDATE_REPO") {
+    if let Some(v) = option_env!("LOORS_UPDATE_REPO") {
         if !v.trim().is_empty() {
             return Some(v.trim().to_string());
         }
@@ -85,7 +85,7 @@ pub fn configured_update_repo() -> Option<String> {
             return Some(v.trim().to_string());
         }
     }
-    Some("IonAlfaro/loopy".to_string())
+    Some("IonAlfaro/loors".to_string())
 }
 
 pub fn current_app_version() -> String {
@@ -175,20 +175,20 @@ pub async fn check_for_updates(repo_override: Option<String>) -> Result<UpdateCh
         .filter(|r| !r.is_empty())
         .or_else(configured_update_repo)
         .ok_or_else(|| {
-            "Repositorio de actualizaciones no configurado todavía (ej. tu-usuario/loopy)."
+            "Repositorio de actualizaciones no configurado todavía (ej. tu-usuario/loors)."
                 .to_string()
         })?;
 
     if !repo.contains('/') || repo.contains(' ') {
         return Err(
-            "Formato de repositorio inválido. Usa 'usuario/repositorio' (ej. tu-usuario/loopy)."
+            "Formato de repositorio inválido. Usa 'usuario/repositorio' (ej. tu-usuario/loors)."
                 .to_string(),
         );
     }
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(20))
-        .user_agent(format!("Loopy-Desktop/{}", current_app_version()))
+        .user_agent(format!("Loors-Desktop/{}", current_app_version()))
         .build()
         .map_err(|e| format!("Error creando cliente HTTP: {e}"))?;
 
@@ -283,7 +283,7 @@ where
         return Err("Nombre de instalador inválido.".to_string());
     }
 
-    let updates_dir = std::env::temp_dir().join("loopy-updates");
+    let updates_dir = std::env::temp_dir().join("loors-updates");
     fs::create_dir_all(&updates_dir)
         .map_err(|e| format!("No se pudo crear carpeta temporal: {e}"))?;
     let dest = updates_dir.join(&safe_name);
@@ -298,7 +298,7 @@ where
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(600))
-        .user_agent(format!("Loopy-Desktop/{}", current_app_version()))
+        .user_agent(format!("Loors-Desktop/{}", current_app_version()))
         .build()
         .map_err(|e| format!("Error creando cliente HTTP: {e}"))?;
 

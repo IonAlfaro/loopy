@@ -9,7 +9,7 @@ labels: enhancement
 What workflow or task would this feature improve?
 
 ## Proposed Solution
-Describe how you envision this working in Loopy (Agent Mode, Harnesses, Settings, etc.).
+Describe how you envision this working in Loors (Agent Mode, Harnesses, Settings, etc.).
 
 ## Alternatives Considered
 Any alternative approaches or workarounds you've tried.

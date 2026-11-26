@@ -63,8 +63,8 @@ export function RuntimeModal({ open, embedded = false, onClose }: RuntimeModalPr
             ? "Runtime personalizado guardado"
             : "Custom runtime saved"
           : locale === "es"
-            ? "Restaurado al runtime gestionado por Loopy"
-            : "Reset to Loopy-managed runtime"
+            ? "Restaurado al runtime gestionado por Loors"
+            : "Reset to Loors-managed runtime"
       );
     } catch (err) {
       setError(typeof err === "string" ? err : String(err));
@@ -98,8 +98,8 @@ export function RuntimeModal({ open, embedded = false, onClose }: RuntimeModalPr
         if (!cancelled) {
           setError(
             locale === "es"
-              ? "Modo navegador: ejecuta Loopy con Tauri para detectar hardware real y descargar llama.cpp."
-              : "Browser preview mode: run the Loopy desktop app (Tauri) to detect hardware and download llama.cpp."
+              ? "Modo navegador: ejecuta Loors con Tauri para detectar hardware real y descargar llama.cpp."
+              : "Browser preview mode: run the Loors desktop app (Tauri) to detect hardware and download llama.cpp."
           );
         }
       });
@@ -107,7 +107,7 @@ export function RuntimeModal({ open, embedded = false, onClose }: RuntimeModalPr
     refreshStatus();
 
     let unlisten: (() => void) | undefined;
-    listen<RuntimeDownloadEvent>("loopy://runtime-download", (ev) => {
+    listen<RuntimeDownloadEvent>("loors://runtime-download", (ev) => {
       if (!cancelled) setProgress(ev.payload);
     })
       .then((fn) => {
@@ -240,8 +240,8 @@ export function RuntimeModal({ open, embedded = false, onClose }: RuntimeModalPr
                 onChange={(e) => setCustomPath(e.target.value)}
                 placeholder={
                   locale === "es"
-                    ? "C:\\ruta\\a\\llama-server.exe (vacío = gestionado por Loopy)"
-                    : "/path/to/llama-server (empty = Loopy-managed)"
+                    ? "C:\\ruta\\a\\llama-server.exe (vacío = gestionado por Loors)"
+                    : "/path/to/llama-server (empty = Loors-managed)"
                 }
               />
               <button

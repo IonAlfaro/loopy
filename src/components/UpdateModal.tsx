@@ -92,7 +92,7 @@ export function UpdateModal({
 
     let cancelled = false;
     let unlisten: (() => void) | undefined;
-    listen<UpdateProgressEvent>("loopy://update-progress", (ev) => {
+    listen<UpdateProgressEvent>("loors://update-progress", (ev) => {
       if (!cancelled) setProgress(ev.payload);
     })
       .then((fn) => {
@@ -179,7 +179,7 @@ export function UpdateModal({
                   <strong style={{ fontSize: 13.5, color: "#f8fafc" }}>
                     {result.updateAvailable
                       ? L(`New version available: v${result.latestVersion}`, `Nueva versión disponible: v${result.latestVersion}`)
-                      : L(`Loopy is up to date (v${result.currentVersion})`, `Loopy está actualizado (v${result.currentVersion})`)}
+                      : L(`Loors is up to date (v${result.currentVersion})`, `Loors está actualizado (v${result.currentVersion})`)}
                   </strong>
                 </div>
                 {result.releaseUrl && (

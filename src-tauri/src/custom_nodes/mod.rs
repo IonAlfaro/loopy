@@ -54,7 +54,7 @@ fn default_accent() -> String {
 pub fn global_custom_nodes_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("loopy")
+        .join("loors")
         .join("custom_nodes")
 }
 
@@ -66,7 +66,7 @@ pub fn list_custom_nodes(workspace: &str) -> Vec<CustomNodeDef> {
     } else {
         PathBuf::from(workspace)
     };
-    dirs_to_scan.push(ws.join(".loopy").join("nodes"));
+    dirs_to_scan.push(ws.join(".loors").join("nodes"));
 
     let mut nodes = Vec::new();
     for dir in dirs_to_scan {

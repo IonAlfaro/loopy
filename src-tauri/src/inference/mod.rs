@@ -228,7 +228,7 @@ impl Default for ModelTuningProfile {
 pub fn profiles_file_path() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("loopy")
+        .join("loors")
         .join("model_profiles.json")
 }
 
@@ -354,7 +354,7 @@ pub fn compute_auto_context_size(model_path: &str) -> u32 {
     let model_gb = fs::metadata(model_path)
         .map(|m| m.len() as f64 / (1024.0 * 1024.0 * 1024.0))
         .unwrap_or(8.0);
-    // Reserve ~6 GB for OS + Loopy + apps
+    // Reserve ~6 GB for OS + Loors + apps
     let headroom_gb = (total_ram_gb - model_gb - 6.0).max(0.0);
 
     if headroom_gb >= 24.0 {
@@ -396,7 +396,7 @@ mod tests {
     #[test]
     fn saves_and_loads_model_tuning_profile_forcing_flash_attn_for_kv_quant() {
         let tmp = std::env::temp_dir().join(format!(
-            "loopy-prof-test-{}.json",
+            "loors-prof-test-{}.json",
             SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
         ));
         let mut prof = ModelTuningProfile::default();

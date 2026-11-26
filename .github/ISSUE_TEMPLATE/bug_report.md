@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug or unexpected behavior in Loopy
+about: Report a bug or unexpected behavior in Loors
 title: "[Bug]: "
 labels: bug
 ---
@@ -18,7 +18,7 @@ What you expected to happen.
 
 ## Environment
 - **OS**: (e.g. Windows 11, macOS 15, Ubuntu 24.04)
-- **Loopy Version**: (e.g. v0.1.0)
+- **Loors Version**: (e.g. v0.1.0)
 - **AI Backend**: (e.g. `llama.cpp` CUDA / Vulkan / Metal / CPU, or Cloud API provider)
 - **Model**: (e.g. Qwen2.5-Coder-7B Q4_K_M, Claude Sonnet 4.5, GPT-4o)
 

@@ -89,7 +89,7 @@ impl McpSession {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {},
                     "clientInfo": {
-                        "name": "loopy-studio",
+                        "name": "loors-studio",
                         "version": "0.1.0"
                     }
                 }),
@@ -319,7 +319,7 @@ impl SavedMcpServer {
 fn mcp_servers_path() -> std::path::PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("loopy")
+        .join("loors")
         .join("mcp_servers.json")
 }
 
@@ -355,7 +355,7 @@ mod tests {
     #[test]
     fn saves_and_loads_mcp_servers() {
         let tmp = std::env::temp_dir().join(format!(
-            "loopy-mcp-test-{}.json",
+            "loors-mcp-test-{}.json",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or_default()

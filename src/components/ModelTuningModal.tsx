@@ -167,7 +167,7 @@ export function ModelTuningModal() {
       });
       setProfile({ ...DEFAULT_PROFILE, ...updated });
       window.dispatchEvent(
-        new CustomEvent("loopy:model-profile-updated", {
+        new CustomEvent("loors:model-profile-updated", {
           detail: { modelPath: activePath, profile: updated },
         })
       );
@@ -195,7 +195,7 @@ export function ModelTuningModal() {
       if (activeModelPath === activePath) {
         setActiveModelPath("");
       }
-      window.dispatchEvent(new CustomEvent("loopy:models-changed"));
+      window.dispatchEvent(new CustomEvent("loors:models-changed"));
       openTuningModal(null);
     } catch (err) {
       setStatusMsg(`Error: ${String(err)}`);

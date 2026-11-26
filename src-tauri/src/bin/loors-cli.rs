@@ -1,4 +1,4 @@
-use loopy_lib::headless::{
+use loors_lib::headless::{
     generate_random_token, list_models_json, list_workflows_json, resolve_dist_dir,
     run_headless_server, run_workflow_headless, status_json, HeadlessRunOptions,
     HeadlessServerConfig,
@@ -8,13 +8,13 @@ use std::path::PathBuf;
 
 fn print_help() {
     println!(
-        r#"loopy-cli v{} — Headless AI Agent & Cyclic Harness CLI / Server
+        r#"loors-cli v{} — Headless AI Agent & Cyclic Harness CLI / Server
 
 USAGE:
-  loopy-cli <COMMAND> [OPTIONS]
+  loors-cli <COMMAND> [OPTIONS]
 
 COMMANDS:
-  run <workflow.loopy.json|name>   Run a harness headlessly (CI/CD, cron, SSH)
+  run <workflow.loors.json|name>   Run a harness headlessly (CI/CD, cron, SSH)
       --workspace <dir>            Override workspace folder
       --prompt <text>              Override initial prompt
       --model <path|cloud::...>    Override model path or cloud URI
@@ -27,7 +27,7 @@ COMMANDS:
   serve                            Start headless HTTP/SSE server + Web Panel
       --host <addr>                Bind address (default: 127.0.0.1)
       --port <port>                HTTP port (default: 7700)
-      --token <secret>             Bearer auth token (or LOOPY_TOKEN env)
+      --token <secret>             Bearer auth token (or LOORS_TOKEN env)
       --no-auth                    Disable auth even on non-loopback host
       --dist <dir>                 Path to built frontend dist/ directory
 
@@ -58,14 +58,14 @@ async fn main() {
         return;
     }
     if matches!(args[0].as_str(), "-V" | "--version") {
-        println!("loopy-cli {}", env!("CARGO_PKG_VERSION"));
+        println!("loors-cli {}", env!("CARGO_PKG_VERSION"));
         return;
     }
 
     match args[0].as_str() {
         "run" => {
             if args.len() < 2 {
-                eprintln!("error: missing workflow path or library name.\nUsage: loopy-cli run <workflow.loopy.json|name> [options]");
+                eprintln!("error: missing workflow path or library name.\nUsage: loors-cli run <workflow.loors.json|name> [options]");
                 std::process::exit(1);
             }
             let workflow_ref = args[1].clone();
@@ -138,7 +138,7 @@ async fn main() {
         "serve" => {
             let mut host = "127.0.0.1".to_string();
             let mut port: u16 = 7700;
-            let mut token = std::env::var("LOOPY_TOKEN")
+            let mut token = std::env::var("LOORS_TOKEN")
                 .ok()
                 .filter(|s| !s.trim().is_empty());
             let mut no_auth = false;
@@ -256,7 +256,7 @@ async fn main() {
             if args.iter().any(|a| a == "--json") {
                 println!("{}", serde_json::to_string_pretty(&val).unwrap());
             } else {
-                println!("Loopy v{}", val["version"].as_str().unwrap_or("0.1.0"));
+                println!("Loors v{}", val["version"].as_str().unwrap_or("0.1.0"));
                 println!(
                     "  RAM       : {:.1} GB",
                     val["hardware"]["total_ram_mb"].as_u64().unwrap_or(0) as f64 / 1024.0

@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main Loopy window",
+  "description": "Capability for the main Loors window",
   "windows": ["main"],
   "permissions": ["core:default"]
 }

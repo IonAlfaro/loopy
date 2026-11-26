@@ -59,13 +59,13 @@ struct HfLfsInfo {
 pub fn models_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("loopy")
+        .join("loors")
         .join("models")
 }
 
 pub async fn search_hf_models(query: &str, sort: Option<&str>) -> Result<Vec<HfModelRepo>, String> {
     let client = reqwest::Client::builder()
-        .user_agent("loopy-studio/0.1")
+        .user_agent("loors-studio/0.1")
         .build()
         .map_err(|e| format!("Error creating HTTP client: {e}"))?;
 
@@ -113,7 +113,7 @@ pub async fn search_hf_models(query: &str, sort: Option<&str>) -> Result<Vec<HfM
 
 pub async fn list_hf_gguf_files(repo_id: &str) -> Result<Vec<HfGgufFile>, String> {
     let client = reqwest::Client::builder()
-        .user_agent("loopy-studio/0.1")
+        .user_agent("loors-studio/0.1")
         .build()
         .map_err(|e| format!("Error creando cliente HTTP: {e}"))?;
 
@@ -181,7 +181,7 @@ where
     });
 
     let client = reqwest::Client::builder()
-        .user_agent("loopy-studio/0.1")
+        .user_agent("loors-studio/0.1")
         .build()
         .map_err(|e| format!("Error creando cliente HTTP: {e}"))?;
 

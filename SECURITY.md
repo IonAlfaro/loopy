@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-Loopy executes local shell commands, edits workspace files, and connects to external AI APIs when authorized by the user. We take security seriously.
+Loors executes local shell commands, edits workspace files, and connects to external AI APIs when authorized by the user. We take security seriously.
 
 If you discover a security vulnerability (for example, a permission bypass in `Read-only` or `Auto` safety review mode, path traversal, or credential leakage):
 
@@ -27,6 +27,6 @@ Free code signing provided by [SignPath.io](https://signpath.io), certificate by
 - **Build & Signing Pipeline**: Official Windows installers (`.exe` / `.msi`) are built exclusively on GitHub-hosted runners from tagged commits via `.github/workflows/release.yml` and submitted directly as GitHub Actions artifacts to SignPath.
 
 ### Privacy Policy
-- Loopy does **not** collect telemetry, analytics, crash reports, or personal data.
+- Loors does **not** collect telemetry, analytics, crash reports, or personal data.
 - All local models, workspaces, session logs, and credentials stay on the user's machine.
 - Outbound network requests only occur when explicitly initiated by the user (e.g., downloading `llama.cpp` or GGUF models from Hugging Face, checking GitHub Releases for updates, calling a user-configured external AI API, or running web/browser tools).

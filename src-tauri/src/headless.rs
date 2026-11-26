@@ -69,14 +69,14 @@ impl HeadlessState {
         let tx_browser = state.events_tx.clone();
         set_browser_frame_listener(move |ev| {
             if let Ok(val) = serde_json::to_value(ev) {
-                let _ = tx_browser.send(("loopy://browser-frame".to_string(), val));
+                let _ = tx_browser.send(("loors://browser-frame".to_string(), val));
             }
         });
 
         let tx_load = state.events_tx.clone();
         inference::llama_cpp::set_model_load_listener(move |ev| {
             if let Ok(val) = serde_json::to_value(ev) {
-                let _ = tx_load.send(("loopy://model-load-progress".to_string(), val));
+                let _ = tx_load.send(("loors://model-load-progress".to_string(), val));
             }
         });
 
@@ -193,10 +193,10 @@ fn load_workflow_graph(workflow_ref: &str) -> Result<WorkflowGraph, String> {
     };
 
     serde_json::from_str::<WorkflowGraph>(&raw)
-        .map_err(|e| format!("Invalid .loopy.json workflow format: {e}"))
+        .map_err(|e| format!("Invalid .loors.json workflow format: {e}"))
 }
 
-/// Runs a single Loopy harness headless from CLI and returns a standard process exit code:
+/// Runs a single Loors harness headless from CLI and returns a standard process exit code:
 /// 0 = Completed, 1 = Failed/Error, 2 = Budget/Timeout exhausted, 130 = Interrupted (Ctrl+C).
 pub async fn run_workflow_headless(opts: HeadlessRunOptions) -> i32 {
     let mut graph = match load_workflow_graph(&opts.workflow_ref) {
@@ -242,7 +242,7 @@ pub async fn run_workflow_headless(opts: HeadlessRunOptions) -> i32 {
 
     if !jsonl && !quiet {
         eprintln!(
-            "[loopy-cli] Starting harness '{}' ({} nodes, backend={:?})",
+            "[loors-cli] Starting harness '{}' ({} nodes, backend={:?})",
             graph.name,
             graph.nodes.len(),
             opts.backend
@@ -313,19 +313,19 @@ pub async fn run_workflow_headless(opts: HeadlessRunOptions) -> i32 {
                 }
                 Some((RunOutcomeKind::Exhausted, summary)) => {
                     if !jsonl {
-                        eprintln!("[loopy-cli] Exhausted: {summary}");
+                        eprintln!("[loors-cli] Exhausted: {summary}");
                     }
                     2
                 }
                 Some((RunOutcomeKind::Cancelled, summary)) => {
                     if !jsonl {
-                        eprintln!("[loopy-cli] Cancelled: {summary}");
+                        eprintln!("[loors-cli] Cancelled: {summary}");
                     }
                     130
                 }
                 Some((RunOutcomeKind::Failed, summary)) => {
                     if !jsonl {
-                        eprintln!("[loopy-cli] Failed: {summary}");
+                        eprintln!("[loors-cli] Failed: {summary}");
                     }
                     1
                 }
@@ -335,7 +335,7 @@ pub async fn run_workflow_headless(opts: HeadlessRunOptions) -> i32 {
         _ = tokio::signal::ctrl_c() => {
             interrupted.store(true, Ordering::SeqCst);
             if !jsonl {
-                eprintln!("\n[loopy-cli] Caught Ctrl+C — stopping harness and cleaning up...");
+                eprintln!("\n[loors-cli] Caught Ctrl+C — stopping harness and cleaning up...");
             }
             let _ = engine.stop_run();
             130
@@ -381,7 +381,7 @@ pub async fn dispatch_rpc(
     args: Value,
 ) -> Result<Value, String> {
     match cmd {
-        "ping_engine" => Ok(json!("loopy-core ready (headless)")),
+        "ping_engine" => Ok(json!("loors-core ready (headless)")),
         "get_app_version" => Ok(json!(env!("CARGO_PKG_VERSION"))),
         "detect_hardware" => Ok(json!(detect_hardware_profile())),
         "get_runtime_status" => Ok(json!(get_runtime_status())),
@@ -389,7 +389,7 @@ pub async fn dispatch_rpc(
             let backend = parse_backend(&args);
             let st = state.clone();
             let info = install_runtime(backend, move |p| {
-                st.emit_event("loopy://runtime-progress", p);
+                st.emit_event("loors://runtime-progress", p);
             })
             .await?;
             Ok(json!(info))
@@ -421,7 +421,7 @@ pub async fn dispatch_rpc(
             let filename = get_str(&args, &["filename"]);
             let st = state.clone();
             let path = download_hf_model(&repo_id, &filename, move |p| {
-                st.emit_event("loopy://model-download", p);
+                st.emit_event("loors://model-download", p);
             })
             .await?;
             Ok(json!(path))
@@ -442,7 +442,7 @@ pub async fn dispatch_rpc(
         "unload_model" => {
             state.engine.llama.shutdown().await;
             state.emit_event(
-                "loopy://engine-event",
+                "loors://engine-event",
                 EngineEvent::ModelState {
                     loaded: false,
                     model_name: None,
@@ -489,7 +489,7 @@ pub async fn dispatch_rpc(
                 .unwrap_or(&model_path)
                 .to_string();
             state.emit_event(
-                "loopy://engine-event",
+                "loors://engine-event",
                 EngineEvent::ModelState {
                     loaded: true,
                     model_name: Some(short),
@@ -588,7 +588,7 @@ pub async fn dispatch_rpc(
                 backend,
                 start_node_id,
                 move |ev| {
-                    st.emit_event("loopy://engine-event", ev);
+                    st.emit_event("loors://engine-event", ev);
                 },
             )?;
             Ok(json!(run_id))
@@ -657,7 +657,7 @@ pub async fn dispatch_rpc(
                     .map(|(p, m)| format!("{p}/{m}"))
                     .unwrap_or_else(|| session.model_path.clone());
                 state.emit_event(
-                    "loopy://engine-event",
+                    "loors://engine-event",
                     EngineEvent::ModelState {
                         loaded: true,
                         model_name: Some(model_short),
@@ -681,7 +681,7 @@ pub async fn dispatch_rpc(
                 override_ctx,
                 attachments,
                 move |ev| {
-                    st.emit_event("loopy://agent-chat-event", ev);
+                    st.emit_event("loors://agent-chat-event", ev);
                 },
             )
             .await?;
@@ -802,7 +802,7 @@ pub async fn dispatch_rpc(
                 current_graph_json,
                 Some(&cancel),
                 move |ev| {
-                    st.emit_event("loopy://architect-event", ev);
+                    st.emit_event("loors://architect-event", ev);
                 },
             )
             .await;
@@ -829,7 +829,7 @@ pub async fn dispatch_rpc(
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(&base64_data)
                 .map_err(|e| format!("Invalid base64 upload: {e}"))?;
-            let dir = std::env::temp_dir().join("loopy-uploads");
+            let dir = std::env::temp_dir().join("loors-uploads");
             let _ = fs::create_dir_all(&dir);
             let safe_name: String = Path::new(&filename)
                 .file_name()
@@ -875,7 +875,7 @@ pub async fn run_headless_server(cfg: HeadlessServerConfig) -> Result<(), String
     } else {
         cfg.host.as_str()
     };
-    println!("Loopy Headless Server v{}", env!("CARGO_PKG_VERSION"));
+    println!("Loors Headless Server v{}", env!("CARGO_PKG_VERSION"));
     println!("  Listening : http://{}:{}", cfg.host, cfg.port);
     if let Some(tok) = &cfg.token {
         println!("  Auth      : Bearer token REQUIRED");
@@ -903,12 +903,12 @@ pub async fn run_headless_server(cfg: HeadlessServerConfig) -> Result<(), String
                         });
                     }
                     Err(e) => {
-                        eprintln!("[loopy-server] accept error: {e}");
+                        eprintln!("[loors-server] accept error: {e}");
                     }
                 }
             }
             _ = tokio::signal::ctrl_c() => {
-                println!("\n[loopy-server] Shutting down cleanly...");
+                println!("\n[loors-server] Shutting down cleanly...");
                 let _ = shutdown_state.engine.stop_run();
                 shutdown_state.agent.stop_turn();
                 shutdown_state.engine.llama.shutdown().await;
@@ -1226,7 +1226,7 @@ async fn handle_http_connection(mut stream: TcpStream, state: Arc<HeadlessState>
 
     // Serve static Web UI bundle (dist/)
     let Some(dist_root) = &state.dist_dir else {
-        let msg = b"Loopy Headless API is running.\nNo frontend dist/ bundle found. Run `npm run build` or pass `--dist <path>` to enable the Web Panel.\n";
+        let msg = b"Loors Headless API is running.\nNo frontend dist/ bundle found. Run `npm run build` or pass `--dist <path>` to enable the Web Panel.\n";
         return write_response(&mut stream, 200, "OK", "text/plain; charset=utf-8", msg).await;
     };
 
@@ -1304,7 +1304,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(authed["ok"], json!(true));
-        assert_eq!(authed["data"], json!("loopy-core ready (headless)"));
+        assert_eq!(authed["data"], json!("loors-core ready (headless)"));
 
         srv.abort();
     }

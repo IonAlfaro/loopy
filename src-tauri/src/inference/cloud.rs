@@ -94,7 +94,7 @@ pub fn default_providers() -> Vec<CloudProviderConfig> {
 fn providers_config_path() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("loopy")
+        .join("loors")
         .join("providers.json")
 }
 
@@ -399,8 +399,8 @@ where
     let mut req_builder = client
         .post(&url)
         .header("content-type", "application/json")
-        .header("HTTP-Referer", "https://github.com/loopy")
-        .header("X-Title", "Loopy");
+        .header("HTTP-Referer", "https://github.com/loors")
+        .header("X-Title", "Loors");
     if !api_key.is_empty() {
         req_builder = req_builder.bearer_auth(api_key);
     }
@@ -963,7 +963,7 @@ mod tests {
     #[test]
     fn saves_and_loads_cloud_providers() {
         let tmp = std::env::temp_dir().join(format!(
-            "loopy-cloud-test-{}.json",
+            "loors-cloud-test-{}.json",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()

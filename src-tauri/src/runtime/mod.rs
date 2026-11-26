@@ -32,7 +32,7 @@ struct CustomRuntimeConfig {
 fn custom_runtime_config_path() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("loopy")
+        .join("loors")
         .join("runtime_custom.json")
 }
 
@@ -92,7 +92,7 @@ struct GithubAsset {
 pub fn runtimes_base_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("loopy")
+        .join("loors")
         .join("runtimes")
 }
 
@@ -197,7 +197,7 @@ where
     });
 
     let client = reqwest::Client::builder()
-        .user_agent("loopy-studio/0.1")
+        .user_agent("loors-studio/0.1")
         .build()
         .map_err(|e| format!("Error creando cliente HTTP: {e}"))?;
 

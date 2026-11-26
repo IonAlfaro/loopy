@@ -102,7 +102,7 @@ function formatRelativeAge(epochSecs: number, locale: string): string {
 
 function loadStoredProjects(): string[] {
   try {
-    const raw = localStorage.getItem("loopy_agent_projects");
+    const raw = localStorage.getItem("loors_agent_projects");
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed)
@@ -115,7 +115,7 @@ function loadStoredProjects(): string[] {
 
 function saveStoredProjects(list: string[]) {
   try {
-    localStorage.setItem("loopy_agent_projects", JSON.stringify(list));
+    localStorage.setItem("loors_agent_projects", JSON.stringify(list));
   } catch {
     // ignore
   }
@@ -184,11 +184,11 @@ export function AgentWorkspaceView() {
   const rightPanelOpen = useGraphStore((s) => s.rightPanelOpen);
   const setRightPanelOpen = useGraphStore((s) => s.setRightPanelOpen);
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
-    const saved = Number(localStorage.getItem("loopy_agent_left_w"));
+    const saved = Number(localStorage.getItem("loors_agent_left_w"));
     return Number.isFinite(saved) && saved >= 190 && saved <= 420 ? saved : 252;
   });
   const [rightPanelWidth, setRightPanelWidth] = useState<number>(() => {
-    const saved = Number(localStorage.getItem("loopy_agent_right_w"));
+    const saved = Number(localStorage.getItem("loors_agent_right_w"));
     return Number.isFinite(saved) && saved >= 260 && saved <= 680 ? saved : 390;
   });
 
@@ -201,11 +201,11 @@ export function AgentWorkspaceView() {
       if (side === "left") {
         const next = Math.min(420, Math.max(190, initial + dx));
         setSidebarWidth(next);
-        localStorage.setItem("loopy_agent_left_w", String(next));
+        localStorage.setItem("loors_agent_left_w", String(next));
       } else {
         const next = Math.min(680, Math.max(260, initial - dx));
         setRightPanelWidth(next);
-        localStorage.setItem("loopy_agent_right_w", String(next));
+        localStorage.setItem("loors_agent_right_w", String(next));
       }
     };
     const onUp = () => {
@@ -379,11 +379,11 @@ export function AgentWorkspaceView() {
     refreshCloudProviders();
     const onModelsChanged = () => refreshLocalModels();
     const onProvidersChanged = () => refreshCloudProviders();
-    window.addEventListener("loopy:models-changed", onModelsChanged);
-    window.addEventListener("loopy:providers-changed", onProvidersChanged);
+    window.addEventListener("loors:models-changed", onModelsChanged);
+    window.addEventListener("loors:providers-changed", onProvidersChanged);
     return () => {
-      window.removeEventListener("loopy:models-changed", onModelsChanged);
-      window.removeEventListener("loopy:providers-changed", onProvidersChanged);
+      window.removeEventListener("loors:models-changed", onModelsChanged);
+      window.removeEventListener("loors:providers-changed", onProvidersChanged);
     };
   }, [refreshSessions, refreshLocalModels, refreshCloudProviders]);
 
@@ -393,7 +393,7 @@ export function AgentWorkspaceView() {
     setRtInstallProgress(null);
     let unlisten: (() => void) | undefined;
     try {
-      unlisten = await listen<RuntimeDownloadEvent>("loopy://runtime-download", (ev) => {
+      unlisten = await listen<RuntimeDownloadEvent>("loors://runtime-download", (ev) => {
         setRtInstallProgress(ev.payload);
       });
       const hw = await invoke<HardwareProfile>("detect_hardware");
@@ -416,6 +416,21 @@ export function AgentWorkspaceView() {
 
   const [installedBackends, setInstalledBackends] = useState<RuntimeBackendKind[]>([]);
   const [setupChecked, setSetupChecked] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("loors_onboarding_dismissed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const dismissOnboarding = () => {
+    setOnboardingDismissed(true);
+    try {
+      localStorage.setItem("loors_onboarding_dismissed", "1");
+    } catch {
+      // ignore
+    }
+  };
   useEffect(() => {
     invoke<RuntimeStatusSnapshot>("get_runtime_status")
       .then((snap) => {
@@ -479,9 +494,9 @@ export function AgentWorkspaceView() {
         syncFromProfile(detail.profile);
       }
     };
-    window.addEventListener("loopy:model-profile-updated", onProfileUpdated);
+    window.addEventListener("loors:model-profile-updated", onProfileUpdated);
     return () =>
-      window.removeEventListener("loopy:model-profile-updated", onProfileUpdated);
+      window.removeEventListener("loors:model-profile-updated", onProfileUpdated);
   }, [session.modelPath, loadedContextSize]);
 
   useEffect(() => {
@@ -583,7 +598,7 @@ export function AgentWorkspaceView() {
 
   useEffect(() => {
     invoke<SkillSummary[]>("list_skills", { workspace: session.workspace || "." })
-      .then((s) => setSkills(s.filter((item) => item.name !== "architect-loopy")))
+      .then((s) => setSkills(s.filter((item) => item.name !== "architect-loors")))
       .catch(() => setSkills([]));
     if (session.workspace && session.workspace !== ".") {
       invoke<string[]>("find_workspace_files", {
@@ -605,7 +620,7 @@ export function AgentWorkspaceView() {
     let unlistenAgent: (() => void) | undefined;
     let unlistenBrowser: (() => void) | undefined;
 
-    listen<AgentChatEvent>("loopy://agent-chat-event", (ev) => {
+    listen<AgentChatEvent>("loors://agent-chat-event", (ev) => {
       if (cancelled) return;
       const p = ev.payload;
       if (p.session_id !== activeSessionIdRef.current) return;
@@ -720,7 +735,7 @@ export function AgentWorkspaceView() {
       })
       .catch(() => {});
 
-    listen<BrowserFrameEvent>("loopy://browser-frame", (ev) => {
+    listen<BrowserFrameEvent>("loors://browser-frame", (ev) => {
       if (!cancelled) {
         setLiveBrowserFrame(ev.payload);
         setRightPanelOpen(true);
@@ -1663,7 +1678,7 @@ export function AgentWorkspaceView() {
             }}
             onDoubleClick={() => {
               setSidebarWidth(252);
-              localStorage.setItem("loopy_agent_left_w", "252");
+              localStorage.setItem("loors_agent_left_w", "252");
             }}
           />
         </>
@@ -1758,129 +1773,27 @@ export function AgentWorkspaceView() {
                   <span className="zero-ws-kicker">{activeWsShort}</span>
                   <h2>{t("agent.heroTitle")}</h2>
 
-                  {setupChecked &&
-                  !(
-                    (installedBackends.length > 0 && localModels.length > 0) ||
-                    cloudProviders.some((p) => p.enabled && p.models.length > 0)
-                  ) ? (
-                    <div className="onboarding-card">
-                      <div className="onboarding-title">{t("onboarding.title")}</div>
-
-                      <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em", marginTop: 2 }}>
-                        {t("onboarding.optA")}
-                      </div>
-
+                  <div className="zero-suggestions">
+                    {(session.workspace && session.workspace !== "."
+                      ? [t("suggest.ws1"), t("suggest.ws2"), t("suggest.ws3")]
+                      : [t("suggest.free1"), t("suggest.free2"), t("suggest.free3")]
+                    ).map((prompt) => (
                       <button
+                        key={prompt}
                         type="button"
-                        className={`onboarding-step ${installedBackends.length > 0 ? "is-done" : ""}`}
-                        disabled={autoInstallingRt}
+                        className="zero-suggestion-btn"
                         onClick={() => {
-                          if (installedBackends.length > 0) {
-                            window.dispatchEvent(new CustomEvent("loopy:open-runtime-modal"));
+                          if (session.modelPath) {
+                            void sendTurn(prompt);
                           } else {
-                            void handleAutoInstallRuntime();
+                            setInput(prompt);
                           }
                         }}
                       >
-                        <span className="onboarding-step-num">
-                          {installedBackends.length > 0 ? <Check size={12} /> : <Download size={12} />}
-                        </span>
-                        <div className="onboarding-step-text">
-                          <strong>
-                            {installedBackends.length > 0
-                              ? t("onboarding.rtReady")
-                              : autoInstallingRt
-                                ? t("onboarding.rtInstalling")
-                                : t("onboarding.rtInstallCta")}
-                          </strong>
-                          <span>
-                            {installedBackends.length > 0
-                              ? `${t("onboarding.rtInstalledPrefix")} (${installedBackends.join(", ")})`
-                              : rtInstallProgress?.message
-                                ? rtInstallProgress.message
-                                : t("onboarding.rtInstallDesc")}
-                          </span>
-                        </div>
+                        <span>{prompt}</span>
                       </button>
-
-                      {autoInstallingRt && rtInstallProgress?.percent !== null && rtInstallProgress?.percent !== undefined && (
-                        <div className="progress-track" style={{ marginTop: -2 }}>
-                          <div
-                            className="progress-fill"
-                            style={{
-                              width: `${Math.min(100, Math.max(0, rtInstallProgress.percent))}%`,
-                            }}
-                          />
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        className={`onboarding-step ${localModels.length > 0 ? "is-done" : ""}`}
-                        onClick={() =>
-                          window.dispatchEvent(new CustomEvent("loopy:open-models-modal"))
-                        }
-                      >
-                        <span className="onboarding-step-num">
-                          {localModels.length > 0 ? <Check size={12} /> : <Boxes size={12} />}
-                        </span>
-                        <div className="onboarding-step-text">
-                          <strong>{t("onboarding.ggufCta")}</strong>
-                          <span>
-                            {localModels.length > 0
-                              ? `${localModels.length} ${t("onboarding.ggufDetected")}`
-                              : t("onboarding.ggufDesc")}
-                          </span>
-                        </div>
-                      </button>
-
-                      <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em", marginTop: 6 }}>
-                        {t("onboarding.optB")}
-                      </div>
-
-                      <button
-                        type="button"
-                        className="onboarding-step"
-                        onClick={() =>
-                          window.dispatchEvent(
-                            new CustomEvent("loopy:open-models-modal", {
-                              detail: { tab: "cloud" },
-                            })
-                          )
-                        }
-                      >
-                        <span className="onboarding-step-num">
-                          <Cloud size={12} />
-                        </span>
-                        <div className="onboarding-step-text">
-                          <strong>{t("onboarding.cloudCta")}</strong>
-                          <span>{t("onboarding.cloudDesc")}</span>
-                        </div>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="zero-suggestions">
-                      {(session.workspace && session.workspace !== "."
-                        ? [t("suggest.ws1"), t("suggest.ws2"), t("suggest.ws3")]
-                        : [t("suggest.free1"), t("suggest.free2"), t("suggest.free3")]
-                      ).map((prompt) => (
-                        <button
-                          key={prompt}
-                          type="button"
-                          className="zero-suggestion-btn"
-                          onClick={() => {
-                            if (session.modelPath) {
-                              void sendTurn(prompt);
-                            } else {
-                              setInput(prompt);
-                            }
-                          }}
-                        >
-                          <span>{prompt}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -1938,7 +1851,7 @@ export function AgentWorkspaceView() {
                       <span className="agent-model-tag">
                         <Bot size={13} style={{ color: "#a855f7" }} />
                         <span>
-                          {session.modelPath.split(/[\\/]/).pop() || "Agente Loopy"}
+                          {session.modelPath.split(/[\\/]/).pop() || "Agente Loors"}
                         </span>
                       </span>
                       {msg.content && (
@@ -2695,7 +2608,7 @@ export function AgentWorkspaceView() {
                             onClick={() => {
                               setModelPickerOpen(false);
                               window.dispatchEvent(
-                                new CustomEvent("loopy:open-models-modal")
+                                new CustomEvent("loors:open-models-modal")
                               );
                             }}
                           >
@@ -2708,7 +2621,7 @@ export function AgentWorkspaceView() {
                             onClick={() => {
                               setModelPickerOpen(false);
                               window.dispatchEvent(
-                                new CustomEvent("loopy:open-models-modal", {
+                                new CustomEvent("loors:open-models-modal", {
                                   detail: { tab: "cloud" },
                                 })
                               );
@@ -3070,7 +2983,7 @@ export function AgentWorkspaceView() {
                 }}
                 onDoubleClick={() => {
                   setRightPanelWidth(390);
-                  localStorage.setItem("loopy_agent_right_w", "390");
+                  localStorage.setItem("loors_agent_right_w", "390");
                 }}
               />
               )}
@@ -3254,6 +3167,166 @@ export function AgentWorkspaceView() {
           )}
         </div>
       </div>
+
+      {/* First-run setup modal (only shown once on fresh install until configured or skipped) */}
+      {setupChecked &&
+        !onboardingDismissed &&
+        !(
+          (installedBackends.length > 0 && localModels.length > 0) ||
+          cloudProviders.some((p) => p.enabled && p.models.length > 0)
+        ) && (
+          <div className="modal-backdrop" onClick={dismissOnboarding}>
+            <div
+              className="modal-card"
+              style={{ maxWidth: 460, padding: "20px 22px 18px" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  marginBottom: 18,
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, letterSpacing: "-0.01em" }}>
+                    {locale === "es" ? "Bienvenido a Loors" : "Welcome to Loors"}
+                  </h3>
+                  <span style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.4 }}>
+                    {t("onboarding.title")}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  style={{ flexShrink: 0, marginTop: -2, marginRight: -4 }}
+                  onClick={dismissOnboarding}
+                  title={locale === "es" ? "Cerrar" : "Close"}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div className="onboarding-card" style={{ border: "none", padding: 0, background: "transparent", width: "100%", maxWidth: "none", gap: 8 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  {t("onboarding.optA")}
+                </div>
+
+                <button
+                  type="button"
+                  className={`onboarding-step ${installedBackends.length > 0 ? "is-done" : ""}`}
+                  disabled={autoInstallingRt}
+                  onClick={() => {
+                    if (installedBackends.length > 0) {
+                      dismissOnboarding();
+                      window.dispatchEvent(new CustomEvent("loors:open-runtime-modal"));
+                    } else {
+                      void handleAutoInstallRuntime();
+                    }
+                  }}
+                >
+                  <span className="onboarding-step-num">
+                    {installedBackends.length > 0 ? <Check size={12} /> : <Download size={12} />}
+                  </span>
+                  <div className="onboarding-step-text">
+                    <strong>
+                      {installedBackends.length > 0
+                        ? t("onboarding.rtReady")
+                        : autoInstallingRt
+                          ? t("onboarding.rtInstalling")
+                          : t("onboarding.rtInstallCta")}
+                    </strong>
+                    <span>
+                      {installedBackends.length > 0
+                        ? `${t("onboarding.rtInstalledPrefix")} (${installedBackends.join(", ")})`
+                        : rtInstallProgress?.message
+                          ? rtInstallProgress.message
+                          : t("onboarding.rtInstallDesc")}
+                    </span>
+                  </div>
+                </button>
+
+                {autoInstallingRt && rtInstallProgress?.percent !== null && rtInstallProgress?.percent !== undefined && (
+                  <div className="progress-track" style={{ marginTop: -2 }}>
+                    <div
+                      className="progress-fill"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, rtInstallProgress.percent))}%`,
+                      }}
+                    />
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className={`onboarding-step ${localModels.length > 0 ? "is-done" : ""}`}
+                  onClick={() => {
+                    dismissOnboarding();
+                    window.dispatchEvent(new CustomEvent("loors:open-models-modal"));
+                  }}
+                >
+                  <span className="onboarding-step-num">
+                    {localModels.length > 0 ? <Check size={12} /> : <Boxes size={12} />}
+                  </span>
+                  <div className="onboarding-step-text">
+                    <strong>{t("onboarding.ggufCta")}</strong>
+                    <span>
+                      {localModels.length > 0
+                        ? `${localModels.length} ${t("onboarding.ggufDetected")}`
+                        : t("onboarding.ggufDesc")}
+                    </span>
+                  </div>
+                </button>
+
+                <div style={{ fontSize: 10.5, fontWeight: 600, color: "#71717a", textTransform: "uppercase", letterSpacing: "0.06em", marginTop: 8 }}>
+                  {t("onboarding.optB")}
+                </div>
+
+                <button
+                  type="button"
+                  className="onboarding-step"
+                  onClick={() => {
+                    dismissOnboarding();
+                    window.dispatchEvent(
+                      new CustomEvent("loors:open-models-modal", {
+                        detail: { tab: "cloud" },
+                      })
+                    );
+                  }}
+                >
+                  <span className="onboarding-step-num">
+                    <Cloud size={12} />
+                  </span>
+                  <div className="onboarding-step-text">
+                    <strong>{t("onboarding.cloudCta")}</strong>
+                    <span>{t("onboarding.cloudDesc")}</span>
+                  </div>
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  marginTop: 16,
+                  paddingTop: 12,
+                  borderTop: "1px solid var(--border)",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ fontSize: 12, padding: "5px 12px" }}
+                  onClick={dismissOnboarding}
+                >
+                  {locale === "es" ? "Configurar más tarde" : "Skip for now"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 }

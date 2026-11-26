@@ -125,7 +125,7 @@ function getToolPresentation(
         verb: isRunning ? "Navegando" : "Navegador",
         icon: <Globe size={s} />,
       };
-    case "list_loopy_capabilities":
+    case "list_loors_capabilities":
       return {
         verb: isRunning ? "Revisando capacidades" : "Capacidades revisadas",
         icon: <Wrench size={s} />,

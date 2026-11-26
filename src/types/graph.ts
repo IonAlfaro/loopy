@@ -1,6 +1,6 @@
 import type { Edge, Node } from "@xyflow/react";
 
-export type LoopyNodeKind =
+export type LoorsNodeKind =
   | "task_input"
   | "trigger"
   | "workspace"
@@ -403,7 +403,7 @@ export interface GraphValidationIssue {
   message: string;
 }
 
-export function isResourceKind(kind: LoopyNodeKind): boolean {
+export function isResourceKind(kind: LoorsNodeKind): boolean {
   return (
     kind === "local_model" ||
     kind === "skill" ||
@@ -413,26 +413,26 @@ export function isResourceKind(kind: LoopyNodeKind): boolean {
   );
 }
 
-export interface LoopyNodeData extends Record<string, unknown> {
-  kind: LoopyNodeKind;
+export interface LoorsNodeData extends Record<string, unknown> {
+  kind: LoorsNodeKind;
   title: string;
   status: NodeRunStatus;
   statusMessage?: string | null;
   config: Record<string, unknown>;
 }
 
-export type LoopyFlowNode = Node<LoopyNodeData, "loopyNode">;
-export type LoopyFlowEdge = Edge;
+export type LoorsFlowNode = Node<LoorsNodeData, "loorsNode">;
+export type LoorsFlowEdge = Edge;
 
-export interface LoopyWorkflowFile {
+export interface LoorsWorkflowFile {
   schemaVersion: 1;
   name: string;
-  nodes: LoopyFlowNode[];
-  edges: LoopyFlowEdge[];
+  nodes: LoorsFlowNode[];
+  edges: LoorsFlowEdge[];
 }
 
-export function parseWorkflowJson(raw: string): LoopyWorkflowFile {
-  const parsed = JSON.parse(raw) as Partial<LoopyWorkflowFile>;
+export function parseWorkflowJson(raw: string): LoorsWorkflowFile {
+  const parsed = JSON.parse(raw) as Partial<LoorsWorkflowFile>;
   if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
     throw new Error("El JSON no contiene arrays válidos de 'nodes' y 'edges'.");
   }
@@ -496,7 +496,7 @@ export interface ModelLoadProgressEvent {
 }
 
 export interface NodeBlueprint {
-  kind: LoopyNodeKind;
+  kind: LoorsNodeKind;
   label: string;
   category: "Entrada" | "IA Local" | "Sistema" | "Control" | "Salida";
   accent: string;
@@ -506,7 +506,7 @@ export interface NodeBlueprint {
   defaultConfig: Record<string, unknown>;
 }
 
-export const NODE_BLUEPRINTS: Record<LoopyNodeKind, NodeBlueprint> = {
+export const NODE_BLUEPRINTS: Record<LoorsNodeKind, NodeBlueprint> = {
   task_input: {
     kind: "task_input",
     label: "Task Input",
@@ -775,7 +775,7 @@ export const NODE_BLUEPRINTS: Record<LoopyNodeKind, NodeBlueprint> = {
     outputs: [{ id: "exec", label: "exec", kind: "exec" }],
     defaultConfig: {
       mode: "read",
-      filePath: ".loopy/BACKLOG.md",
+      filePath: ".loors/BACKLOG.md",
       template:
         "## Iteración {{iteration}}\n- Resultado: {{agent_output}}\n- Evaluación: {{judge_reason}}\n",
     },
@@ -840,7 +840,7 @@ export const NODE_BLUEPRINTS: Record<LoopyNodeKind, NodeBlueprint> = {
     label: "Sub-arnés (Subgraph)",
     category: "Control",
     accent: "#c084fc",
-    description: "Ejecuta otro flujo .loopy.json completo como un único bloque reutilizable.",
+    description: "Ejecuta otro flujo .loors.json completo como un único bloque reutilizable.",
     inputs: [{ id: "exec", label: "exec", kind: "exec" }],
     outputs: [
       { id: "ok", label: "ok", kind: "true" },
@@ -939,8 +939,8 @@ export const NODE_BLUEPRINTS: Record<LoopyNodeKind, NodeBlueprint> = {
 };
 
 export function validateGraphBeforeRun(
-  nodes: LoopyFlowNode[],
-  edges: LoopyFlowEdge[]
+  nodes: LoorsFlowNode[],
+  edges: LoorsFlowEdge[]
 ): GraphValidationIssue[] {
   const issues: GraphValidationIssue[] = [];
   const taskInput = nodes.find((n) => n.data.kind === "task_input");
@@ -1056,8 +1056,8 @@ export function parseGgufMetadata(
   const sourceLabel =
     lowerPath.includes(".lmstudio") || lowerPath.includes("lm-studio")
       ? "LM Studio"
-      : lowerPath.includes("/loopy/") || lowerPath.includes("\\loopy\\")
-        ? "Loopy"
+      : lowerPath.includes("/loors/") || lowerPath.includes("\\loors\\")
+        ? "Loors"
         : norm.includes("/")
           ? "Local"
           : "Hugging Face";

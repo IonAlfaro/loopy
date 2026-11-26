@@ -33,7 +33,7 @@ export function WebAuthGate({ onAuthenticated }: WebAuthGateProps) {
       setServerToken(trimmed);
       onAuthenticated();
     } catch {
-      setError(L("Could not reach Loopy Headless Server.", "No se pudo conectar con el servidor Loopy."));
+      setError(L("Could not reach Loors Headless Server.", "No se pudo conectar con el servidor Loors."));
     } finally {
       setChecking(false);
     }
@@ -64,7 +64,7 @@ export function WebAuthGate({ onAuthenticated }: WebAuthGateProps) {
           </div>
           <div>
             <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text)" }}>
-              Loopy Headless Server
+              Loors Headless Server
             </div>
             <div style={{ fontSize: 12, color: "var(--muted)" }}>
               {L("Enter the server access token to continue.", "Introduce el token de acceso del servidor.")}
@@ -93,7 +93,7 @@ export function WebAuthGate({ onAuthenticated }: WebAuthGateProps) {
           style={{ justifyContent: "center", padding: "8px 14px" }}
         >
           {checking && <RefreshCw size={13} className="spin" />}
-          <span>{L("Connect to Loopy", "Conectar a Loopy")}</span>
+          <span>{L("Connect to Loors", "Conectar a Loors")}</span>
         </button>
       </form>
     </div>

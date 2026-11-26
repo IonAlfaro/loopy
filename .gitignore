@@ -26,13 +26,13 @@ browser-profile/
 *.db
 
 # Runtime & test scratch folders
-.loopy/
-**/.loopy/
-.sloopy/
-**/.sloopy/
+.loors/
+**/.loors/
+.sloors/
+**/.sloors/
 src-tauri/*.png
 src-tauri/.*.png
-.loopy-test-webkit/
+.loors-test-webkit/
 webkit-audit/
 
 # OS & IDE files

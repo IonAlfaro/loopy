@@ -153,7 +153,7 @@ export function InteractiveBrowserPane({
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     let disposed = false;
-    listen<BrowserScreencastEvent>("loopy://browser-screencast", (event) => {
+    listen<BrowserScreencastEvent>("loors://browser-screencast", (event) => {
       const ev = event.payload;
       if (!ev || !ev.frameBase64) return;
       if (ev.sessionId && ev.sessionId !== sessionId) return;

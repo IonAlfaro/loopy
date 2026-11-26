@@ -13,10 +13,10 @@ import {
   type CustomNodeDef,
   type EngineEvent,
   type HumanGatePrompt,
-  type LoopyFlowEdge,
-  type LoopyFlowNode,
-  type LoopyNodeKind,
-  type LoopyWorkflowFile,
+  type LoorsFlowEdge,
+  type LoorsFlowNode,
+  type LoorsNodeKind,
+  type LoorsWorkflowFile,
   type ModelLoadProgressEvent,
   type RunLogEntry,
   type RunStatus,
@@ -24,10 +24,10 @@ import {
 } from "../types/graph";
 import { HARNESS_TEMPLATES } from "../templates/harnesses";
 
-const INITIAL_NODES: LoopyFlowNode[] = [
+const INITIAL_NODES: LoorsFlowNode[] = [
   {
     id: "input-1",
-    type: "loopyNode",
+    type: "loorsNode",
     position: { x: 40, y: 180 },
     data: {
       kind: "task_input",
@@ -38,7 +38,7 @@ const INITIAL_NODES: LoopyFlowNode[] = [
   },
   {
     id: "model-1",
-    type: "loopyNode",
+    type: "loorsNode",
     position: { x: 40, y: 380 },
     data: {
       kind: "local_model",
@@ -49,7 +49,7 @@ const INITIAL_NODES: LoopyFlowNode[] = [
   },
   {
     id: "agent-1",
-    type: "loopyNode",
+    type: "loorsNode",
     position: { x: 340, y: 200 },
     data: {
       kind: "agent",
@@ -60,7 +60,7 @@ const INITIAL_NODES: LoopyFlowNode[] = [
   },
   {
     id: "shell-1",
-    type: "loopyNode",
+    type: "loorsNode",
     position: { x: 640, y: 200 },
     data: {
       kind: "shell",
@@ -71,7 +71,7 @@ const INITIAL_NODES: LoopyFlowNode[] = [
   },
   {
     id: "cond-1",
-    type: "loopyNode",
+    type: "loorsNode",
     position: { x: 920, y: 200 },
     data: {
       kind: "condition",
@@ -82,7 +82,7 @@ const INITIAL_NODES: LoopyFlowNode[] = [
   },
   {
     id: "guard-1",
-    type: "loopyNode",
+    type: "loorsNode",
     position: { x: 640, y: 420 },
     data: {
       kind: "loop_guard",
@@ -93,7 +93,7 @@ const INITIAL_NODES: LoopyFlowNode[] = [
   },
   {
     id: "out-1",
-    type: "loopyNode",
+    type: "loorsNode",
     position: { x: 1200, y: 150 },
     data: {
       kind: "output",
@@ -104,7 +104,7 @@ const INITIAL_NODES: LoopyFlowNode[] = [
   },
 ];
 
-const INITIAL_EDGES: LoopyFlowEdge[] = [
+const INITIAL_EDGES: LoorsFlowEdge[] = [
   {
     id: "e-in-agent",
     source: "input-1",
@@ -166,8 +166,8 @@ const INITIAL_EDGES: LoopyFlowEdge[] = [
 
 interface GraphStoreState {
   workflowName: string;
-  nodes: LoopyFlowNode[];
-  edges: LoopyFlowEdge[];
+  nodes: LoorsFlowNode[];
+  edges: LoorsFlowEdge[];
   selectedNodeId: string | null;
   selectedBackend: RuntimeBackendKind;
   runStatus: RunStatus;
@@ -225,16 +225,16 @@ interface GraphStoreState {
   loadTemplate: (templateId: string) => void;
   prepareRun: () => void;
   applyEngineEvent: (event: EngineEvent) => void;
-  onNodesChange: (changes: NodeChange<LoopyFlowNode>[]) => void;
-  onEdgesChange: (changes: EdgeChange<LoopyFlowEdge>[]) => void;
+  onNodesChange: (changes: NodeChange<LoorsFlowNode>[]) => void;
+  onEdgesChange: (changes: EdgeChange<LoorsFlowEdge>[]) => void;
   onConnect: (connection: Connection) => void;
-  addNode: (kind: LoopyNodeKind, position?: { x: number; y: number }) => void;
+  addNode: (kind: LoorsNodeKind, position?: { x: number; y: number }) => void;
   autoLayout: () => void;
   updateNodeTitle: (id: string, title: string) => void;
   updateNodeConfig: (id: string, patch: Record<string, unknown>) => void;
   deleteNode: (id: string) => void;
-  exportWorkflow: () => LoopyWorkflowFile;
-  importWorkflow: (file: LoopyWorkflowFile) => void;
+  exportWorkflow: () => LoorsWorkflowFile;
+  importWorkflow: (file: LoorsWorkflowFile) => void;
 }
 
 function formatNow(): string {
@@ -261,11 +261,11 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   consoleOpen: false,
   pendingGate: null,
   customNodes: [],
-  appMode: (typeof window !== "undefined" && window.localStorage.getItem("loopy_app_mode") === "harness")
+  appMode: (typeof window !== "undefined" && window.localStorage.getItem("loors_app_mode") === "harness")
     ? "harness"
     : "agent",
   locale:
-    typeof window !== "undefined" && window.localStorage.getItem("loopy_locale") === "es"
+    typeof window !== "undefined" && window.localStorage.getItem("loors_locale") === "es"
       ? "es"
       : "en",
   leftPanelOpen: true,
@@ -278,18 +278,18 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   agentRunning: false,
   agentActiveTitle: null,
   activeModelPath:
-    (typeof window !== "undefined" && window.localStorage.getItem("loopy_active_model_path")) ||
+    (typeof window !== "undefined" && window.localStorage.getItem("loors_active_model_path")) ||
     "",
 
   setAppMode: (appMode) => {
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("loopy_app_mode", appMode);
+      window.localStorage.setItem("loors_app_mode", appMode);
     }
     set({ appMode });
   },
   setLocale: (locale) => {
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("loopy_locale", locale);
+      window.localStorage.setItem("loors_locale", locale);
     }
     set({ locale });
   },
@@ -298,7 +298,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   setModelLoadProgress: (modelLoadProgress) => set({ modelLoadProgress }),
   setActiveModelPath: (modelPath) => {
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("loopy_active_model_path", modelPath);
+      window.localStorage.setItem("loors_active_model_path", modelPath);
     }
     const shortName = modelPath.split(/[\\/]/).pop()?.replace(/\.gguf$/i, "") || "";
     set({
@@ -354,7 +354,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     const src = get().nodes.find((n) => n.id === id);
     if (!src) return;
     const copyId = `${src.data.kind}-${Date.now().toString(36)}`;
-    const copy: LoopyFlowNode = {
+    const copy: LoorsFlowNode = {
       ...src,
       id: copyId,
       position: { x: src.position.x + 48, y: src.position.y + 48 },
@@ -380,9 +380,9 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     for (const f of def.fields) {
       fieldDefaults[f.key] = f.fieldType === "number" ? Number(f.defaultValue || 0) : f.defaultValue;
     }
-    const newNode: LoopyFlowNode = {
+    const newNode: LoorsFlowNode = {
       id,
-      type: "loopyNode",
+      type: "loorsNode",
       position: {
         x: 260 + (count % 4) * 50,
         y: 140 + (count % 4) * 45,
@@ -440,9 +440,9 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       config.modelPath = state.activeModelPath;
     }
 
-    const newNode: LoopyFlowNode = {
+    const newNode: LoorsFlowNode = {
       id,
-      type: "loopyNode",
+      type: "loorsNode",
       position: {
         x: Math.max(20, target.position.x - 270),
         y: target.position.y + existingAttached * 125,
@@ -454,7 +454,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
         config,
       },
     };
-    const newEdge: LoopyFlowEdge = {
+    const newEdge: LoorsFlowEdge = {
       id: `e-${id}-${targetNodeId}`,
       source: id,
       sourceHandle: handles.src,
@@ -494,10 +494,10 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       prevNodes.find((n) => n.data.kind === "task_input")?.data.config.workspace ?? "."
     );
 
-    const baseNodes: LoopyFlowNode[] = [
+    const baseNodes: LoorsFlowNode[] = [
       {
         id: "in-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 40, y: 160 },
         data: {
           kind: "task_input",
@@ -511,7 +511,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       },
       {
         id: "model-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 40, y: 360 },
         data: {
           kind: "local_model",
@@ -526,7 +526,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       },
       {
         id: "agent-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 360, y: 160 },
         data: {
           kind: "agent",
@@ -540,7 +540,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       },
       {
         id: "out-1",
-        type: "loopyNode",
+        type: "loorsNode",
         position: { x: 680, y: 160 },
         data: {
           kind: "output",
@@ -551,7 +551,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       },
     ];
 
-    const baseEdges: LoopyFlowEdge[] = [
+    const baseEdges: LoorsFlowEdge[] = [
       { id: "e-in-agent", source: "in-1", sourceHandle: "exec", target: "agent-1", targetHandle: "exec" },
       {
         id: "e-model-agent",
@@ -751,7 +751,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     const isKnowledge =
       connection.sourceHandle === "knowledge_ref" || connection.targetHandle === "knowledge_ref";
 
-    const nextEdge: LoopyFlowEdge = {
+    const nextEdge: LoorsFlowEdge = {
       ...connection,
       id: `e-${connection.source}-${connection.sourceHandle ?? "out"}-${connection.target}-${connection.targetHandle ?? "in"}-${Date.now()}`,
       animated: isRetry,
@@ -779,9 +779,9 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     const bp = NODE_BLUEPRINTS[kind];
     const count = get().nodes.length;
     const id = `${kind}-${Date.now().toString(36)}`;
-    const newNode: LoopyFlowNode = {
+    const newNode: LoorsFlowNode = {
       id,
-      type: "loopyNode",
+      type: "loorsNode",
       position: position ?? {
         x: 240 + (count % 4) * 50,
         y: 120 + (count % 4) * 45,
@@ -898,6 +898,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
         if (n.data.kind === "local_model" && activeModel) {
           return {
             ...n,
+            type: "loorsNode",
             data: {
               ...n.data,
               title: shortModelTitle || n.data.title,
@@ -908,6 +909,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
         }
         return {
           ...n,
+          type: "loorsNode",
           data: { ...n.data, status: "idle" },
         };
       }),

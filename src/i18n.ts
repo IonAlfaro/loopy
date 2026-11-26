@@ -1,5 +1,5 @@
 import { useGraphStore } from "./store/useGraphStore";
-import { NODE_BLUEPRINTS, type LoopyNodeKind } from "./types/graph";
+import { NODE_BLUEPRINTS, type LoorsNodeKind } from "./types/graph";
 
 export type AppLocale = "en" | "es";
 
@@ -14,7 +14,7 @@ const TRANSLATIONS = {
     "nav.stop": "Stop",
     "nav.runtimeTooltip": "Local runtime (llama.cpp)",
     "nav.modelsTooltip": "Local GGUF models, Hugging Face & Cloud APIs",
-    "nav.updatesTooltip": "Check for Loopy updates",
+    "nav.updatesTooltip": "Check for Loors updates",
     "nav.languageTooltip": "Switch language (EN / ES)",
 
     // Harness Canvas & Sidebar
@@ -26,7 +26,7 @@ const TRANSLATIONS = {
     "canvas.console": "Console",
     "canvas.logs": "Logs",
     "canvas.gitDiff": "Git Diff",
-    "canvas.reports": "Reports (.loopy)",
+    "canvas.reports": "Reports (.loors)",
     "canvas.ready": "Ready",
     "canvas.running": "Running",
     "canvas.autoScroll": "Auto",
@@ -77,19 +77,19 @@ const TRANSLATIONS = {
     "agent.noPinMatches": "No matching files in this project.",
 
     // Onboarding
-    "onboarding.title": "Choose how you want to use AI",
-    "onboarding.optA": "Option A · 100% Local AI (private & free)",
-    "onboarding.rtReady": "llama.cpp runtime ready",
-    "onboarding.rtInstalling": "Installing llama.cpp automatically…",
-    "onboarding.rtInstallCta": "Install llama.cpp automatically (1 click)",
-    "onboarding.rtInstallDesc": "Detects your GPU (CUDA / Vulkan / Metal / CPU) and downloads the engine",
+    "onboarding.title": "Configure a local runtime or connect an API provider to get started.",
+    "onboarding.optA": "Local Runtime",
+    "onboarding.rtReady": "llama.cpp ready",
+    "onboarding.rtInstalling": "Installing llama.cpp…",
+    "onboarding.rtInstallCta": "Install llama.cpp",
+    "onboarding.rtInstallDesc": "Automatic GPU detection (CUDA, Vulkan, Metal, or CPU)",
     "onboarding.rtInstalledPrefix": "Installed",
-    "onboarding.ggufCta": "Download or pick a GGUF model",
-    "onboarding.ggufDesc": "Browse Hugging Face or reuse local LM Studio models",
-    "onboarding.ggufDetected": "model(s) detected",
-    "onboarding.optB": "Option B · External provider or custom API",
-    "onboarding.cloudCta": "Connect external or custom API",
-    "onboarding.cloudDesc": "Claude, ChatGPT, Gemini, GitHub Copilot, OpenRouter, OpenCode or any endpoint",
+    "onboarding.ggufCta": "Select or download a GGUF model",
+    "onboarding.ggufDesc": "Browse Hugging Face or use existing local models",
+    "onboarding.ggufDetected": "model(s) available",
+    "onboarding.optB": "Cloud & Local APIs",
+    "onboarding.cloudCta": "Connect an API provider",
+    "onboarding.cloudDesc": "OpenAI, Anthropic, Gemini, LM Studio, Ollama, or custom endpoints",
 
     // Suggestions
     "suggest.ws1": "Explore this project's architecture and summarize the key files",
@@ -107,8 +107,8 @@ const TRANSLATIONS = {
     "models.rescan": "Rescan",
     "models.searchLocal": "Search local models (name, family or quantization Q4, Q8…)",
     "models.emptyLocal": "No local .gguf files yet",
-    "models.emptyLocalDesc": "Loopy automatically detects models from LM Studio and its local folder, or you can download quantizations from Hugging Face.",
-    "models.cloudHint": "Enter your API key and click Connect & load models: Loopy automatically fetches available models from each provider.",
+    "models.emptyLocalDesc": "Loors automatically detects models from LM Studio and its local folder, or you can download quantizations from Hugging Face.",
+    "models.cloudHint": "Enter your API key and click Connect & load models: Loors automatically fetches available models from each provider.",
     "models.addCustom": "Add custom provider",
     "models.save": "Save",
     "models.saving": "Saving…",
@@ -122,7 +122,7 @@ const TRANSLATIONS = {
     "models.close": "Close",
 
     // Architect Chat
-    "architect.subtitle": "Visual harness designer (.loopy.json)",
+    "architect.subtitle": "Visual harness designer (.loors.json)",
     "architect.placeholder": "Describe the harness, drag files/images or paste with Ctrl+V…",
     "architect.queuePlaceholder": "Write another message to queue it… (Enter to queue)",
     "architect.emptyIntro": "Ask me to design a harness from scratch or improve the current canvas. You can attach files, folders, or screenshots.",
@@ -143,25 +143,25 @@ const TRANSLATIONS = {
     "runtime.done": "Done",
 
     // Update Modal
-    "updates.title": "Loopy Updates",
+    "updates.title": "Loors Updates",
     "updates.installed": "Installed version",
     "updates.check": "Check for updates",
     "updates.checking": "Checking…",
     "updates.repoLabel": "GitHub Releases repository (owner/repo)",
-    "updates.upToDate": "Loopy is up to date",
+    "updates.upToDate": "Loors is up to date",
     "updates.newAvailable": "New version available",
     "updates.viewRelease": "View release",
     "updates.downloadInstall": "Download & install",
     "updates.downloading": "Downloading update…",
 
     // Library Modal
-    "library.title": "Harness Library (.loopy.json)",
+    "library.title": "Harness Library (.loors.json)",
     "library.save": "Save to library",
     "library.export": "Export",
     "library.copyJson": "Copy JSON",
     "library.import": "Import",
     "library.localHeader": "LOCAL HARNESS LIBRARY",
-    "library.emptyLocal": "You haven't saved any harnesses to your local library yet. You can also drag and drop a .loopy.json file directly onto the canvas.",
+    "library.emptyLocal": "You haven't saved any harnesses to your local library yet. You can also drag and drop a .loors.json file directly onto the canvas.",
     "library.templatesHeader": "EXAMPLE TEMPLATES",
     "library.use": "Use",
     "library.pasteLabel": "Import by pasting JSON directly",
@@ -177,7 +177,7 @@ const TRANSLATIONS = {
     "nav.stop": "Detener",
     "nav.runtimeTooltip": "Runtime local (llama.cpp)",
     "nav.modelsTooltip": "Modelos GGUF locales, Hugging Face y APIs Cloud",
-    "nav.updatesTooltip": "Buscar actualizaciones de Loopy",
+    "nav.updatesTooltip": "Buscar actualizaciones de Loors",
     "nav.languageTooltip": "Cambiar idioma (EN / ES)",
 
     // Harness Canvas & Sidebar
@@ -189,7 +189,7 @@ const TRANSLATIONS = {
     "canvas.console": "Consola",
     "canvas.logs": "Logs",
     "canvas.gitDiff": "Git Diff",
-    "canvas.reports": "Reportes (.loopy)",
+    "canvas.reports": "Reportes (.loors)",
     "canvas.ready": "Listo",
     "canvas.running": "Ejecutando",
     "canvas.autoScroll": "Auto",
@@ -240,19 +240,19 @@ const TRANSLATIONS = {
     "agent.noPinMatches": "Sin archivos que coincidan en el proyecto.",
 
     // Onboarding
-    "onboarding.title": "Elige cómo quieres usar la IA",
-    "onboarding.optA": "Opción A · IA 100% local (privada y gratuita)",
-    "onboarding.rtReady": "Runtime llama.cpp listo",
-    "onboarding.rtInstalling": "Instalando llama.cpp automáticamente…",
-    "onboarding.rtInstallCta": "Instalar llama.cpp automáticamente (1 clic)",
-    "onboarding.rtInstallDesc": "Detecta tu GPU (CUDA / Vulkan / Metal / CPU) y descarga el motor",
+    "onboarding.title": "Configura un motor local o conecta un proveedor API para empezar.",
+    "onboarding.optA": "Ejecución local",
+    "onboarding.rtReady": "llama.cpp listo",
+    "onboarding.rtInstalling": "Instalando llama.cpp…",
+    "onboarding.rtInstallCta": "Instalar llama.cpp",
+    "onboarding.rtInstallDesc": "Detección automática de GPU (CUDA, Vulkan, Metal o CPU)",
     "onboarding.rtInstalledPrefix": "Instalado",
-    "onboarding.ggufCta": "Descargar o elegir un modelo GGUF",
-    "onboarding.ggufDesc": "Explora Hugging Face o reutiliza modelos de LM Studio",
-    "onboarding.ggufDetected": "modelo(s) detectado(s)",
-    "onboarding.optB": "Opción B · Proveedor externo o API personalizada",
-    "onboarding.cloudCta": "Conectar API externa o propia",
-    "onboarding.cloudDesc": "Claude, ChatGPT, Gemini, GitHub Copilot, OpenRouter, OpenCode u otro endpoint",
+    "onboarding.ggufCta": "Elegir o descargar un modelo GGUF",
+    "onboarding.ggufDesc": "Explora Hugging Face o usa modelos locales existentes",
+    "onboarding.ggufDetected": "modelo(s) disponible(s)",
+    "onboarding.optB": "APIs en la nube y locales",
+    "onboarding.cloudCta": "Conectar proveedor API",
+    "onboarding.cloudDesc": "OpenAI, Anthropic, Gemini, LM Studio, Ollama o endpoints personalizados",
 
     // Suggestions
     "suggest.ws1": "Explora la arquitectura de este proyecto y resúmeme los archivos clave",
@@ -270,8 +270,8 @@ const TRANSLATIONS = {
     "models.rescan": "Reescanear",
     "models.searchLocal": "Buscar entre tus modelos locales (nombre, familia o cuantización Q4, Q8…)",
     "models.emptyLocal": "No hay archivos .gguf locales todavía",
-    "models.emptyLocalDesc": "Loopy detecta automáticamente modelos descargados en LM Studio y en su carpeta local, o puedes descargar cuantizaciones ahora desde Hugging Face.",
-    "models.cloudHint": "Introduce tu API Key y pulsa Conectar y cargar modelos: Loopy consulta automáticamente los modelos disponibles en cada proveedor.",
+    "models.emptyLocalDesc": "Loors detecta automáticamente modelos descargados en LM Studio y en su carpeta local, o puedes descargar cuantizaciones ahora desde Hugging Face.",
+    "models.cloudHint": "Introduce tu API Key y pulsa Conectar y cargar modelos: Loors consulta automáticamente los modelos disponibles en cada proveedor.",
     "models.addCustom": "Añadir proveedor personalizado",
     "models.save": "Guardar",
     "models.saving": "Guardando…",
@@ -285,7 +285,7 @@ const TRANSLATIONS = {
     "models.close": "Cerrar",
 
     // Architect Chat
-    "architect.subtitle": "Diseñador de arneses .loopy.json",
+    "architect.subtitle": "Diseñador de arneses .loors.json",
     "architect.placeholder": "Describe el arnés, arrastra archivos/imágenes o pega con Ctrl+V…",
     "architect.queuePlaceholder": "Escribe otro mensaje para encolarlo… (Enter para encolar)",
     "architect.emptyIntro": "Pídeme que diseñe un arnés desde cero o que mejore el arnés actual del lienzo. Puedes adjuntar archivos, carpetas o capturas.",
@@ -306,25 +306,25 @@ const TRANSLATIONS = {
     "runtime.done": "Listo",
 
     // Update Modal
-    "updates.title": "Actualizaciones de Loopy",
+    "updates.title": "Actualizaciones de Loors",
     "updates.installed": "Versión instalada",
     "updates.check": "Buscar actualizaciones",
     "updates.checking": "Comprobando…",
     "updates.repoLabel": "Repositorio GitHub Releases (usuario/repo)",
-    "updates.upToDate": "Loopy está actualizado",
+    "updates.upToDate": "Loors está actualizado",
     "updates.newAvailable": "Nueva versión disponible",
     "updates.viewRelease": "Ver release",
     "updates.downloadInstall": "Descargar e instalar",
     "updates.downloading": "Descargando actualización…",
 
     // Library Modal
-    "library.title": "Biblioteca de Arneses (.loopy.json)",
+    "library.title": "Biblioteca de Arneses (.loors.json)",
     "library.save": "Guardar en biblioteca",
     "library.export": "Exportar",
     "library.copyJson": "Copiar JSON",
     "library.import": "Importar",
     "library.localHeader": "BIBLIOTECA LOCAL DE ARNESES",
-    "library.emptyLocal": "Aún no has guardado arneses en tu biblioteca local. También puedes arrastrar y soltar un archivo .loopy.json directamente sobre el canvas.",
+    "library.emptyLocal": "Aún no has guardado arneses en tu biblioteca local. También puedes arrastrar y soltar un archivo .loors.json directamente sobre el canvas.",
     "library.templatesHeader": "PLANTILLAS DE EJEMPLO",
     "library.use": "Usar",
     "library.pasteLabel": "Importar pegando JSON directamente",
@@ -338,13 +338,13 @@ export function translate(locale: AppLocale, key: TranslationKey): string {
   return TRANSLATIONS[locale][key] ?? TRANSLATIONS.en[key] ?? key;
 }
 
-const NODE_LABELS_EN: Partial<Record<LoopyNodeKind, string>> = {
+const NODE_LABELS_EN: Partial<Record<LoorsNodeKind, string>> = {
   workspace: "Workspace / Project",
   subgraph: "Sub-harness (Subgraph)",
   local_model: "Model (GGUF / API)",
 };
 
-const NODE_DESCRIPTIONS_EN: Record<LoopyNodeKind, string> = {
+const NODE_DESCRIPTIONS_EN: Record<LoorsNodeKind, string> = {
   task_input: "Defines the initial task prompt and project workspace.",
   trigger: "Starts the harness via HTTP Webhook, Cron interval, or Telegram Bot.",
   workspace: "Pluggable project folder: connect to Agent/Shell/RAG or run inline to switch workspace.",
@@ -365,13 +365,13 @@ const NODE_DESCRIPTIONS_EN: Record<LoopyNodeKind, string> = {
   context_compactor: "Compresses long conversation history and logs to stay within context budget.",
   human_gate: "Pauses the harness so you can review the Git diff and approve or send feedback.",
   parallel_fanout: "Spawns isolated Git worktrees to run parallel branches concurrently.",
-  subgraph: "Executes another saved .loopy.json harness as a reusable step.",
+  subgraph: "Executes another saved .loors.json harness as a reusable step.",
   notify: "Sends notifications or reports to Telegram, Slack, Discord, or any webhook.",
   custom: "User-defined reusable Shell, HTTP, or Prompt node.",
   output: "Marks the final completion state and summarizes the harness run.",
 };
 
-const NODE_GUIDES: Record<LoopyNodeKind, { en: string; es: string }> = {
+const NODE_GUIDES: Record<LoorsNodeKind, { en: string; es: string }> = {
   task_input: {
     en: "Pick your project folder and write the initial task prompt, then connect 'exec' to the first step.",
     es: "Elige la carpeta del proyecto, escribe la tarea inicial y conecta 'exec' al primer paso.",
@@ -413,8 +413,8 @@ const NODE_GUIDES: Record<LoopyNodeKind, { en: string; es: string }> = {
     es: "Configura método, URL, headers y cuerpo JSON (admite {{variables}}). Usa 'ok' para respuestas 2xx y 'error' para fallos.",
   },
   memory_file: {
-    en: "Pick Read, Append, or Write on a file inside .loopy/ to persist state between loop iterations.",
-    es: "Elige Leer, Añadir o Escribir sobre un archivo en .loopy/ para guardar memoria entre iteraciones del bucle.",
+    en: "Pick Read, Append, or Write on a file inside .loors/ to persist state between loop iterations.",
+    es: "Elige Leer, Añadir o Escribir sobre un archivo en .loors/ para guardar memoria entre iteraciones del bucle.",
   },
   condition: {
     en: "Set a rule (e.g. exit_code == 0 or contains:PASS), then wire 'true' for success and 'false' to retry or handle errors.",
@@ -449,12 +449,12 @@ const NODE_GUIDES: Record<LoopyNodeKind, { en: string; es: string }> = {
     es: "Colócalo antes de pasos críticos: pausa la ejecución para revisar el Git diff y enruta a 'approve' o 'reject'.",
   },
   parallel_fanout: {
-    en: "Define parallel branch tasks; Loopy creates isolated Git worktrees and merges results on completion.",
-    es: "Define tareas paralelas; Loopy crea worktrees Git aislados para cada rama y recoge los resultados al terminar.",
+    en: "Define parallel branch tasks; Loors creates isolated Git worktrees and merges results on completion.",
+    es: "Define tareas paralelas; Loors crea worktrees Git aislados para cada rama y recoge los resultados al terminar.",
   },
   subgraph: {
-    en: "Pick another saved .loopy.json harness from your library to run it as a modular step.",
-    es: "Elige otro arnés .loopy.json guardado en tu biblioteca para ejecutarlo como un paso modular.",
+    en: "Pick another saved .loors.json harness from your library to run it as a modular step.",
+    es: "Elige otro arnés .loors.json guardado en tu biblioteca para ejecutarlo como un paso modular.",
   },
   notify: {
     en: "Configure Telegram, Slack, Discord, or Webhook and write the message template (supports {{agent_output}}, {{stdout}}).",
@@ -470,20 +470,20 @@ const NODE_GUIDES: Record<LoopyNodeKind, { en: string; es: string }> = {
   },
 };
 
-export function getNodeGuide(kind: LoopyNodeKind, locale: AppLocale): string {
+export function getNodeGuide(kind: LoorsNodeKind, locale: AppLocale): string {
   const entry = NODE_GUIDES[kind];
   if (!entry) return "";
   return locale === "es" ? entry.es : entry.en;
 }
 
-export function getNodeLabel(kind: LoopyNodeKind, locale: AppLocale): string {
+export function getNodeLabel(kind: LoorsNodeKind, locale: AppLocale): string {
   if (locale === "en" && NODE_LABELS_EN[kind]) {
     return NODE_LABELS_EN[kind]!;
   }
   return NODE_BLUEPRINTS[kind]?.label ?? kind;
 }
 
-export function getNodeDescription(kind: LoopyNodeKind, locale: AppLocale): string {
+export function getNodeDescription(kind: LoorsNodeKind, locale: AppLocale): string {
   if (locale === "en") {
     return NODE_DESCRIPTIONS_EN[kind] ?? NODE_BLUEPRINTS[kind]?.description ?? "";
   }

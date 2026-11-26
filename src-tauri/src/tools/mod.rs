@@ -1284,7 +1284,7 @@ fn apply_fuzzy_edit(content: &str, old_text: &str, new_text: &str) -> Option<(St
 
 async fn fetch_clean_text(url: &str) -> String {
     let Ok(client) = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Loopy/0.1")
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Loors/0.1")
         .timeout(std::time::Duration::from_secs(20))
         .build()
     else {
@@ -1857,11 +1857,11 @@ async fn run_binary_inspect(
                     }
                 });
 
-            let proj_dir = std::env::temp_dir().join("loopy_ghidra_proj");
+            let proj_dir = std::env::temp_dir().join("loors_ghidra_proj");
             let _ = fs::create_dir_all(&proj_dir);
             let mut cmd = Command::new(&ghidra_headless);
             cmd.arg(proj_dir.to_string_lossy().to_string())
-                .arg("LoopyProject")
+                .arg("LoorsProject")
                 .arg("-import")
                 .arg(&target_str)
                 .arg("-overwrite");
@@ -1900,7 +1900,7 @@ mod tests {
 
     #[tokio::test]
     async fn edit_file_and_read_file_line_ranges_work() {
-        let dir = std::env::temp_dir().join("loopy_tools_test");
+        let dir = std::env::temp_dir().join("loors_tools_test");
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let ws = dir.to_string_lossy().to_string();
@@ -1930,7 +1930,7 @@ mod tests {
         .await;
         assert!(read_res.contains("2 | line2_edited"));
 
-        // Regression test for bug found by Loopy self-audit: start_line > end_line must not panic
+        // Regression test for bug found by Loors self-audit: start_line > end_line must not panic
         let inverted_res = execute_tool(
             &ws,
             "read_file",

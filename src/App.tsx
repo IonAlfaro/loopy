@@ -32,7 +32,7 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { LoopyNode } from "./components/nodes/LoopyNode";
+import { LoorsNode } from "./components/nodes/LoorsNode";
 import { Sidebar } from "./components/Sidebar";
 import { Inspector } from "./components/Inspector";
 import { ConsolePanel } from "./components/ConsolePanel";
@@ -52,16 +52,17 @@ import {
   parseWorkflowJson,
   validateGraphBeforeRun,
   type EngineEvent,
-  type LoopyNodeKind,
+  type LoorsNodeKind,
   type ModelLoadProgressEvent,
   type RuntimeStatusSnapshot,
 } from "./types/graph";
 
 const nodeTypes: NodeTypes = {
-  loopyNode: LoopyNode,
+  loorsNode: LoorsNode,
+  loopyNode: LoorsNode,
 };
 
-function LoopyStudioInner() {
+function LoorsStudioInner() {
   const { locale, t } = useI18n();
   const { screenToFlowPosition, fitView } = useReactFlow();
   const appMode = useGraphStore((s) => s.appMode);
@@ -112,8 +113,8 @@ function LoopyStudioInner() {
       }
     });
     const onAuthRequired = () => setWebAuthRequired(true);
-    window.addEventListener("loopy:auth-required", onAuthRequired);
-    return () => window.removeEventListener("loopy:auth-required", onAuthRequired);
+    window.addEventListener("loors:auth-required", onAuthRequired);
+    return () => window.removeEventListener("loors:auth-required", onAuthRequired);
   }, []);
   const leftPanelOpen = useGraphStore((s) => s.leftPanelOpen);
   const setLeftPanelOpen = useGraphStore((s) => s.setLeftPanelOpen);
@@ -122,11 +123,11 @@ function LoopyStudioInner() {
   const sidebarCollapsed = !leftPanelOpen;
   const rightPanelCollapsed = !rightPanelOpen;
   const [harnessLeftWidth, setHarnessLeftWidth] = useState<number>(() => {
-    const saved = Number(localStorage.getItem("loopy_harness_left_w"));
+    const saved = Number(localStorage.getItem("loors_harness_left_w"));
     return Number.isFinite(saved) && saved >= 190 && saved <= 440 ? saved : 256;
   });
   const [harnessRightWidth, setHarnessRightWidth] = useState<number>(() => {
-    const saved = Number(localStorage.getItem("loopy_harness_right_w"));
+    const saved = Number(localStorage.getItem("loors_harness_right_w"));
     return Number.isFinite(saved) && saved >= 280 && saved <= 640 ? saved : 360;
   });
 
@@ -139,11 +140,11 @@ function LoopyStudioInner() {
       if (side === "left") {
         const next = Math.min(440, Math.max(190, initial + dx));
         setHarnessLeftWidth(next);
-        localStorage.setItem("loopy_harness_left_w", String(next));
+        localStorage.setItem("loors_harness_left_w", String(next));
       } else {
         const next = Math.min(640, Math.max(280, initial - dx));
         setHarnessRightWidth(next);
-        localStorage.setItem("loopy_harness_right_w", String(next));
+        localStorage.setItem("loors_harness_right_w", String(next));
       }
     };
     const onUp = () => {
@@ -241,13 +242,13 @@ function LoopyStudioInner() {
       const detail = (ev as CustomEvent<{ startNodeId?: string }>).detail;
       void handleRun(detail?.startNodeId);
     };
-    window.addEventListener("loopy:open-models-modal", onOpenModels);
-    window.addEventListener("loopy:open-runtime-modal", onOpenRuntime);
-    window.addEventListener("loopy:run-workflow", onRunWorkflow);
+    window.addEventListener("loors:open-models-modal", onOpenModels);
+    window.addEventListener("loors:open-runtime-modal", onOpenRuntime);
+    window.addEventListener("loors:run-workflow", onRunWorkflow);
     return () => {
-      window.removeEventListener("loopy:open-models-modal", onOpenModels);
-      window.removeEventListener("loopy:open-runtime-modal", onOpenRuntime);
-      window.removeEventListener("loopy:run-workflow", onRunWorkflow);
+      window.removeEventListener("loors:open-models-modal", onOpenModels);
+      window.removeEventListener("loors:open-runtime-modal", onOpenRuntime);
+      window.removeEventListener("loors:run-workflow", onRunWorkflow);
     };
   });
 
@@ -274,7 +275,7 @@ function LoopyStudioInner() {
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
-    listen<EngineEvent>("loopy://engine-event", (event) => {
+    listen<EngineEvent>("loors://engine-event", (event) => {
       if (!cancelled) applyEngineEvent(event.payload);
     })
       .then((fn) => {
@@ -298,7 +299,7 @@ function LoopyStudioInner() {
     let cancelled = false;
     let unlisten: (() => void) | undefined;
     let clearTimer: ReturnType<typeof setTimeout> | undefined;
-    listen<ModelLoadProgressEvent>("loopy://model-load-progress", (event) => {
+    listen<ModelLoadProgressEvent>("loors://model-load-progress", (event) => {
       if (cancelled) return;
       if (clearTimer) clearTimeout(clearTimer);
       const p = event.payload;
@@ -375,7 +376,7 @@ function LoopyStudioInner() {
 
     let graph = exportWorkflow();
 
-    // Prevent accidentally running on "." (loopy/src-tauri) — prompt user to pick a real project folder first
+    // Prevent accidentally running on "." (loors/src-tauri) — prompt user to pick a real project folder first
     const ti = graph.nodes.find((n) => n.data.kind === "task_input");
     const ws = String(ti?.data.config.workspace ?? "").trim();
     if (ti && (ws === "" || ws === ".")) {
@@ -455,7 +456,7 @@ function LoopyStudioInner() {
       setBanner(
         typeof err === "string"
           ? err
-          : "Ejecuta Loopy con Tauri (`npm run tauri dev`) para lanzar el motor Rust."
+          : "Ejecuta Loors con Tauri (`npm run tauri dev`) para lanzar el motor Rust."
       );
       applyEngineEvent({
         type: "run_finished",
@@ -498,7 +499,7 @@ function LoopyStudioInner() {
 
   const handleCanvasDrop = async (e: React.DragEvent) => {
     e.preventDefault();
-    const droppedKind = e.dataTransfer.getData("application/loopy-node-kind") as LoopyNodeKind;
+    const droppedKind = e.dataTransfer.getData("application/loors-node-kind") as LoorsNodeKind;
     if (droppedKind && NODE_BLUEPRINTS[droppedKind]) {
       const flowPos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
       addNode(droppedKind, flowPos);
@@ -508,7 +509,7 @@ function LoopyStudioInner() {
     const file = e.dataTransfer.files?.[0];
     if (!file) return;
     if (!file.name.endsWith(".json")) {
-      setBanner("Arrastra un archivo .loopy.json válido.");
+      setBanner("Arrastra un archivo .loors.json válido.");
       return;
     }
     try {
@@ -535,15 +536,15 @@ function LoopyStudioInner() {
   const isRunning = runStatus === "running";
 
   return (
-    <div className="loopy-shell">
-      <header className="loopy-topbar">
+    <div className="loors-shell">
+      <header className="loors-topbar">
         <div className="topbar-left">
           <div className="brand">
             <RefreshCw
               size={17}
               className={`brand-icon ${isRunning || agentRunning ? "spin" : ""}`}
             />
-            <span>Loopy</span>
+            <span>Loors</span>
           </div>
 
           <div className="mode-switcher" role="tablist" aria-label="Modo de trabajo">
@@ -780,7 +781,7 @@ function LoopyStudioInner() {
       </div>
 
       <div
-        className="loopy-workspace"
+        className="loors-workspace"
         style={{
           display: appMode === "harness" ? "grid" : "none",
           gridTemplateColumns: [
@@ -807,14 +808,14 @@ function LoopyStudioInner() {
             }}
             onDoubleClick={() => {
               setHarnessLeftWidth(256);
-              localStorage.setItem("loopy_harness_left_w", "256");
+              localStorage.setItem("loors_harness_left_w", "256");
             }}
           />
         )}
 
-        <div className="loopy-center">
+        <div className="loors-center">
           <main
-            className="loopy-canvas"
+            className="loors-canvas"
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleCanvasDrop}
             onDoubleClick={handlePaneDoubleClick}
@@ -895,7 +896,7 @@ function LoopyStudioInner() {
                   }}
                 />
                 <div className="quick-add-list">
-                  {(Object.keys(NODE_BLUEPRINTS) as LoopyNodeKind[])
+                  {(Object.keys(NODE_BLUEPRINTS) as LoorsNodeKind[])
                     .filter((k) => k !== "custom")
                     .filter((k) => {
                       const q = quickAdd.query.trim().toLowerCase();
@@ -920,7 +921,7 @@ function LoopyStudioInner() {
                           }}
                         >
                           <span
-                            className="loopy-node-dot"
+                            className="loors-node-dot"
                             style={{ background: bp.accent }}
                           />
                           <span>{bp.label}</span>
@@ -947,13 +948,13 @@ function LoopyStudioInner() {
             }}
             onDoubleClick={() => {
               setHarnessRightWidth(360);
-              localStorage.setItem("loopy_harness_right_w", "360");
+              localStorage.setItem("loors_harness_right_w", "360");
             }}
           />
         )}
 
         <aside
-          className="loopy-right-panel"
+          className="loors-right-panel"
           style={{ display: rightPanelCollapsed ? "none" : "flex" }}
         >
           <div className="right-panel-tabs" role="tablist">
@@ -1039,7 +1040,7 @@ function LoopyStudioInner() {
 export function App() {
   return (
     <ReactFlowProvider>
-      <LoopyStudioInner />
+      <LoorsStudioInner />
     </ReactFlowProvider>
   );
 }
