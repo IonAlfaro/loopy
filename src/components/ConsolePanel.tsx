@@ -46,6 +46,8 @@ export function ConsolePanel() {
   const prevRunStatusRef = useRef(runStatus);
 
   const bodyRef = useRef<HTMLDivElement>(null);
+  const lastScrollTopRef = useRef<number>(0);
+  const programmaticScrollRef = useRef<boolean>(false);
 
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -74,20 +76,40 @@ export function ConsolePanel() {
     return logs.filter((l) => l.iteration === iterFilter);
   }, [logs, iterFilter]);
 
+  const lastLogLen = filteredLogs.length > 0 ? filteredLogs[filteredLogs.length - 1].text.length : 0;
+
+  const scrollToBottom = useCallback(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    programmaticScrollRef.current = true;
+    el.scrollTop = el.scrollHeight;
+    lastScrollTopRef.current = el.scrollTop;
+    window.requestAnimationFrame(() => {
+      programmaticScrollRef.current = false;
+    });
+  }, []);
+
   useEffect(() => {
     if (!consoleOpen || tab !== "logs" || !autoScroll) return;
-    const el = bodyRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [filteredLogs.length, consoleOpen, tab, autoScroll]);
+    scrollToBottom();
+  }, [filteredLogs.length, lastLogLen, consoleOpen, tab, autoScroll, scrollToBottom]);
 
   const handleScroll = () => {
     const el = bodyRef.current;
     if (!el || el.scrollHeight <= el.clientHeight + 8) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 36;
-    if (!nearBottom && autoScroll) {
+    const prevTop = lastScrollTopRef.current;
+    const curTop = el.scrollTop;
+    lastScrollTopRef.current = curTop;
+
+    if (programmaticScrollRef.current) return;
+
+    const distFromBottom = el.scrollHeight - curTop - el.clientHeight;
+    // Only pause auto-scroll when the user genuinely scrolls UP (never when new log lines grow scrollHeight)
+    if (curTop < prevTop - 4 && distFromBottom > 24 && autoScroll) {
       setAutoScroll(false);
+    } else if (distFromBottom < 12 && !autoScroll) {
+      // Re-engage auto-scroll automatically when the user scrolls back to the bottom
+      setAutoScroll(true);
     }
   };
 
@@ -278,8 +300,8 @@ export function ConsolePanel() {
               onClick={() => {
                 const next = !autoScroll;
                 setAutoScroll(next);
-                if (next && bodyRef.current) {
-                  bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+                if (next) {
+                  scrollToBottom();
                 }
               }}
             >
