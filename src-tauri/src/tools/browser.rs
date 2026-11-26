@@ -2,6 +2,7 @@ use base64::Engine as _;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -26,9 +27,20 @@ pub struct BrowserFrameEvent {
     pub network_errors: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserScreencastEvent {
+    pub session_id: String,
+    pub frame_base64: String,
+    pub viewport_width: u32,
+    pub viewport_height: u32,
+}
+
 type FrameCallback = Arc<dyn Fn(BrowserFrameEvent) + Send + Sync>;
+type ScreencastCallback = Arc<dyn Fn(BrowserScreencastEvent) + Send + Sync>;
 
 static FRAME_LISTENER: OnceLock<Mutex<Option<FrameCallback>>> = OnceLock::new();
+static SCREENCAST_LISTENER: OnceLock<Mutex<Option<ScreencastCallback>>> = OnceLock::new();
 
 pub fn set_browser_frame_listener<F>(cb: F)
 where
@@ -40,8 +52,28 @@ where
     }
 }
 
+pub fn set_browser_screencast_listener<F>(cb: F)
+where
+    F: Fn(BrowserScreencastEvent) + Send + Sync + 'static,
+{
+    let slot = SCREENCAST_LISTENER.get_or_init(|| Mutex::new(None));
+    if let Ok(mut guard) = slot.lock() {
+        *guard = Some(Arc::new(cb));
+    }
+}
+
 fn emit_browser_frame(ev: BrowserFrameEvent) {
     if let Some(slot) = FRAME_LISTENER.get() {
+        if let Ok(guard) = slot.lock() {
+            if let Some(cb) = guard.as_ref() {
+                cb(ev);
+            }
+        }
+    }
+}
+
+fn emit_browser_screencast(ev: BrowserScreencastEvent) {
+    if let Some(slot) = SCREENCAST_LISTENER.get() {
         if let Ok(guard) = slot.lock() {
             if let Some(cb) = guard.as_ref() {
                 cb(ev);
@@ -75,7 +107,9 @@ pub struct BrowserInteractRequest {
     pub modifiers: Option<u32>,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    pub device_scale_factor: Option<f64>,
     pub tab_id: Option<String>,
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -93,6 +127,170 @@ pub struct BrowserInteractResponse {
     pub tabs: Vec<BrowserTabInfo>,
 }
 
+struct CdpReq {
+    method: String,
+    params: Value,
+    reply: tokio::sync::oneshot::Sender<Result<Value, String>>,
+}
+
+struct CdpActor {
+    ws_url: String,
+    session_key: String,
+    screencast_dims: Option<(u32, u32)>,
+    tx: tokio::sync::mpsc::UnboundedSender<CdpReq>,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for CdpActor {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
+}
+
+impl CdpActor {
+    async fn connect(ws_url: String, session_key: String) -> Result<Self, String> {
+        let (mut ws, _) = connect_async(&ws_url)
+            .await
+            .map_err(|e| format!("CDP WebSocket error: {e}"))?;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<CdpReq>();
+        let sk = session_key.clone();
+
+        let handle = tokio::spawn(async move {
+            let mut next_id: u64 = 1;
+            let mut pending: HashMap<u64, tokio::sync::oneshot::Sender<Result<Value, String>>> =
+                HashMap::new();
+
+            loop {
+                tokio::select! {
+                    maybe_req = rx.recv() => {
+                        let Some(req) = maybe_req else { break };
+                        let id = next_id;
+                        next_id += 1;
+                        let payload = json!({
+                            "id": id,
+                            "method": req.method,
+                            "params": req.params
+                        });
+                        if let Err(e) = ws.send(Message::Text(payload.to_string().into())).await {
+                            let _ = req.reply.send(Err(format!("Error enviando CDP '{}': {e}", req.method)));
+                            break;
+                        }
+                        pending.insert(id, req.reply);
+                    }
+                    maybe_msg = ws.next() => {
+                        let Some(Ok(msg)) = maybe_msg else { break };
+                        let Message::Text(txt) = msg else { continue };
+                        let Ok(val) = serde_json::from_str::<Value>(&txt) else { continue };
+
+                        if let Some(id) = val.get("id").and_then(|v| v.as_u64()) {
+                            if let Some(reply) = pending.remove(&id) {
+                                if let Some(err) = val.get("error") {
+                                    let _ = reply.send(Err(format!("Error CDP: {err}")));
+                                } else {
+                                    let _ = reply.send(Ok(val.get("result").cloned().unwrap_or(Value::Null)));
+                                }
+                            }
+                            continue;
+                        }
+
+                        if val.get("method").and_then(|m| m.as_str()) == Some("Page.screencastFrame") {
+                            if let Some(params) = val.get("params") {
+                                if let (Some(frame_sid), Some(data)) = (
+                                    params.get("sessionId").and_then(|v| v.as_i64()),
+                                    params.get("data").and_then(|v| v.as_str()),
+                                ) {
+                                    let ack_id = next_id;
+                                    next_id += 1;
+                                    let ack = json!({
+                                        "id": ack_id,
+                                        "method": "Page.screencastFrameAck",
+                                        "params": { "sessionId": frame_sid }
+                                    });
+                                    if ws.send(Message::Text(ack.to_string().into())).await.is_err() {
+                                        break;
+                                    }
+                                    let meta = params.get("metadata");
+                                    let vw = meta
+                                        .and_then(|m| m.get("deviceWidth"))
+                                        .and_then(|v| v.as_f64())
+                                        .map(|v| v.round() as u32)
+                                        .unwrap_or(0);
+                                    let vh = meta
+                                        .and_then(|m| m.get("deviceHeight"))
+                                        .and_then(|v| v.as_f64())
+                                        .map(|v| v.round() as u32)
+                                        .unwrap_or(0);
+                                    emit_browser_screencast(BrowserScreencastEvent {
+                                        session_id: sk.clone(),
+                                        frame_base64: data.to_string(),
+                                        viewport_width: vw,
+                                        viewport_height: vh,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            for (_, reply) in pending.drain() {
+                let _ = reply.send(Err("Conexión CDP cerrada inesperadamente.".to_string()));
+            }
+        });
+
+        Ok(Self {
+            ws_url,
+            session_key,
+            screencast_dims: None,
+            tx,
+            handle,
+        })
+    }
+
+    fn is_alive_for(&self, ws_url: &str, session_key: &str) -> bool {
+        self.ws_url == ws_url
+            && self.session_key == session_key
+            && !self.handle.is_finished()
+            && !self.tx.is_closed()
+    }
+
+    async fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+        let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
+        self.tx
+            .send(CdpReq {
+                method: method.to_string(),
+                params,
+                reply: reply_tx,
+            })
+            .map_err(|_| format!("Canal CDP cerrado enviando '{method}'"))?;
+        tokio::time::timeout(Duration::from_secs(15), reply_rx)
+            .await
+            .map_err(|_| format!("Timeout esperando respuesta CDP '{method}'."))?
+            .map_err(|_| format!("Conexión CDP cerrada esperando '{method}'."))?
+    }
+
+    async fn eval(&self, expression: &str) -> Result<String, String> {
+        let res = self
+            .call(
+                "Runtime.evaluate",
+                json!({
+                    "expression": expression,
+                    "returnByValue": true
+                }),
+            )
+            .await?;
+        Ok(res
+            .get("result")
+            .and_then(|r| r.get("value"))
+            .and_then(|v| {
+                v.as_str()
+                    .map(|s| s.to_string())
+                    .or_else(|| Some(v.to_string()))
+            })
+            .unwrap_or_default())
+    }
+}
+
 struct PersistentBrowser {
     child: Child,
     port: u16,
@@ -104,9 +302,56 @@ struct PersistentBrowser {
     current_url: String,
     viewport_width: u32,
     viewport_height: u32,
+    device_scale_factor: f64,
+    actor: Option<CdpActor>,
+    session_tabs: HashMap<String, Vec<String>>,
+    session_active_tab: HashMap<String, String>,
+}
+
+async fn ensure_actor<'a>(
+    session: &'a mut PersistentBrowser,
+    session_key: &str,
+) -> Result<(&'a mut CdpActor, bool), String> {
+    let alive = session
+        .actor
+        .as_ref()
+        .map(|a| a.is_alive_for(&session.ws_url, session_key))
+        .unwrap_or(false);
+    if !alive {
+        session.actor = None;
+        let actor = CdpActor::connect(session.ws_url.clone(), session_key.to_string()).await?;
+        let _ = actor.call("Page.enable", json!({})).await;
+        session.actor = Some(actor);
+        return Ok((session.actor.as_mut().unwrap(), true));
+    }
+    Ok((session.actor.as_mut().unwrap(), false))
 }
 
 static BROWSER_SESSION: OnceLock<AsyncMutex<Option<PersistentBrowser>>> = OnceLock::new();
+static PREFERRED_VIEWPORT: OnceLock<std::sync::Mutex<(u32, u32, f64)>> = OnceLock::new();
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn http_client() -> &'static reqwest::Client {
+    HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_millis(500))
+            .timeout(Duration::from_secs(3))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
+fn set_preferred_viewport(w: u32, h: u32, dpr: f64) {
+    let slot = PREFERRED_VIEWPORT.get_or_init(|| std::sync::Mutex::new((1024, 840, 1.0)));
+    if let Ok(mut g) = slot.lock() {
+        *g = (w.clamp(360, 2400), h.clamp(300, 1600), dpr.clamp(1.0, 1.5));
+    }
+}
+
+fn get_preferred_viewport() -> (u32, u32, f64) {
+    let slot = PREFERRED_VIEWPORT.get_or_init(|| std::sync::Mutex::new((1024, 840, 1.0)));
+    slot.lock().map(|g| *g).unwrap_or((1024, 840, 1.0))
+}
 
 fn session_mutex() -> &'static AsyncMutex<Option<PersistentBrowser>> {
     BROWSER_SESSION.get_or_init(|| AsyncMutex::new(None))
@@ -115,6 +360,7 @@ fn session_mutex() -> &'static AsyncMutex<Option<PersistentBrowser>> {
 pub async fn shutdown_browser() {
     let mut guard = session_mutex().lock().await;
     if let Some(mut b) = guard.take() {
+        b.actor = None;
         let _ = b.child.kill().await;
         if !b.persistent_profile {
             let _ = fs::remove_dir_all(&b.profile_dir);
@@ -235,6 +481,10 @@ async fn spawn_browser_with_profile(
         current_url: "about:blank".to_string(),
         viewport_width: vw,
         viewport_height: vh,
+        device_scale_factor: 1.0,
+        actor: None,
+        session_tabs: HashMap::new(),
+        session_active_tab: HashMap::new(),
     })
 }
 
@@ -264,7 +514,7 @@ async fn start_persistent_browser(width: u32, height: u32) -> Result<PersistentB
 }
 
 async fn list_cdp_tabs(port: u16, active_id: &str) -> Vec<BrowserTabInfo> {
-    let client = reqwest::Client::new();
+    let client = http_client();
     let list_url = format!("http://127.0.0.1:{port}/json/list");
     let Ok(resp) = client.get(&list_url).send().await else {
         return Vec::new();
@@ -294,10 +544,167 @@ async fn list_cdp_tabs(port: u16, active_id: &str) -> Vec<BrowserTabInfo> {
         .collect()
 }
 
+async fn list_cdp_tabs_for_session(
+    session: &mut PersistentBrowser,
+    session_key: &str,
+) -> Vec<BrowserTabInfo> {
+    let all = list_cdp_tabs(session.port, &session.active_target_id).await;
+    let live_ids: HashSet<String> = all.iter().map(|t| t.id.clone()).collect();
+    if let Some(owned) = session.session_tabs.get_mut(session_key) {
+        owned.retain(|id| live_ids.contains(id));
+    }
+    let allowed: HashSet<String> = session
+        .session_tabs
+        .get(session_key)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    let active_for_sess = session
+        .session_active_tab
+        .get(session_key)
+        .cloned()
+        .unwrap_or_else(|| session.active_target_id.clone());
+    all.into_iter()
+        .filter(|t| allowed.contains(&t.id))
+        .map(|mut t| {
+            t.active = t.id == active_for_sess;
+            t
+        })
+        .collect()
+}
+
+async fn ensure_session_tab(
+    session: &mut PersistentBrowser,
+    session_key: &str,
+    create_if_missing: bool,
+) -> Result<bool, String> {
+    let client = http_client();
+    let list_url = format!("http://127.0.0.1:{}/json/list", session.port);
+    let pages: Vec<Value> = match client.get(&list_url).send().await {
+        Ok(resp) => resp.json::<Vec<Value>>().await.unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+
+    let page_map: HashMap<String, (String, String)> = pages
+        .into_iter()
+        .filter(|p| p.get("type").and_then(|v| v.as_str()) == Some("page"))
+        .filter_map(|p| {
+            let id = p.get("id")?.as_str()?.to_string();
+            let ws = p.get("webSocketDebuggerUrl")?.as_str()?.to_string();
+            let url = p.get("url").and_then(|v| v.as_str()).unwrap_or("about:blank").to_string();
+            Some((id, (ws, url)))
+        })
+        .collect();
+
+    // Prune closed tabs for this session
+    if let Some(owned) = session.session_tabs.get_mut(session_key) {
+        owned.retain(|id| page_map.contains_key(id));
+    }
+
+    // If this session already owns at least one live tab, activate its preferred tab
+    if let Some(owned) = session.session_tabs.get(session_key) {
+        if !owned.is_empty() {
+            let preferred = session
+                .session_active_tab
+                .get(session_key)
+                .filter(|id| owned.contains(id))
+                .cloned()
+                .unwrap_or_else(|| owned[0].clone());
+            if let Some((ws, url)) = page_map.get(&preferred) {
+                session.active_target_id = preferred.clone();
+                session.ws_url = ws.clone();
+                session.current_url = url.clone();
+                session.session_active_tab.insert(session_key.to_string(), preferred);
+                return Ok(true);
+            }
+        }
+    }
+
+    if !create_if_missing {
+        return Ok(false);
+    }
+
+    // Claim an unclaimed bootstrap about:blank tab if available; otherwise open a fresh CDP tab
+    let all_claimed: HashSet<String> = session
+        .session_tabs
+        .values()
+        .flat_map(|v| v.iter().cloned())
+        .collect();
+
+    if let Some((free_id, (free_ws, free_url))) = page_map
+        .iter()
+        .find(|(id, (_, url))| !all_claimed.contains(*id) && url == "about:blank")
+    {
+        session
+            .session_tabs
+            .entry(session_key.to_string())
+            .or_default()
+            .push(free_id.clone());
+        session
+            .session_active_tab
+            .insert(session_key.to_string(), free_id.clone());
+        session.active_target_id = free_id.clone();
+        session.ws_url = free_ws.clone();
+        session.current_url = free_url.clone();
+        return Ok(true);
+    }
+
+    let endpoint = format!("http://127.0.0.1:{}/json/new?about:blank", session.port);
+    let resp = client
+        .put(&endpoint)
+        .send()
+        .await
+        .or(client.get(&endpoint).send().await)
+        .map_err(|e| format!("Failed to create conversation tab: {e}"))?;
+    let tab_val: Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Invalid new-tab response: {e}"))?;
+    let id = tab_val
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing target id for new tab".to_string())?
+        .to_string();
+    let ws = tab_val
+        .get("webSocketDebuggerUrl")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing ws url for new tab".to_string())?
+        .to_string();
+
+    session
+        .session_tabs
+        .entry(session_key.to_string())
+        .or_default()
+        .push(id.clone());
+    session
+        .session_active_tab
+        .insert(session_key.to_string(), id.clone());
+    session.active_target_id = id;
+    session.ws_url = ws;
+    session.current_url = "about:blank".to_string();
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    Ok(true)
+}
+
 /// Interactive human-controlled browser command sharing the exact same persistent
 /// Chromium CDP session and cookies as the AI agent's `browser_action` tool.
 pub async fn browser_interact(req: BrowserInteractRequest) -> Result<BrowserInteractResponse, String> {
     let action = req.action.as_str();
+    let session_key = req
+        .session_id
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("default")
+        .to_string();
+
+    // Always remember the UI pane's preferred logical viewport so when the AI agent launches Chromium,
+    // it opens immediately at the exact pane proportions instead of jumping from a square to full size.
+    if let (Some(w), Some(h)) = (req.width, req.height) {
+        let dpr = req.device_scale_factor.unwrap_or(1.0);
+        set_preferred_viewport(w, h, dpr);
+    }
 
     if action == "open_external" {
         if let Some(url) = req.url.as_deref().map(normalize_browser_url) {
@@ -364,9 +771,11 @@ pub async fn browser_interact(req: BrowserInteractRequest) -> Result<BrowserInte
     }
 
     let session = guard.as_mut().unwrap();
-    let client = reqwest::Client::new();
+    let client = http_client();
+    let is_fast_input = matches!(action, "click" | "wheel" | "text" | "key");
+    let is_light_input = matches!(action, "wheel" | "text" | "key");
 
-    // Handle tab lifecycle actions before connecting to page WS
+    // Handle tab lifecycle actions scoped strictly to this conversation (`session_key`)
     match action {
         "new_tab" => {
             let target_url = req
@@ -386,6 +795,14 @@ pub async fn browser_interact(req: BrowserInteractRequest) -> Result<BrowserInte
                     tab_val.get("id").and_then(|v| v.as_str()),
                     tab_val.get("webSocketDebuggerUrl").and_then(|v| v.as_str()),
                 ) {
+                    session
+                        .session_tabs
+                        .entry(session_key.clone())
+                        .or_default()
+                        .push(id.to_string());
+                    session
+                        .session_active_tab
+                        .insert(session_key.clone(), id.to_string());
                     session.active_target_id = id.to_string();
                     session.ws_url = ws.to_string();
                     session.current_url = target_url;
@@ -403,6 +820,9 @@ pub async fn browser_interact(req: BrowserInteractRequest) -> Result<BrowserInte
                         }) {
                             if let Some(ws) = found.get("webSocketDebuggerUrl").and_then(|v| v.as_str()) {
                                 session.active_target_id = tid.to_string();
+                                session
+                                    .session_active_tab
+                                    .insert(session_key.clone(), tid.to_string());
                                 session.ws_url = ws.to_string();
                                 session.current_url = found
                                     .get("url")
@@ -420,20 +840,69 @@ pub async fn browser_interact(req: BrowserInteractRequest) -> Result<BrowserInte
             }
         }
         "close_tab" => {
-            if let Some(tid) = req.tab_id.as_deref() {
-                let _ = client
-                    .get(&format!("http://127.0.0.1:{}/json/close/{}", session.port, tid))
-                    .send()
-                    .await;
+            // Support closing either an explicit CDP tab id or the synthetic "agent-active" placeholder
+            let target_id = req
+                .tab_id
+                .as_deref()
+                .filter(|id| !id.is_empty() && *id != "agent-active")
+                .map(|s| s.to_string())
+                .or_else(|| session.session_active_tab.get(&session_key).cloned())
+                .or_else(|| {
+                    session
+                        .session_tabs
+                        .get(&session_key)
+                        .and_then(|v| v.first().cloned())
+                });
+            if let Some(tid) = target_id {
+                // Only call /json/close if other tabs exist in Chromium; closing the sole remaining page target
+                // in headless Chromium terminates or stalls the whole browser process.
+                let all_pages = list_cdp_tabs(session.port, &session.active_target_id).await;
+                if all_pages.len() > 1 {
+                    let _ = client
+                        .get(&format!("http://127.0.0.1:{}/json/close/{}", session.port, tid))
+                        .send()
+                        .await;
+                } else if let Ok((mut cws, _)) = connect_async(&session.ws_url).await {
+                    let mut cid: u64 = 1;
+                    let _ = cdp_call(&mut cws, &mut cid, "Page.navigate", json!({ "url": "about:blank" })).await;
+                    session.current_url = "about:blank".to_string();
+                }
+                if let Some(owned) = session.session_tabs.get_mut(&session_key) {
+                    owned.retain(|id| id != &tid);
+                }
                 tokio::time::sleep(Duration::from_millis(120)).await;
-                let tabs = list_cdp_tabs(session.port, &session.active_target_id).await;
-                if tabs.is_empty() {
-                    if let Some(mut old) = guard.take() {
-                        let _ = old.child.kill().await;
-                        if !old.persistent_profile {
-                            let _ = fs::remove_dir_all(&old.profile_dir);
-                        }
-                    }
+                let sess_tabs = list_cdp_tabs_for_session(session, &session_key).await;
+                if sess_tabs.is_empty() {
+                    session.session_active_tab.remove(&session_key);
+                    session.actor = None;
+                    return Ok(BrowserInteractResponse {
+                        active: false,
+                        url: String::new(),
+                        title: String::new(),
+                        can_go_back: false,
+                        can_go_forward: false,
+                        viewport_width: session.viewport_width,
+                        viewport_height: session.viewport_height,
+                        frame_base64: None,
+                        frame_mime: "image/jpeg".to_string(),
+                        tabs: Vec::new(),
+                    });
+                }
+                let _ = ensure_session_tab(session, &session_key, false).await;
+            }
+        }
+        _ => {
+            // Fast path: if this conversation already owns the active ws_url, skip HTTP /json/list on rapid inputs
+            let already_bound = is_fast_input
+                && !session.ws_url.is_empty()
+                && session
+                    .session_active_tab
+                    .get(&session_key)
+                    .map(|id| id == &session.active_target_id)
+                    .unwrap_or(false);
+            if !already_bound {
+                let create_if_missing = matches!(action, "navigate");
+                if !ensure_session_tab(session, &session_key, create_if_missing).await? {
                     return Ok(BrowserInteractResponse {
                         active: false,
                         url: String::new(),
@@ -447,60 +916,99 @@ pub async fn browser_interact(req: BrowserInteractRequest) -> Result<BrowserInte
                         tabs: Vec::new(),
                     });
                 }
-                if tid == session.active_target_id {
-                    if let Ok((new_id, new_ws)) = wait_for_page_target(session.port).await {
-                        session.active_target_id = new_id;
-                        session.ws_url = new_ws;
-                    }
-                }
             }
         }
-        _ => {}
     }
 
-    let (mut ws, _) = connect_async(&session.ws_url)
-        .await
-        .map_err(|e| format!("CDP WebSocket error: {e}"))?;
-    let mut next_id: u64 = 1;
+    // Update target viewport dimensions ONLY on layout/navigation actions (never on click/wheel/key)
+    let dims_updated = if matches!(action, "resize" | "navigate" | "new_tab" | "status") {
+        let mut changed = false;
+        if let (Some(w), Some(h)) = (req.width, req.height) {
+            let vw = w.clamp(360, 2400);
+            let vh = h.clamp(300, 1600);
+            if vw != session.viewport_width || vh != session.viewport_height {
+                session.viewport_width = vw;
+                session.viewport_height = vh;
+                changed = true;
+            }
+        }
+        if let Some(dpr) = req.device_scale_factor {
+            let clamped = dpr.clamp(1.0, 1.5);
+            if (clamped - session.device_scale_factor).abs() > 0.01 {
+                session.device_scale_factor = clamped;
+                changed = true;
+            }
+        }
+        changed || action == "resize"
+    } else {
+        false
+    };
 
-    // Apply viewport dimensions if requested or changed
-    if let (Some(w), Some(h)) = (req.width, req.height) {
-        let vw = w.clamp(360, 2400);
-        let vh = h.clamp(300, 1600);
-        if vw != session.viewport_width || vh != session.viewport_height || action == "resize" || action == "navigate" || action == "new_tab" {
-            let _ = cdp_call(
-                &mut ws,
-                &mut next_id,
+    let target_id_for_bounds = session.active_target_id.clone();
+    let mut current_url_after = session.current_url.clone();
+    let vw_now = session.viewport_width;
+    let vh_now = session.viewport_height;
+    let dpr_now = session.device_scale_factor;
+
+    let (actor, freshly_connected) = ensure_actor(session, &session_key).await?;
+
+    // Persist window bounds on Chromium when layout changes so closing/reconnecting keeps exact size
+    if dims_updated {
+        if let Ok(win) = actor
+            .call(
+                "Browser.getWindowForTarget",
+                json!({ "targetId": target_id_for_bounds }),
+            )
+            .await
+        {
+            if let Some(window_id) = win.get("windowId").and_then(|v| v.as_i64()) {
+                let _ = actor
+                    .call(
+                        "Browser.setWindowBounds",
+                        json!({
+                            "windowId": window_id,
+                            "bounds": {
+                                "width": vw_now,
+                                "height": vh_now,
+                                "windowState": "normal"
+                            }
+                        }),
+                    )
+                    .await;
+            }
+        }
+    }
+
+    // Apply Emulation.setDeviceMetricsOverride ONLY when dimensions changed or WS freshly connected
+    if dims_updated || freshly_connected {
+        let _ = actor
+            .call(
                 "Emulation.setDeviceMetricsOverride",
                 json!({
-                    "width": vw,
-                    "height": vh,
-                    "deviceScaleFactor": 1,
+                    "width": vw_now,
+                    "height": vh_now,
+                    "deviceScaleFactor": dpr_now,
                     "mobile": false
                 }),
             )
             .await;
-            session.viewport_width = vw;
-            session.viewport_height = vh;
-        }
     }
 
     match action {
         "navigate" => {
             if let Some(raw_url) = req.url.as_deref() {
                 let norm = normalize_browser_url(raw_url);
-                cdp_call(&mut ws, &mut next_id, "Page.enable", json!({})).await?;
-                cdp_call(&mut ws, &mut next_id, "Page.navigate", json!({ "url": norm })).await?;
-                session.current_url = norm;
-                tokio::time::sleep(Duration::from_millis(850)).await;
+                actor.call("Page.navigate", json!({ "url": norm })).await?;
+                current_url_after = norm;
+                tokio::time::sleep(Duration::from_millis(650)).await;
             }
         }
         "reload" => {
-            let _ = cdp_call(&mut ws, &mut next_id, "Page.reload", json!({ "ignoreCache": false })).await;
-            tokio::time::sleep(Duration::from_millis(700)).await;
+            let _ = actor.call("Page.reload", json!({ "ignoreCache": false })).await;
+            tokio::time::sleep(Duration::from_millis(550)).await;
         }
         "back" | "forward" => {
-            if let Ok(hist) = cdp_call(&mut ws, &mut next_id, "Page.getNavigationHistory", json!({})).await {
+            if let Ok(hist) = actor.call("Page.getNavigationHistory", json!({})).await {
                 let idx = hist.get("currentIndex").and_then(|v| v.as_i64()).unwrap_or(0);
                 let entries = hist.get("entries").and_then(|v| v.as_array());
                 let target_idx = if action == "back" { idx - 1 } else { idx + 1 };
@@ -509,14 +1017,13 @@ pub async fn browser_interact(req: BrowserInteractRequest) -> Result<BrowserInte
                     .and_then(|e| e.get("id"))
                     .and_then(|v| v.as_i64())
                 {
-                    let _ = cdp_call(
-                        &mut ws,
-                        &mut next_id,
-                        "Page.navigateToHistoryEntry",
-                        json!({ "entryId": entry_id }),
-                    )
-                    .await;
-                    tokio::time::sleep(Duration::from_millis(550)).await;
+                    let _ = actor
+                        .call(
+                            "Page.navigateToHistoryEntry",
+                            json!({ "entryId": entry_id }),
+                        )
+                        .await;
+                    tokio::time::sleep(Duration::from_millis(400)).await;
                 }
             }
         }
@@ -525,48 +1032,42 @@ pub async fn browser_interact(req: BrowserInteractRequest) -> Result<BrowserInte
             let cy = req.y.unwrap_or(0.0);
             let btn = req.button.as_deref().unwrap_or("left");
             let clicks = req.click_count.unwrap_or(1);
-            let _ = cdp_call(
-                &mut ws,
-                &mut next_id,
-                "Input.dispatchMouseEvent",
-                json!({ "type": "mouseMoved", "x": cx, "y": cy }),
-            )
-            .await;
-            let _ = cdp_call(
-                &mut ws,
-                &mut next_id,
-                "Input.dispatchMouseEvent",
-                json!({ "type": "mousePressed", "x": cx, "y": cy, "button": btn, "clickCount": clicks }),
-            )
-            .await;
-            let _ = cdp_call(
-                &mut ws,
-                &mut next_id,
-                "Input.dispatchMouseEvent",
-                json!({ "type": "mouseReleased", "x": cx, "y": cy, "button": btn, "clickCount": clicks }),
-            )
-            .await;
-            tokio::time::sleep(Duration::from_millis(180)).await;
+            let _ = actor
+                .call(
+                    "Input.dispatchMouseEvent",
+                    json!({ "type": "mouseMoved", "x": cx, "y": cy }),
+                )
+                .await;
+            let _ = actor
+                .call(
+                    "Input.dispatchMouseEvent",
+                    json!({ "type": "mousePressed", "x": cx, "y": cy, "button": btn, "clickCount": clicks }),
+                )
+                .await;
+            let _ = actor
+                .call(
+                    "Input.dispatchMouseEvent",
+                    json!({ "type": "mouseReleased", "x": cx, "y": cy, "button": btn, "clickCount": clicks }),
+                )
+                .await;
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
         "wheel" => {
-            let cx = req.x.unwrap_or((session.viewport_width / 2) as f64);
-            let cy = req.y.unwrap_or((session.viewport_height / 2) as f64);
+            let cx = req.x.unwrap_or((vw_now / 2) as f64);
+            let cy = req.y.unwrap_or((vh_now / 2) as f64);
             let dx = req.delta_x.unwrap_or(0.0);
             let dy = req.delta_y.unwrap_or(0.0);
-            let _ = cdp_call(
-                &mut ws,
-                &mut next_id,
-                "Input.dispatchMouseEvent",
-                json!({ "type": "mouseWheel", "x": cx, "y": cy, "deltaX": dx, "deltaY": dy }),
-            )
-            .await;
-            tokio::time::sleep(Duration::from_millis(60)).await;
+            let _ = actor
+                .call(
+                    "Input.dispatchMouseEvent",
+                    json!({ "type": "mouseWheel", "x": cx, "y": cy, "deltaX": dx, "deltaY": dy }),
+                )
+                .await;
         }
         "text" => {
             if let Some(txt) = req.text.as_deref() {
                 if !txt.is_empty() {
-                    let _ = cdp_call(&mut ws, &mut next_id, "Input.insertText", json!({ "text": txt })).await;
-                    tokio::time::sleep(Duration::from_millis(60)).await;
+                    let _ = actor.call("Input.insertText", json!({ "text": txt })).await;
                 }
             }
         }
@@ -595,18 +1096,21 @@ pub async fn browser_interact(req: BrowserInteractRequest) -> Result<BrowserInte
                     payload_down["windowsVirtualKeyCode"] = json!(27);
                     payload_up["windowsVirtualKeyCode"] = json!(27);
                 }
-                let _ = cdp_call(&mut ws, &mut next_id, "Input.dispatchKeyEvent", payload_down).await;
-                let _ = cdp_call(&mut ws, &mut next_id, "Input.dispatchKeyEvent", payload_up).await;
-                let wait_ms = if k == "Enter" { 350 } else { 70 };
-                tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+                let _ = actor.call("Input.dispatchKeyEvent", payload_down).await;
+                let _ = actor.call("Input.dispatchKeyEvent", payload_up).await;
+                if k == "Enter" {
+                    tokio::time::sleep(Duration::from_millis(140)).await;
+                }
             }
         }
         _ => {}
     }
 
-    // Query navigation history for back/forward state
-    let (can_go_back, can_go_forward, hist_url, hist_title) =
-        match cdp_call(&mut ws, &mut next_id, "Page.getNavigationHistory", json!({})).await {
+    // Skip navigation history / innerWidth / tab-list queries on rapid wheel/text/key inputs
+    let (can_go_back, can_go_forward, hist_url, hist_title) = if is_light_input {
+        (false, false, current_url_after.clone(), String::new())
+    } else {
+        match actor.call("Page.getNavigationHistory", json!({})).await {
             Ok(hist) => {
                 let idx = hist.get("currentIndex").and_then(|v| v.as_i64()).unwrap_or(0);
                 let entries = hist.get("entries").and_then(|v| v.as_array());
@@ -617,23 +1121,95 @@ pub async fn browser_interact(req: BrowserInteractRequest) -> Result<BrowserInte
                 (idx > 0, idx + 1 < len, u, t)
             }
             Err(_) => (false, false, String::new(), String::new()),
-        };
+        }
+    };
 
-    if !hist_url.is_empty() {
-        session.current_url = hist_url.clone();
+    // Read actual CSS viewport dimensions on layout/navigation actions so click coordinates match 1:1
+    let (actual_vw, actual_vh) = if is_fast_input {
+        (vw_now, vh_now)
+    } else {
+        match actor
+            .eval("JSON.stringify([Math.round(window.innerWidth || 0), Math.round(window.innerHeight || 0)])")
+            .await
+        {
+            Ok(raw) => serde_json::from_str::<[u32; 2]>(&raw)
+                .ok()
+                .filter(|[w, h]| *w >= 200 && *h >= 200)
+                .map(|[w, h]| (w, h))
+                .unwrap_or((vw_now, vh_now)),
+            Err(_) => (vw_now, vh_now),
+        }
+    };
+
+    let next_url = if !hist_url.is_empty() {
+        hist_url.clone()
+    } else {
+        current_url_after
+    };
+
+    // Start or update Page.startScreencast on the SAME multiplexed WebSocket!
+    let screencast_running = if next_url != "about:blank" {
+        let max_w = ((actual_vw as f64) * dpr_now).round().clamp(360.0, 2400.0) as u32;
+        let max_h = ((actual_vh as f64) * dpr_now).round().clamp(300.0, 1600.0) as u32;
+        if actor.screencast_dims != Some((max_w, max_h)) {
+            let _ = actor.call("Page.stopScreencast", json!({})).await;
+            if actor
+                .call(
+                    "Page.startScreencast",
+                    json!({
+                        "format": "jpeg",
+                        "quality": 72,
+                        "maxWidth": max_w,
+                        "maxHeight": max_h,
+                        "everyNthFrame": 1
+                    }),
+                )
+                .await
+                .is_ok()
+            {
+                actor.screencast_dims = Some((max_w, max_h));
+            }
+        }
+        actor.screencast_dims.is_some()
+    } else {
+        if actor.screencast_dims.is_some() {
+            let _ = actor.call("Page.stopScreencast", json!({})).await;
+            actor.screencast_dims = None;
+        }
+        false
+    };
+
+    // When Page.startScreencast is pushing live frames on this WebSocket, skip synchronous
+    // Page.captureScreenshot on rapid click/wheel/text/key inputs (~2-5ms round-trip!).
+    let mut drop_actor = false;
+    let frame_base64 = if is_fast_input && screencast_running {
+        None
+    } else {
+        match actor
+            .call(
+                "Page.captureScreenshot",
+                json!({ "format": "jpeg", "quality": 72, "optimizeForSpeed": true }),
+            )
+            .await
+        {
+            Ok(v) => v.get("data").and_then(|d| d.as_str()).map(|s| s.to_string()),
+            Err(_) => {
+                drop_actor = true;
+                None
+            }
+        }
+    };
+
+    if drop_actor {
+        session.actor = None;
     }
+    session.current_url = next_url;
 
-    let frame_base64 = cdp_call(
-        &mut ws,
-        &mut next_id,
-        "Page.captureScreenshot",
-        json!({ "format": "jpeg", "quality": 86 }),
-    )
-    .await
-    .ok()
-    .and_then(|v| v.get("data").and_then(|d| d.as_str()).map(|s| s.to_string()));
-
-    let tabs = list_cdp_tabs(session.port, &session.active_target_id).await;
+    let tabs = if is_light_input {
+        Vec::new()
+    } else {
+        list_cdp_tabs_for_session(session, &session_key).await
+    };
 
     Ok(BrowserInteractResponse {
         active: true,
@@ -641,8 +1217,8 @@ pub async fn browser_interact(req: BrowserInteractRequest) -> Result<BrowserInte
         title: hist_title,
         can_go_back,
         can_go_forward,
-        viewport_width: session.viewport_width,
-        viewport_height: session.viewport_height,
+        viewport_width: actual_vw,
+        viewport_height: actual_vh,
         frame_base64,
         frame_mime: "image/jpeg".to_string(),
         tabs,
@@ -716,14 +1292,22 @@ pub async fn run_browser_action(workspace: &str, args: &Value) -> String {
             .to_string();
         };
 
-        let browser = match start_persistent_browser(1280, 840).await {
+        let (pref_w, pref_h, pref_dpr) = get_preferred_viewport();
+        let mut browser = match start_persistent_browser(pref_w, pref_h).await {
             Ok(b) => b,
             Err(err) => return json!({ "ok": false, "error": err }).to_string(),
         };
+        browser.device_scale_factor = pref_dpr;
 
         *guard = Some(browser);
 
         let session = guard.as_mut().unwrap();
+        let agent_session_key = args
+            .get("__session_id")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("default");
+        let _ = ensure_session_tab(session, agent_session_key, true).await;
         let res = drive_cdp_action(
             session,
             action,
@@ -754,6 +1338,12 @@ pub async fn run_browser_action(workspace: &str, args: &Value) -> String {
     }
 
     let session = guard.as_mut().unwrap();
+    let agent_session_key = args
+        .get("__session_id")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("default");
+    let _ = ensure_session_tab(session, agent_session_key, true).await;
     let res = drive_cdp_action(
         session,
         action,
@@ -779,10 +1369,6 @@ pub async fn run_browser_action(workspace: &str, args: &Value) -> String {
             json!({ "ok": false, "error": err }).to_string()
         }
     }
-}
-
-async fn wait_for_page_target(port: u16) -> Result<(String, String), String> {
-    wait_for_page_target_checked(port, None).await
 }
 
 async fn wait_for_page_target_checked(
@@ -886,6 +1472,8 @@ async fn drive_cdp_action(
     ws_root: &Path,
     state_path: &Path,
 ) -> Result<Value, String> {
+    // Release any UI screencast actor before the AI agent opens its exclusive CDP connection
+    session.actor = None;
     let (mut ws, _) = connect_async(&session.ws_url)
         .await
         .map_err(|e| format!("Error WebSocket CDP: {e}"))?;
@@ -893,6 +1481,24 @@ async fn drive_cdp_action(
     let mut next_id: u64 = 1;
     cdp_call(&mut ws, &mut next_id, "Page.enable", json!({})).await?;
     cdp_call(&mut ws, &mut next_id, "Runtime.enable", json!({})).await?;
+    // Match the UI browser pane's exact proportions & DPR during agent navigation so there is no
+    // jarring square-then-expand jump when the agent hands off to the user.
+    let (pref_w, pref_h, pref_dpr) = get_preferred_viewport();
+    session.viewport_width = pref_w;
+    session.viewport_height = pref_h;
+    session.device_scale_factor = pref_dpr;
+    let _ = cdp_call(
+        &mut ws,
+        &mut next_id,
+        "Emulation.setDeviceMetricsOverride",
+        json!({
+            "width": pref_w,
+            "height": pref_h,
+            "deviceScaleFactor": pref_dpr,
+            "mobile": false
+        }),
+    )
+    .await;
     let _ = cdp_call(
         &mut ws,
         &mut next_id,
@@ -977,10 +1583,10 @@ async fn drive_cdp_action(
                     ov.id = "__loopy_ai_cursor__";
                     ov.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:2147483647;";
                     ov.innerHTML = `
-                        <div style="position:fixed;left:${{r.left-2}}px;top:${{r.top-2}}px;width:${{r.width+4}}px;height:${{r.height+4}}px;border:2px solid #6366f1;background:rgba(99,102,241,0.16);border-radius:6px;box-shadow:0 0 14px rgba(99,102,241,0.55);"></div>
+                        <div style="position:fixed;left:${{r.left-2}}px;top:${{r.top-2}}px;width:${{r.width+4}}px;height:${{r.height+4}}px;border:2px solid #8b5cf6;background:rgba(139,92,246,0.18);border-radius:6px;box-shadow:0 0 14px rgba(139,92,246,0.55);"></div>
                         <div style="position:fixed;left:${{cx-14}}px;top:${{cy-14}}px;width:28px;height:28px;border:2px solid #f59e0b;border-radius:999px;background:rgba(245,158,11,0.22);"></div>
-                        <svg style="position:fixed;left:${{cx}}px;top:${{cy}}px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.8));" width="22" height="22" viewBox="0 0 24 24" fill="#fff" stroke="#0f172a" stroke-width="1.8"><path d="M4 2l15 9-7 2-3 7z"/></svg>
-                        <div style="position:fixed;left:${{Math.min(cx+18, window.innerWidth-220)}}px;top:${{Math.max(cy+18, 8)}}px;background:#0f172a;color:#e2e8f0;border:1px solid #6366f1;border-radius:6px;padding:3px 8px;font:600 11px system-ui,sans-serif;white-space:nowrap;box-shadow:0 6px 16px rgba(0,0,0,0.5);">${{"{act_label}"}}: ${{lbl.replace(/</g,'&lt;')}}</div>
+                        <svg style="position:fixed;left:${{cx}}px;top:${{cy}}px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.8));" width="22" height="22" viewBox="0 0 24 24" fill="#fff" stroke="#09090b" stroke-width="1.8"><path d="M4 2l15 9-7 2-3 7z"/></svg>
+                        <div style="position:fixed;left:${{Math.min(cx+18, window.innerWidth-220)}}px;top:${{Math.max(cy+18, 8)}}px;background:#09090b;color:#f4f4f5;border:1px solid #8b5cf6;border-radius:6px;padding:3px 8px;font:600 11px system-ui,sans-serif;white-space:nowrap;box-shadow:0 6px 16px rgba(0,0,0,0.5);">${{"{act_label}"}}: ${{lbl.replace(/</g,'&lt;')}}</div>
                     `;
                     document.documentElement.appendChild(ov);
                     return {{ found: true, cx, cy, label: lbl }};
@@ -999,18 +1605,18 @@ async fn drive_cdp_action(
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                // Capture pre-click visual frame with cursor and highlight in place
-                let _ = capture_and_emit(
+                // Emit pre-click visual frame with cursor and highlight in place
+                emit_live_jpeg(
                     &mut ws,
                     &mut next_id,
-                    ws_root,
-                    screenshot_rel,
+                    &session.current_url,
                     action,
                     target_label.clone(),
                     cursor_x,
                     cursor_y,
                 )
                 .await;
+                tokio::time::sleep(Duration::from_millis(220)).await;
 
                 let _ = cdp_call(
                     &mut ws,
@@ -1034,7 +1640,18 @@ async fn drive_cdp_action(
                         json!({ "type": "mouseReleased", "x": cx, "y": cy, "button": "left", "clickCount": 1 }),
                     )
                     .await;
-                    tokio::time::sleep(Duration::from_millis(750)).await;
+                    tokio::time::sleep(Duration::from_millis(260)).await;
+                    emit_live_jpeg(
+                        &mut ws,
+                        &mut next_id,
+                        &session.current_url,
+                        action,
+                        target_label.clone(),
+                        cursor_x,
+                        cursor_y,
+                    )
+                    .await;
+                    tokio::time::sleep(Duration::from_millis(500)).await;
                 }
                 let _ = cdp_eval(
                     &mut ws,
@@ -1042,12 +1659,12 @@ async fn drive_cdp_action(
                     "document.getElementById('__loopy_ai_cursor__')?.remove()",
                 )
                 .await;
-                action_note = format!("{act_label} en ({cx}, {cy}) sobre {}", target_label.clone().unwrap_or_default());
+                action_note = format!("{act_label} at ({cx}, {cy}) on {}", target_label.clone().unwrap_or_default());
             } else {
                 action_note = loc
                     .get("error")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("Elemento no encontrado")
+                    .unwrap_or("Element not found")
                     .to_string();
             }
         }
@@ -1069,7 +1686,7 @@ async fn drive_cdp_action(
                         const ql = q.toLowerCase();
                         el = els.find(e => ((e.getAttribute("placeholder") || e.getAttribute("aria-label") || e.getAttribute("name") || "").toLowerCase().includes(ql)));
                     }}
-                    if (!el) return {{ ok: false, error: "Input no encontrado: " + q }};
+                    if (!el) return {{ ok: false, error: "Input not found: " + q }};
                     el.scrollIntoView({{ block: "center", behavior: "instant" }});
                     el.focus();
                     const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
@@ -1082,16 +1699,42 @@ async fn drive_cdp_action(
                     el.dispatchEvent(new Event("input", {{ bubbles: true }}));
                     el.dispatchEvent(new Event("change", {{ bubbles: true }}));
                     const r = el.getBoundingClientRect();
-                    return {{ ok: true, cx: Math.round(r.left + r.width/2), cy: Math.round(r.top + r.height/2) }};
+                    const cx = Math.round(r.left + r.width/2);
+                    const cy = Math.round(r.top + r.height/2);
+                    let ov = document.getElementById("__loopy_ai_cursor__");
+                    if (ov) ov.remove();
+                    ov = document.createElement("div");
+                    ov.id = "__loopy_ai_cursor__";
+                    ov.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:2147483647;";
+                    ov.innerHTML = `<div style="position:fixed;left:${{r.left-2}}px;top:${{r.top-2}}px;width:${{r.width+4}}px;height:${{r.height+4}}px;border:2px solid #8b5cf6;background:rgba(139,92,246,0.12);border-radius:6px;box-shadow:0 0 12px rgba(139,92,246,0.45);"></div>`;
+                    document.documentElement.appendChild(ov);
+                    return {{ ok: true, cx, cy }};
                 }})())"##
             );
             let res_raw = cdp_eval(&mut ws, &mut next_id, &js).await?;
             if let Ok(v) = serde_json::from_str::<Value>(&res_raw) {
                 cursor_x = v.get("cx").and_then(|x| x.as_f64());
                 cursor_y = v.get("cy").and_then(|y| y.as_f64());
-                target_label = Some(format!("Escribir \"{text}\""));
+                target_label = Some(format!("Type \"{text}\""));
             }
-            action_note = format!("Typed en {selector}");
+            emit_live_jpeg(
+                &mut ws,
+                &mut next_id,
+                &session.current_url,
+                action,
+                target_label.clone(),
+                cursor_x,
+                cursor_y,
+            )
+            .await;
+            tokio::time::sleep(Duration::from_millis(180)).await;
+            let _ = cdp_eval(
+                &mut ws,
+                &mut next_id,
+                "document.getElementById('__loopy_ai_cursor__')?.remove()",
+            )
+            .await;
+            action_note = format!("Typed into {selector}");
         }
         "press" if !key.is_empty() => {
             let _ = cdp_call(
@@ -1112,9 +1755,21 @@ async fn drive_cdp_action(
             action_note = format!("Pressed key {key}");
         }
         "scroll" => {
-            let delta = if direction == "up" { -650 } else { 650 };
-            let _ = cdp_eval(&mut ws, &mut next_id, &format!("window.scrollBy(0, {delta})")).await;
-            tokio::time::sleep(Duration::from_millis(350)).await;
+            let step = if direction == "up" { -220 } else { 220 };
+            for _ in 0..3 {
+                let _ = cdp_eval(&mut ws, &mut next_id, &format!("window.scrollBy(0, {step})")).await;
+                tokio::time::sleep(Duration::from_millis(120)).await;
+                emit_live_jpeg(
+                    &mut ws,
+                    &mut next_id,
+                    &session.current_url,
+                    "scroll",
+                    Some(format!("Scroll {direction}")),
+                    None,
+                    None,
+                )
+                .await;
+            }
             action_note = format!("Scroll {direction}");
         }
         "evaluate" if !script.is_empty() => {
@@ -1207,14 +1862,32 @@ async fn drive_cdp_action(
     let interactive_val = snap.get("interactive").cloned().unwrap_or(json!([]));
     let text_val = snap.get("text").cloned().unwrap_or(json!(""));
     let interactive_len = interactive_val.as_array().map(|a| a.len()).unwrap_or(0);
-    let text_trimmed_len = text_val.as_str().map(|s| s.trim().len()).unwrap_or(0);
+    let text_str = text_val.as_str().unwrap_or("");
+    let text_trimmed_len = text_str.trim().len();
     let lower_url = final_url.to_ascii_lowercase();
+    let lower_title = final_title.to_ascii_lowercase();
+    let lower_text = text_str.to_ascii_lowercase();
     let looks_parked_or_blank = (interactive_len <= 1 && text_trimmed_len < 40)
         || lower_url.ends_with("/lander")
         || lower_url.contains("sedoparking")
         || lower_url.contains("parkingcrew");
 
-    let warning = if looks_parked_or_blank {
+    let needs_human_takeover = lower_text.contains("verify you are human")
+        || lower_text.contains("prove your humanity")
+        || lower_text.contains("complete the captcha")
+        || lower_text.contains("i'm not a robot")
+        || lower_text.contains("blocked by network security")
+        || lower_text.contains("checking your browser")
+        || lower_title.contains("just a moment")
+        || lower_text.contains("log in to continue")
+        || lower_text.contains("sign in to continue");
+
+    let warning = if needs_human_takeover {
+        Some(format!(
+            "HUMAN INTERVENTION REQUIRED: The page '{}' is showing a human verification, CAPTCHA, or login gate. Do NOT attempt to click through or bypass it. Pause and ask the user to sign in or complete the verification directly in Loopy's right-side Browser panel, then continue once the user confirms.",
+            final_url
+        ))
+    } else if looks_parked_or_blank {
         Some(format!(
             "WARNING: The page '{}' appears BLANK or a PARKED DOMAIN ({} interactive elements, {} chars of visible text). Do NOT invent buttons or keep scrolling/clicking here — use web_search to find the official URL or navigate to another domain.",
             final_url, interactive_len, text_trimmed_len
@@ -1230,6 +1903,7 @@ async fn drive_cdp_action(
         "url": final_url,
         "title": final_title,
         "action_note": action_note,
+        "human_action_required": needs_human_takeover,
         "warning": warning,
         "cursor": { "x": cursor_x, "y": cursor_y, "label": target_label },
         "screenshot": saved_screenshot,
@@ -1239,6 +1913,44 @@ async fn drive_cdp_action(
         "interactive": interactive_val,
         "text": text_val
     }))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn emit_live_jpeg<S>(
+    ws: &mut S,
+    next_id: &mut u64,
+    url: &str,
+    action: &str,
+    target_label: Option<String>,
+    cursor_x: Option<f64>,
+    cursor_y: Option<f64>,
+) where
+    S: futures_util::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
+        + futures_util::Sink<Message, Error = tokio_tungstenite::tungstenite::Error>
+        + Unpin,
+{
+    if let Ok(shot) = cdp_call(
+        ws,
+        next_id,
+        "Page.captureScreenshot",
+        json!({ "format": "jpeg", "quality": 80 }),
+    )
+    .await
+    {
+        if let Some(b64) = shot.get("data").and_then(|v| v.as_str()) {
+            emit_browser_frame(BrowserFrameEvent {
+                url: url.to_string(),
+                title: String::new(),
+                action: action.to_string(),
+                target_label,
+                cursor_x,
+                cursor_y,
+                frame_base64: b64.to_string(),
+                console_errors: Vec::new(),
+                network_errors: Vec::new(),
+            });
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1689,5 +2401,172 @@ mod tests {
 
         server_task.abort();
         let _ = fs::remove_dir_all(&ws);
+    }
+
+    #[tokio::test]
+    async fn e2e_browser_interact_screencast_navigate_click_scroll_and_tabs() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        if find_system_browser().is_none() && find_portable_browser().is_none() {
+            eprintln!("Skipping E2E browser_interact test: no local browser installed");
+            return;
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server_task = tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    break;
+                };
+                let mut buf = [0u8; 2048];
+                let n = sock.read(&mut buf).await.unwrap_or(0);
+                let req_str = String::from_utf8_lossy(&buf[..n]);
+                let html = if req_str.contains("GET /page2") {
+                    "<!doctype html><html><head><title>Page Two</title></head><body><h1>Page Two Loaded</h1></body></html>"
+                } else {
+                    r#"<!doctype html>
+<html>
+<head>
+  <title>Interactive Test</title>
+  <style>
+    body { margin: 0; padding: 0; height: 2400px; font-family: sans-serif; background: #fff; }
+    #btn { position: fixed; top: 40px; left: 40px; width: 160px; height: 50px; font-size: 16px; }
+    #inp { position: fixed; top: 110px; left: 40px; width: 220px; height: 34px; }
+    #status { position: fixed; top: 160px; left: 40px; font-size: 18px; }
+  </style>
+</head>
+<body>
+  <button id="btn" onclick="window.__clicks=(window.__clicks||0)+1; document.getElementById('status').textContent='Clicks:'+window.__clicks;">Click Me</button>
+  <input id="inp" type="text" placeholder="Type here" />
+  <div id="status">Clicks:0</div>
+</body>
+</html>"#
+                };
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    html.len(),
+                    html
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+            }
+        });
+
+        let cast_frames = Arc::new(AtomicUsize::new(0));
+        let cast_frames_cb = cast_frames.clone();
+        set_browser_screencast_listener(move |ev| {
+            if !ev.frame_base64.is_empty() {
+                cast_frames_cb.fetch_add(1, Ordering::Relaxed);
+            }
+        });
+
+        let base_req = |action: &str| BrowserInteractRequest {
+            action: action.to_string(),
+            url: None,
+            x: None,
+            y: None,
+            button: None,
+            click_count: None,
+            delta_x: None,
+            delta_y: None,
+            text: None,
+            key: None,
+            code: None,
+            modifiers: None,
+            width: Some(900),
+            height: Some(700),
+            device_scale_factor: Some(1.25),
+            tab_id: None,
+            session_id: Some("sess-e2e-1".to_string()),
+        };
+
+        // 1. Navigate to page 1
+        let mut nav = base_req("navigate");
+        nav.url = Some(format!("http://127.0.0.1:{port}/"));
+        let r1 = browser_interact(nav).await.expect("navigate page 1 failed");
+        assert!(r1.active);
+        assert!(r1.url.contains(&format!("127.0.0.1:{port}")), "unexpected url: {}", r1.url);
+        assert!(r1.frame_base64.is_some(), "navigate should return initial frame");
+        assert_eq!(r1.tabs.len(), 1, "should have 1 tab for sess-e2e-1");
+
+        // 2. Click exact coordinates of #btn (left: 40..200, top: 40..90 -> center 120, 65)
+        let t_click = std::time::Instant::now();
+        let mut clk = base_req("click");
+        clk.x = Some(120.0);
+        clk.y = Some(65.0);
+        let _ = browser_interact(clk).await.expect("click #btn failed");
+        let click_ms = t_click.elapsed().as_millis();
+        eprintln!("[E2E] click latency: {click_ms}ms");
+
+        // 3. Wheel scroll down
+        let t_wheel = std::time::Instant::now();
+        let mut whl = base_req("wheel");
+        whl.x = Some(400.0);
+        whl.y = Some(300.0);
+        whl.delta_y = Some(420.0);
+        let _ = browser_interact(whl).await.expect("wheel failed");
+        let wheel_ms = t_wheel.elapsed().as_millis();
+        eprintln!("[E2E] wheel latency: {wheel_ms}ms");
+
+        // 4. Focus #inp (left: 40..260, top: 110..144 -> center 120, 127) and type text
+        let mut focus_inp = base_req("click");
+        focus_inp.x = Some(120.0);
+        focus_inp.y = Some(127.0);
+        let _ = browser_interact(focus_inp).await.expect("click #inp failed");
+
+        let t_text = std::time::Instant::now();
+        let mut txt = base_req("text");
+        txt.text = Some("Hello Screencast".to_string());
+        let _ = browser_interact(txt).await.expect("text failed");
+        let text_ms = t_text.elapsed().as_millis();
+        eprintln!("[E2E] text latency: {text_ms}ms");
+
+        // Allow screencast to deliver frames & verify DOM state directly via CDP actor
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let frames_received = cast_frames.load(Ordering::Relaxed);
+        eprintln!("[E2E] live screencast frames pushed: {frames_received}");
+        assert!(frames_received >= 1, "Expected live Page.startScreencast frames, got 0");
+
+        {
+            let guard = session_mutex().lock().await;
+            let sess = guard.as_ref().unwrap();
+            let actor = sess.actor.as_ref().unwrap();
+            let state = actor
+                .eval("JSON.stringify({ clicks: window.__clicks || 0, scrollY: Math.round(window.scrollY), val: document.getElementById('inp').value })")
+                .await
+                .unwrap();
+            eprintln!("[E2E] DOM state after click+wheel+text: {state}");
+            let v: Value = serde_json::from_str(&state).unwrap();
+            assert_eq!(v["clicks"].as_i64(), Some(1), "Click missed #btn! state={state}");
+            assert!(v["scrollY"].as_i64().unwrap_or(0) > 100, "Wheel did not scroll! state={state}");
+            assert_eq!(v["val"].as_str(), Some("Hello Screencast"), "Text input missed! state={state}");
+        }
+
+        // 5. Navigate to /page2, then Back, then Forward
+        let mut nav2 = base_req("navigate");
+        nav2.url = Some(format!("http://127.0.0.1:{port}/page2"));
+        let r2 = browser_interact(nav2).await.expect("navigate page2 failed");
+        assert!(r2.url.contains("/page2"), "expected /page2, got {}", r2.url);
+        assert!(r2.can_go_back, "expected can_go_back after navigating to /page2");
+
+        let r_back = browser_interact(base_req("back")).await.expect("back failed");
+        assert!(!r_back.url.contains("/page2"), "back did not return to page1: {}", r_back.url);
+
+        // 6. New tab (about:blank), then close tab
+        let mut nt = base_req("new_tab");
+        nt.url = Some("about:blank".to_string());
+        let r_nt = browser_interact(nt).await.expect("new_tab failed");
+        assert_eq!(r_nt.tabs.len(), 2, "expected 2 tabs after new_tab");
+
+        let tab_to_close = r_nt.tabs.iter().find(|t| t.active).unwrap().id.clone();
+        let mut ct = base_req("close_tab");
+        ct.tab_id = Some(tab_to_close);
+        let r_ct = browser_interact(ct).await.expect("close_tab failed");
+        assert_eq!(r_ct.tabs.len(), 1, "expected 1 tab after closing second tab");
+
+        shutdown_browser().await;
+        server_task.abort();
     }
 }

@@ -274,6 +274,7 @@ export interface AgentSession {
   reasoningEffort?: ReasoningEffort;
   enabledSkills: string[];
   pinnedFiles: string[];
+  pinned?: boolean;
   allowedSessionTools: string[];
   messages: AgentChatMessage[];
   updatedAt: number;
@@ -286,6 +287,7 @@ export interface AgentSessionSummary {
   updatedAt: number;
   messageCount: number;
   permissionMode: PermissionMode;
+  pinned?: boolean;
 }
 
 export interface AgentTodoItem {

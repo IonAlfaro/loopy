@@ -5,8 +5,8 @@ pub mod scheduler;
 
 pub use bg_tasks::{get_bg_task_status, kill_bg_task, start_bg_task};
 pub use browser::{
-    browser_interact, set_browser_frame_listener, shutdown_browser, BrowserInteractRequest,
-    BrowserInteractResponse,
+    browser_interact, set_browser_frame_listener, set_browser_screencast_listener,
+    shutdown_browser, BrowserInteractRequest, BrowserInteractResponse,
 };
 pub use scheduler::{cancel_scheduled_task, list_scheduled_tasks, schedule_task};
 

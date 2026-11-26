@@ -17,8 +17,11 @@ import {
   Globe,
   Lock,
   MessageSquare,
+  MoreHorizontal,
   Paperclip,
+  Pencil,
   Pin,
+  PinOff,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -278,6 +281,9 @@ export function AgentWorkspaceView() {
   const [modelDefaultCompact, setModelDefaultCompact] = useState<number>(0);
   const [liveBrowserFrame, setLiveBrowserFrame] = useState<BrowserFrameEvent | null>(null);
   const [browserExpanded, setBrowserExpanded] = useState(false);
+  const [chatMenuId, setChatMenuId] = useState<string | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renamingDraft, setRenamingDraft] = useState("");
   const [savedShots, setSavedShots] = useState<Record<string, string>>({});
   const [permissionReq, setPermissionReq] = useState<{
     callId: string;
@@ -812,6 +818,59 @@ export function AgentWorkspaceView() {
     }
   };
 
+  useEffect(() => {
+    if (!chatMenuId) return;
+    const onDocClick = () => setChatMenuId(null);
+    window.addEventListener("click", onDocClick);
+    return () => window.removeEventListener("click", onDocClick);
+  }, [chatMenuId]);
+
+  const handleTogglePinSession = async (id: string) => {
+    setChatMenuId(null);
+    try {
+      const target: AgentSession =
+        id === session.id
+          ? session
+          : await invoke<AgentSession>("load_agent_session", { id });
+      const updated: AgentSession = { ...target, pinned: !target.pinned };
+      await invoke("save_agent_session", { session: updated });
+      if (id === session.id) {
+        setSession(updated);
+      }
+      refreshSessions();
+    } catch {
+      // ignore if unsaved draft
+    }
+  };
+
+  const handleStartRenameSession = (s: AgentSessionSummary) => {
+    setChatMenuId(null);
+    setRenamingId(s.id);
+    setRenamingDraft(displaySessionTitle(s.title, locale));
+  };
+
+  const handleCommitRenameSession = async (id: string) => {
+    const trimmed = renamingDraft.trim();
+    setRenamingId(null);
+    if (!trimmed) return;
+    try {
+      const target: AgentSession =
+        id === session.id
+          ? session
+          : await invoke<AgentSession>("load_agent_session", { id });
+      const updated: AgentSession = { ...target, title: trimmed };
+      await invoke("save_agent_session", { session: updated });
+      if (id === session.id) {
+        setSession(updated);
+      }
+      refreshSessions();
+    } catch {
+      if (id === session.id) {
+        setSession((prev) => ({ ...prev, title: trimmed }));
+      }
+    }
+  };
+
   const handleAddProject = async () => {
     try {
       const picked = await invoke<string | null>("pick_folder", {
@@ -1231,16 +1290,43 @@ export function AgentWorkspaceView() {
                 {orphanSessions.map((s) => {
                   const isCurrent = s.id === session.id;
                   const isLive = isCurrent && running;
+                  const isRenaming = renamingId === s.id;
+                  const isMenuOpen = chatMenuId === s.id;
                   return (
                     <div
                       key={s.id}
-                      className={`project-chat-pill ${isCurrent ? "active" : ""}`}
-                      onClick={() => void handleSelectSession(s.id)}
+                      className={`project-chat-pill ${isCurrent ? "active" : ""} ${isMenuOpen ? "menu-open" : ""}`}
+                      onClick={() => {
+                        if (!isRenaming) void handleSelectSession(s.id);
+                      }}
                     >
-                      <MessageSquare size={12} style={{ color: "#64748b", flexShrink: 0 }} />
-                      <span className="project-chat-title truncate-text">
-                        {displaySessionTitle(s.title, locale)}
-                      </span>
+                      {s.pinned ? (
+                        <Pin size={11} style={{ color: "#a78bfa", flexShrink: 0 }} />
+                      ) : (
+                        <MessageSquare size={12} style={{ color: "#64748b", flexShrink: 0 }} />
+                      )}
+                      {isRenaming ? (
+                        <input
+                          type="text"
+                          autoFocus
+                          className="chat-rename-input"
+                          value={renamingDraft}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => setRenamingDraft(e.target.value)}
+                          onBlur={() => void handleCommitRenameSession(s.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.currentTarget.blur();
+                            } else if (e.key === "Escape") {
+                              setRenamingId(null);
+                            }
+                          }}
+                        />
+                      ) : (
+                        <span className="project-chat-title truncate-text">
+                          {displaySessionTitle(s.title, locale)}
+                        </span>
+                      )}
                       <span className="project-chat-right">
                         {isLive ? (
                           <span className="chat-active-dot" />
@@ -1251,13 +1337,54 @@ export function AgentWorkspaceView() {
                         )}
                         <button
                           type="button"
-                          className="chat-del-btn icon-btn danger-hover"
-                          title="Eliminar conversación"
-                          onClick={(e) => void handleDeleteSession(e, s.id)}
+                          className="chat-more-btn icon-btn"
+                          title={locale === "es" ? "Opciones" : "Options"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setChatMenuId(isMenuOpen ? null : s.id);
+                          }}
                         >
-                          <Trash2 size={11} />
+                          <MoreHorizontal size={13} />
                         </button>
                       </span>
+                      {isMenuOpen && (
+                        <div
+                          className="chat-row-menu"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            className="chat-row-menu-item"
+                            onClick={() => void handleTogglePinSession(s.id)}
+                          >
+                            {s.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+                            <span>
+                              {s.pinned
+                                ? locale === "es" ? "Desfijar" : "Unpin"
+                                : locale === "es" ? "Fijar" : "Pin"}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            className="chat-row-menu-item"
+                            onClick={() => handleStartRenameSession(s)}
+                          >
+                            <Pencil size={12} />
+                            <span>{locale === "es" ? "Renombrar" : "Rename"}</span>
+                          </button>
+                          <button
+                            type="button"
+                            className="chat-row-menu-item danger"
+                            onClick={(e) => {
+                              setChatMenuId(null);
+                              void handleDeleteSession(e, s.id);
+                            }}
+                          >
+                            <Trash2 size={12} />
+                            <span>{locale === "es" ? "Eliminar" : "Delete"}</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1415,19 +1542,44 @@ export function AgentWorkspaceView() {
                           chatList.map((s) => {
                             const isCurrent = s.id === session.id;
                             const isLive = isCurrent && running;
+                            const isRenaming = renamingId === s.id;
+                            const isMenuOpen = chatMenuId === s.id;
+                            const isSaved = savedChats.some((saved) => saved.id === s.id);
                             return (
                               <div
                                 key={s.id}
-                                className={`project-chat-pill ${isCurrent ? "active" : ""}`}
+                                className={`project-chat-pill ${isCurrent ? "active" : ""} ${isMenuOpen ? "menu-open" : ""}`}
                                 onClick={() => {
-                                  if (hasCurrentInSaved || !isCurrent) {
+                                  if (!isRenaming && (hasCurrentInSaved || !isCurrent)) {
                                     void handleSelectSession(s.id);
                                   }
                                 }}
                               >
-                                <span className="project-chat-title truncate-text">
-                                  {displaySessionTitle(s.title, locale)}
-                                </span>
+                                {s.pinned && (
+                                  <Pin size={10} style={{ color: "#a78bfa", flexShrink: 0 }} />
+                                )}
+                                {isRenaming ? (
+                                  <input
+                                    type="text"
+                                    autoFocus
+                                    className="chat-rename-input"
+                                    value={renamingDraft}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => setRenamingDraft(e.target.value)}
+                                    onBlur={() => void handleCommitRenameSession(s.id)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") {
+                                        e.currentTarget.blur();
+                                      } else if (e.key === "Escape") {
+                                        setRenamingId(null);
+                                      }
+                                    }}
+                                  />
+                                ) : (
+                                  <span className="project-chat-title truncate-text">
+                                    {displaySessionTitle(s.title, locale)}
+                                  </span>
+                                )}
                                 <span className="project-chat-right">
                                   {isLive ? (
                                     <span className="chat-active-dot" />
@@ -1436,17 +1588,58 @@ export function AgentWorkspaceView() {
                                       {formatRelativeAge(s.updatedAt, locale)}
                                     </span>
                                   )}
-                                  {savedChats.some((saved) => saved.id === s.id) && (
+                                  <button
+                                    type="button"
+                                    className="chat-more-btn icon-btn"
+                                    title={locale === "es" ? "Opciones" : "Options"}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setChatMenuId(isMenuOpen ? null : s.id);
+                                    }}
+                                  >
+                                    <MoreHorizontal size={13} />
+                                  </button>
+                                </span>
+                                {isMenuOpen && (
+                                  <div
+                                    className="chat-row-menu"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
                                     <button
                                       type="button"
-                                      className="chat-del-btn icon-btn danger-hover"
-                                      title="Eliminar conversación"
-                                      onClick={(e) => void handleDeleteSession(e, s.id)}
+                                      className="chat-row-menu-item"
+                                      onClick={() => void handleTogglePinSession(s.id)}
                                     >
-                                      <Trash2 size={11} />
+                                      {s.pinned ? <PinOff size={12} /> : <Pin size={12} />}
+                                      <span>
+                                        {s.pinned
+                                          ? locale === "es" ? "Desfijar" : "Unpin"
+                                          : locale === "es" ? "Fijar" : "Pin"}
+                                      </span>
                                     </button>
-                                  )}
-                                </span>
+                                    <button
+                                      type="button"
+                                      className="chat-row-menu-item"
+                                      onClick={() => handleStartRenameSession(s)}
+                                    >
+                                      <Pencil size={12} />
+                                      <span>{locale === "es" ? "Renombrar" : "Rename"}</span>
+                                    </button>
+                                    {isSaved && (
+                                      <button
+                                        type="button"
+                                        className="chat-row-menu-item danger"
+                                        onClick={(e) => {
+                                          setChatMenuId(null);
+                                          void handleDeleteSession(e, s.id);
+                                        }}
+                                      >
+                                        <Trash2 size={12} />
+                                        <span>{locale === "es" ? "Eliminar" : "Delete"}</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             );
                           })
@@ -2865,6 +3058,7 @@ export function AgentWorkspaceView() {
 
           {rightPanelOpen && (
             <>
+              {!(rightPanelTab === "browser" && browserExpanded) && (
               <div
                 className="panel-resizer"
                 role="separator"
@@ -2879,16 +3073,17 @@ export function AgentWorkspaceView() {
                   localStorage.setItem("loopy_agent_right_w", "390");
                 }}
               />
+              )}
               <aside
-                className={`agent-workbench-drawer ${rightPanelTab === "browser" ? "browser-mode" : ""}`}
+                className={`agent-workbench-drawer ${rightPanelTab === "browser" ? "browser-mode" : ""} ${rightPanelTab === "browser" && browserExpanded ? "expanded" : ""}`}
                 style={
                   rightPanelTab === "browser"
-                    ? {
-                        width: browserExpanded
-                          ? Math.round(window.innerWidth * 0.64)
-                          : Math.max(rightPanelWidth, Math.round(window.innerWidth * 0.5)),
-                        minWidth: 420,
-                      }
+                    ? browserExpanded
+                      ? undefined
+                      : {
+                          width: Math.max(rightPanelWidth, Math.round(window.innerWidth * 0.46)),
+                          minWidth: 420,
+                        }
                     : { width: rightPanelWidth, minWidth: rightPanelWidth }
                 }
               >
@@ -3046,6 +3241,7 @@ export function AgentWorkspaceView() {
 
               {rightPanelTab === "browser" && (
                 <InteractiveBrowserPane
+                  sessionId={session.id}
                   agentFrame={liveBrowserFrame}
                   agentBusy={running}
                   expanded={browserExpanded}

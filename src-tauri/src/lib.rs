@@ -1098,12 +1098,16 @@ pub fn run() {
         .manage(TriggerManager::default())
         .setup(|app| {
             let handle = app.handle().clone();
+            let handle_cast = app.handle().clone();
             let handle_load = app.handle().clone();
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.maximize();
             }
             tools::set_browser_frame_listener(move |ev| {
                 let _ = handle.emit("loopy://browser-frame", ev);
+            });
+            tools::set_browser_screencast_listener(move |ev| {
+                let _ = handle_cast.emit("loopy://browser-screencast", ev);
             });
             inference::llama_cpp::set_model_load_listener(move |ev| {
                 let _ = handle_load.emit("loopy://model-load-progress", ev);
