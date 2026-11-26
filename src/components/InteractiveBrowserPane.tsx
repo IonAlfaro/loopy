@@ -39,6 +39,7 @@ interface BrowserInteractResponse {
 
 interface InteractiveBrowserPaneProps {
   agentFrame: BrowserFrameEvent | null;
+  agentBusy?: boolean;
   expanded: boolean;
   onToggleExpand: () => void;
   onClosePane: () => void;
@@ -46,6 +47,7 @@ interface InteractiveBrowserPaneProps {
 
 export function InteractiveBrowserPane({
   agentFrame,
+  agentBusy = false,
   expanded,
   onToggleExpand,
   onClosePane,
@@ -77,10 +79,16 @@ export function InteractiveBrowserPane({
 
   const applyResponse = useCallback(
     (res: BrowserInteractResponse) => {
+      if (!res.active && agentFrame?.frame_base64) {
+        // Keep displaying the live agent frame instead of wiping it to empty
+        return;
+      }
       setActive(res.active);
       setCanGoBack(res.canGoBack);
       setCanGoForward(res.canGoForward);
-      setTabs(res.tabs || []);
+      if (res.tabs && res.tabs.length > 0) {
+        setTabs(res.tabs);
+      }
       if (res.viewportWidth && res.viewportHeight) {
         setViewportSize({ width: res.viewportWidth, height: res.viewportHeight });
       }
@@ -98,7 +106,7 @@ export function InteractiveBrowserPane({
       }
       setErrorMsg(null);
     },
-    [omniboxFocused]
+    [omniboxFocused, agentFrame]
   );
 
   const callBrowser = useCallback(
@@ -119,8 +127,9 @@ export function InteractiveBrowserPane({
         });
         applyResponse(res);
       } catch (err) {
-        if (!opts?.silent) {
-          setErrorMsg(err instanceof Error ? err.message : String(err));
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!opts?.silent && !msg.includes("__BROWSER_BUSY__")) {
+          setErrorMsg(msg);
         }
       } finally {
         inFlightRef.current = false;
@@ -130,25 +139,33 @@ export function InteractiveBrowserPane({
     [applyResponse]
   );
 
-  // Sync live frames pushed by the AI agent's browser_action tool
+  // Sync live frames pushed by the AI agent's browser_action tool without colliding on CDP
   useEffect(() => {
     if (!agentFrame) return;
     setActive(true);
     if (agentFrame.url) {
       setUrl(agentFrame.url);
       if (!omniboxFocused) setOmnibox(agentFrame.url);
+      setTabs((prev) =>
+        prev.length > 0
+          ? prev.map((t) =>
+              t.active ? { ...t, url: agentFrame.url, title: agentFrame.title || agentFrame.url } : t
+            )
+          : [{ id: "agent-active", title: agentFrame.title || agentFrame.url, url: agentFrame.url, active: true }]
+      );
     }
     if (agentFrame.frame_base64) {
-      setFrameSrc(`data:image/png;base64,${agentFrame.frame_base64}`);
+      const isJpeg = agentFrame.frame_base64.startsWith("/9j/");
+      setFrameSrc(`data:${isJpeg ? "image/jpeg" : "image/png"};base64,${agentFrame.frame_base64}`);
     }
-    // Refresh tab list & back/forward state quietly
-    void callBrowser({ action: "status" }, { silent: true });
-  }, [agentFrame, omniboxFocused, callBrowser]);
+  }, [agentFrame, omniboxFocused]);
 
-  // Initial status sync on mount
+  // Initial status sync on mount (only when agent isn't actively driving)
   useEffect(() => {
-    void callBrowser({ action: "status" }, { silent: true });
-  }, [callBrowser]);
+    if (!agentBusy && !agentFrame) {
+      void callBrowser({ action: "status" }, { silent: true });
+    }
+  }, [callBrowser, agentBusy, agentFrame]);
 
   // Keep Chromium viewport synced 1:1 with the visible right pane dimensions
   useEffect(() => {
@@ -165,7 +182,7 @@ export function InteractiveBrowserPane({
       measuredRef.current = { width: w, height: h };
       if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
       resizeTimerRef.current = window.setTimeout(() => {
-        if (active && !inFlightRef.current) {
+        if (active && !agentBusy && !inFlightRef.current) {
           void callBrowser({ action: "resize", width: w, height: h }, { silent: true });
         }
       }, 240);
@@ -175,18 +192,18 @@ export function InteractiveBrowserPane({
       ro.disconnect();
       if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
     };
-  }, [active, callBrowser]);
+  }, [active, agentBusy, callBrowser]);
 
-  // Lightweight live refresh so dynamic SPAs / OAuth redirects update smoothly
+  // Lightweight live refresh so dynamic SPAs / OAuth redirects update smoothly (paused while agent drives)
   useEffect(() => {
-    if (!active) return;
+    if (!active || agentBusy) return;
     const id = window.setInterval(() => {
       if (!inFlightRef.current && document.visibilityState === "visible") {
         void callBrowser({ action: "refresh" }, { silent: true });
       }
-    }, 2200);
+    }, 2500);
     return () => window.clearInterval(id);
-  }, [active, callBrowser]);
+  }, [active, agentBusy, callBrowser]);
 
   const handleNavigate = (targetUrl?: string) => {
     const next = (targetUrl ?? omnibox).trim();

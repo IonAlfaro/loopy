@@ -295,7 +295,15 @@ pub async fn browser_interact(req: BrowserInteractRequest) -> Result<BrowserInte
         }
     }
 
-    let mut guard = session_mutex().lock().await;
+    // For passive polling/status/resize, never block or collide if the AI agent is actively driving Chromium
+    let mut guard = if matches!(action, "status" | "refresh" | "resize") {
+        match session_mutex().try_lock() {
+            Ok(g) => g,
+            Err(_) => return Err("__BROWSER_BUSY__".to_string()),
+        }
+    } else {
+        session_mutex().lock().await
+    };
 
     let is_alive = match guard.as_mut() {
         Some(b) => matches!(b.child.try_wait(), Ok(None)),
@@ -859,6 +867,29 @@ async fn drive_cdp_action(
             cdp_call(&mut ws, &mut next_id, "Page.navigate", json!({ "url": url })).await?;
             tokio::time::sleep(Duration::from_millis(1300)).await;
             session.current_url = url.to_string();
+            // Emit immediate visual frame so the right Browser pane updates live right away
+            if let Ok(shot) = cdp_call(
+                &mut ws,
+                &mut next_id,
+                "Page.captureScreenshot",
+                json!({ "format": "jpeg", "quality": 82 }),
+            )
+            .await
+            {
+                if let Some(b64) = shot.get("data").and_then(|v| v.as_str()) {
+                    emit_browser_frame(BrowserFrameEvent {
+                        url: url.to_string(),
+                        title: String::new(),
+                        action: "goto".to_string(),
+                        target_label: None,
+                        cursor_x: None,
+                        cursor_y: None,
+                        frame_base64: b64.to_string(),
+                        console_errors: Vec::new(),
+                        network_errors: Vec::new(),
+                    });
+                }
+            }
         }
     }
 

@@ -3047,6 +3047,7 @@ export function AgentWorkspaceView() {
               {rightPanelTab === "browser" && (
                 <InteractiveBrowserPane
                   agentFrame={liveBrowserFrame}
+                  agentBusy={running}
                   expanded={browserExpanded}
                   onToggleExpand={() => setBrowserExpanded((v) => !v)}
                   onClosePane={() => setRightPanelOpen(false)}
