@@ -2,6 +2,16 @@
 
 All notable changes to **Loors** are documented in this file.
 
+## [0.1.3] — Harness Auto-Save, Full Context Recovery & Silent Windows Updater
+
+### Added
+- **Harness Save (`Ctrl+S`), Auto-Save & Persistent Tabs**: Added a topbar Save button with dirty indicator, `Ctrl+S` shortcut, configurable automatic auto-save toggle in **Settings → General & Language** (saves after 1.5s of inactivity and before closing tabs), and automatic persistence/restoration of open Harness tabs across restarts.
+
+### Fixed
+- **Full `llama-server` Context Window Preserved**: Removed default `--parallel 2` slot splitting so local GGUF models use 100% of the configured `--ctx-size` while `llama-server` queues concurrent Agent + Harness requests cleanly.
+- **100% Silent Windows Auto-Updater (`/S`)**: Windows NSIS/MSI updates now run completely silently in the background with zero installer wizard UI and automatically relaunch Loors once updated.
+- **Auto-Retry on Truncated Local Tool Calls**: Automatically retries a step with bumped `repeat_penalty` and `temperature` when `llama-server` fails to parse tool-call JSON due to a local model repetition loop.
+
 ## [0.1.2] — Multi-Harness Tabs, Concurrent Execution & Autonomous Product Team
 
 ### Added

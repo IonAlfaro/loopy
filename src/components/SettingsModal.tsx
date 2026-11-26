@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useI18n, type AppLocale } from "../i18n";
+import { useGraphStore } from "../store/useGraphStore";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ModelsModal } from "./ModelsModal";
 import { RuntimeModal } from "./RuntimeModal";
@@ -36,6 +37,8 @@ export function SettingsModal({
   onNotice,
 }: SettingsModalProps) {
   const { locale, setLocale, t } = useI18n();
+  const autoSaveHarnesses = useGraphStore((s) => s.autoSaveHarnesses);
+  const setAutoSaveHarnesses = useGraphStore((s) => s.setAutoSaveHarnesses);
   const [tab, setTab] = useState<SettingsTab>(initialTab);
 
   useEffect(() => {
@@ -195,9 +198,45 @@ export function SettingsModal({
 
                 <div className="settings-group">
                   <div className="settings-group-title">
+                    {locale === "es" ? "Guardado de arneses" : "Harness saving"}
+                  </div>
+                  <div className="settings-group-desc">
+                    {locale === "es"
+                      ? "Guarda automáticamente los cambios de los arneses de tu biblioteca y conserva las pestañas abiertas al reiniciar."
+                      : "Automatically save changes to library harnesses and restore open tabs on restart."}
+                  </div>
+                  <label
+                    className="settings-shortcut-row"
+                    style={{ cursor: "pointer", padding: "10px 12px", borderRadius: 8, background: "var(--panel-2)", border: "1px solid var(--border)" }}
+                  >
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                      <strong style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)" }}>
+                        {locale === "es" ? "Auto-guardado automático" : "Automatic auto-save"}
+                      </strong>
+                      <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
+                        {locale === "es"
+                          ? "Guarda tras 1,5 s de inactividad y al cerrar pestañas (siempre puedes usar Ctrl+S)."
+                          : "Saves after 1.5s of inactivity and when closing tabs (Ctrl+S always works)."}
+                      </span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={autoSaveHarnesses}
+                      onChange={(e) => setAutoSaveHarnesses(e.target.checked)}
+                      style={{ width: 16, height: 16, accentColor: "#8b5cf6", cursor: "pointer", flexShrink: 0 }}
+                    />
+                  </label>
+                </div>
+
+                <div className="settings-group">
+                  <div className="settings-group-title">
                     {locale === "es" ? "Atajos de teclado" : "Keyboard shortcuts"}
                   </div>
                   <div className="settings-shortcuts-list">
+                    <div className="settings-shortcut-row">
+                      <span>{locale === "es" ? "Guardar arnés actual" : "Save current harness"}</span>
+                      <kbd>Ctrl + S</kbd>
+                    </div>
                     <div className="settings-shortcut-row">
                       <span>{locale === "es" ? "Cambiar a Modo Agente" : "Switch to Agent Mode"}</span>
                       <kbd>Ctrl + 1</kbd>
