@@ -30,6 +30,7 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
   const workflowName = useGraphStore((s) => s.workflowName);
   const exportWorkflow = useGraphStore((s) => s.exportWorkflow);
   const importWorkflow = useGraphStore((s) => s.importWorkflow);
+  const markSaved = useGraphStore((s) => s.markSaved);
   const loadTemplate = useGraphStore((s) => s.loadTemplate);
 
   const [savedList, setSavedList] = useState<SavedWorkflowEntry[]>([]);
@@ -62,6 +63,7 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
         name: data.name || "workflow",
         content,
       });
+      markSaved(data.name);
       setStatusMsg(`Guardado en biblioteca: ${savedPath}`);
       onNotice(`Guardado: ${data.name}`);
       refreshLibrary();
@@ -81,7 +83,7 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
         path: entry.path,
       });
       const wf = parseWorkflowJson(raw);
-      importWorkflow(wf);
+      importWorkflow(wf, wf.name || entry.name);
       onNotice(`Loaded harness: ${wf.name}`);
       onClose();
     } catch (err) {

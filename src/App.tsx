@@ -13,6 +13,7 @@ import "@xyflow/react/dist/style.css";
 import { checkHeadlessHealth, invoke, listen } from "./lib/bridge";
 import { WebAuthGate } from "./components/WebAuthGate";
 import {
+  Check,
   Eye,
   EyeOff,
   FolderOpen,
@@ -25,6 +26,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Save,
   Settings,
   Sliders,
   Sparkles,
@@ -89,6 +91,10 @@ function LoorsStudioInner() {
   const createHarnessTab = useGraphStore((s) => s.createHarnessTab);
   const switchHarnessTab = useGraphStore((s) => s.switchHarnessTab);
   const closeHarnessTab = useGraphStore((s) => s.closeHarnessTab);
+  const savedLibraryName = useGraphStore((s) => s.savedLibraryName);
+  const dirty = useGraphStore((s) => s.dirty);
+  const autoSaveHarnesses = useGraphStore((s) => s.autoSaveHarnesses);
+  const markSaved = useGraphStore((s) => s.markSaved);
   const pendingGate = useGraphStore((s) => s.pendingGate);
   const setSelectedNodeId = useGraphStore((s) => s.setSelectedNodeId);
   const exportWorkflow = useGraphStore((s) => s.exportWorkflow);
@@ -544,6 +550,56 @@ function LoorsStudioInner() {
 
   const isRunning = runStatus === "running";
 
+  const [justSaved, setJustSaved] = useState(false);
+
+  const handleSaveWorkflow = async (silent = false) => {
+    try {
+      const data = exportWorkflow();
+      const targetName = (data.name || savedLibraryName || "harness").trim();
+      await invoke<string>("save_workflow_to_library", {
+        name: targetName,
+        content: JSON.stringify(data, null, 2),
+      });
+      markSaved(targetName);
+      if (!silent) {
+        setJustSaved(true);
+        window.setTimeout(() => setJustSaved(false), 1600);
+        setBanner(locale === "es" ? `Guardado: ${targetName}` : `Saved: ${targetName}`);
+      }
+    } catch (err) {
+      if (!silent) {
+        setBanner(
+          typeof err === "string"
+            ? err
+            : locale === "es"
+              ? "No se pudo guardar el arnés."
+              : "Could not save harness."
+        );
+      }
+    }
+  };
+
+  // Auto-save active library harness after 1.5s of inactivity when enabled in Settings
+  useEffect(() => {
+    if (!autoSaveHarnesses || !dirty || !savedLibraryName) return;
+    const id = window.setTimeout(() => {
+      void handleSaveWorkflow(true);
+    }, 1500);
+    return () => window.clearTimeout(id);
+  }, [autoSaveHarnesses, dirty, savedLibraryName, nodes, edges, workflowName]);
+
+  // Ctrl+S / Cmd+S shortcut in Harness mode
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && appMode === "harness") {
+        e.preventDefault();
+        void handleSaveWorkflow(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [appMode, workflowName, savedLibraryName, nodes, edges, locale]);
+
   const runningHarnessCount = harnessTabs.filter(
     (tab) => (tab.id === activeHarnessTabId ? runStatus : tab.runStatus) === "running"
   ).length;
@@ -611,6 +667,41 @@ function LoorsStudioInner() {
                 onClick={() => setIoOpen(true)}
               >
                 <FolderOpen size={15} />
+              </button>
+              <button
+                type="button"
+                className="icon-btn"
+                style={{ position: "relative" }}
+                title={
+                  justSaved
+                    ? locale === "es"
+                      ? "¡Guardado!"
+                      : "Saved!"
+                    : locale === "es"
+                      ? "Guardar arnés (Ctrl+S)"
+                      : "Save harness (Ctrl+S)"
+                }
+                aria-label={locale === "es" ? "Guardar arnés" : "Save harness"}
+                onClick={() => void handleSaveWorkflow(false)}
+              >
+                {justSaved ? (
+                  <Check size={14} style={{ color: "#34d399" }} />
+                ) : (
+                  <Save size={14} />
+                )}
+                {dirty && !justSaved && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: 3,
+                      right: 3,
+                      width: 6,
+                      height: 6,
+                      borderRadius: 999,
+                      background: "#a78bfa",
+                    }}
+                  />
+                )}
               </button>
               <input
                 className="workflow-name"
@@ -880,6 +971,22 @@ function LoorsStudioInner() {
                         title={locale === "es" ? "Cerrar pestaña" : "Close tab"}
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (autoSaveHarnesses && tab.savedLibraryName && (isActive ? dirty : tab.dirty)) {
+                            const snapNodes = isActive ? nodes : tab.nodes;
+                            const snapEdges = isActive ? edges : tab.edges;
+                            const snapName = isActive ? workflowName : tab.workflowName;
+                            const payload = {
+                              schemaVersion: 1,
+                              name: snapName || tab.savedLibraryName,
+                              exportedAt: new Date().toISOString(),
+                              nodes: snapNodes,
+                              edges: snapEdges,
+                            };
+                            void invoke("save_workflow_to_library", {
+                              name: snapName || tab.savedLibraryName,
+                              content: JSON.stringify(payload, null, 2),
+                            }).catch(() => {});
+                          }
                           if (status === "running") {
                             void handleStop(tab.id);
                           }

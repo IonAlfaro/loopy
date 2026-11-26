@@ -167,6 +167,8 @@ const INITIAL_EDGES: LoorsFlowEdge[] = [
 export interface HarnessTabState {
   id: string;
   workflowName: string;
+  savedLibraryName: string | null;
+  dirty: boolean;
   nodes: LoorsFlowNode[];
   edges: LoorsFlowEdge[];
   selectedNodeId: string | null;
@@ -183,6 +185,11 @@ export interface HarnessTabState {
 interface GraphStoreState {
   harnessTabs: HarnessTabState[];
   activeHarnessTabId: string;
+  savedLibraryName: string | null;
+  dirty: boolean;
+  autoSaveHarnesses: boolean;
+  setAutoSaveHarnesses: (enabled: boolean) => void;
+  markSaved: (libraryName?: string) => void;
   createHarnessTab: () => void;
   switchHarnessTab: (tabId: string) => void;
   closeHarnessTab: (tabId: string) => void;
@@ -255,7 +262,7 @@ interface GraphStoreState {
   updateNodeConfig: (id: string, patch: Record<string, unknown>) => void;
   deleteNode: (id: string) => void;
   exportWorkflow: () => LoorsWorkflowFile;
-  importWorkflow: (file: LoorsWorkflowFile) => void;
+  importWorkflow: (file: LoorsWorkflowFile, libraryName?: string | null) => void;
 }
 
 function formatNow(): string {
@@ -271,6 +278,8 @@ function snapshotActiveTab(s: GraphStoreState): HarnessTabState {
   return {
     id: s.activeHarnessTabId,
     workflowName: s.workflowName,
+    savedLibraryName: s.savedLibraryName,
+    dirty: s.dirty,
     nodes: s.nodes,
     edges: s.edges,
     selectedNodeId: s.selectedNodeId,
@@ -367,29 +376,105 @@ function applyEventToTabState(tab: HarnessTabState, event: EngineEvent): Harness
 }
 
 const INITIAL_TAB_ID = "tab-1";
+const TABS_STORAGE_KEY = "loors_harness_tabs_v1";
+
+interface PersistedHarnessTab {
+  id: string;
+  workflowName: string;
+  savedLibraryName: string | null;
+  dirty?: boolean;
+  nodes: LoorsFlowNode[];
+  edges: LoorsFlowEdge[];
+}
+
+function loadInitialTabsState(): { tabs: HarnessTabState[]; activeId: string } {
+  const fallback: HarnessTabState = {
+    id: INITIAL_TAB_ID,
+    workflowName: "fix-tests-loop",
+    savedLibraryName: null,
+    dirty: false,
+    nodes: INITIAL_NODES,
+    edges: INITIAL_EDGES,
+    selectedNodeId: null,
+    runStatus: "idle",
+    activeRunId: null,
+    currentIteration: 0,
+    maxIterations: null,
+    runSummary: null,
+    activeActivity: null,
+    logs: [],
+    pendingGate: null,
+  };
+  if (typeof window === "undefined") {
+    return { tabs: [fallback], activeId: INITIAL_TAB_ID };
+  }
+  try {
+    const raw = window.localStorage.getItem(TABS_STORAGE_KEY);
+    if (!raw) return { tabs: [fallback], activeId: INITIAL_TAB_ID };
+    const parsed = JSON.parse(raw) as {
+      activeId?: string;
+      tabs?: PersistedHarnessTab[];
+    };
+    if (!Array.isArray(parsed.tabs) || parsed.tabs.length === 0) {
+      return { tabs: [fallback], activeId: INITIAL_TAB_ID };
+    }
+    const hydrated: HarnessTabState[] = parsed.tabs
+      .filter((t) => t && typeof t.id === "string" && Array.isArray(t.nodes))
+      .map((t) => ({
+        id: t.id,
+        workflowName: t.workflowName || "harness",
+        savedLibraryName: t.savedLibraryName ?? null,
+        dirty: Boolean(t.dirty),
+        nodes: t.nodes.map((n) => ({
+          ...n,
+          type: "loorsNode" as const,
+          data: { ...n.data, status: "idle" as const, statusMessage: null },
+        })),
+        edges: Array.isArray(t.edges) ? t.edges : [],
+        selectedNodeId: null,
+        runStatus: "idle",
+        activeRunId: null,
+        currentIteration: 0,
+        maxIterations: null,
+        runSummary: null,
+        activeActivity: null,
+        logs: [],
+        pendingGate: null,
+      }));
+    if (hydrated.length === 0) {
+      return { tabs: [fallback], activeId: INITIAL_TAB_ID };
+    }
+    const activeId = hydrated.some((t) => t.id === parsed.activeId)
+      ? (parsed.activeId as string)
+      : hydrated[0].id;
+    return { tabs: hydrated, activeId };
+  } catch {
+    return { tabs: [fallback], activeId: INITIAL_TAB_ID };
+  }
+}
+
+const BOOT_TABS = loadInitialTabsState();
+const BOOT_ACTIVE =
+  BOOT_TABS.tabs.find((t) => t.id === BOOT_TABS.activeId) ?? BOOT_TABS.tabs[0];
 
 export const useGraphStore = create<GraphStoreState>((set, get) => ({
-  harnessTabs: [
-    {
-      id: INITIAL_TAB_ID,
-      workflowName: "fix-tests-loop",
-      nodes: INITIAL_NODES,
-      edges: INITIAL_EDGES,
-      selectedNodeId: null,
-      runStatus: "idle",
-      activeRunId: null,
-      currentIteration: 0,
-      maxIterations: null,
-      runSummary: null,
-      activeActivity: null,
-      logs: [],
-      pendingGate: null,
-    },
-  ],
-  activeHarnessTabId: INITIAL_TAB_ID,
-  workflowName: "fix-tests-loop",
-  nodes: INITIAL_NODES,
-  edges: INITIAL_EDGES,
+  harnessTabs: BOOT_TABS.tabs,
+  activeHarnessTabId: BOOT_ACTIVE.id,
+  savedLibraryName: BOOT_ACTIVE.savedLibraryName,
+  dirty: BOOT_ACTIVE.dirty,
+  autoSaveHarnesses:
+    typeof window !== "undefined"
+      ? window.localStorage.getItem("loors_auto_save_harnesses") !== "0"
+      : true,
+  setAutoSaveHarnesses: (enabled) => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("loors_auto_save_harnesses", enabled ? "1" : "0");
+    }
+    set({ autoSaveHarnesses: enabled });
+  },
+  workflowName: BOOT_ACTIVE.workflowName,
+  nodes: BOOT_ACTIVE.nodes,
+  edges: BOOT_ACTIVE.edges,
   selectedNodeId: null,
   selectedBackend: "auto",
   runStatus: "idle",
@@ -404,6 +489,20 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   logs: [],
   consoleOpen: false,
   pendingGate: null,
+
+  markSaved: (libraryName) => {
+    const s = get();
+    const libName = libraryName ?? s.savedLibraryName ?? s.workflowName;
+    set({
+      savedLibraryName: libName,
+      dirty: false,
+      harnessTabs: s.harnessTabs.map((t) =>
+        t.id === s.activeHarnessTabId
+          ? { ...t, savedLibraryName: libName, dirty: false, workflowName: s.workflowName }
+          : t
+      ),
+    });
+  },
 
   createHarnessTab: () => {
     const s = get();
@@ -472,6 +571,8 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     const newTab: HarnessTabState = {
       id: newId,
       workflowName: `harness-${updatedTabs.length + 1}`,
+      savedLibraryName: null,
+      dirty: false,
       nodes: newNodes,
       edges: newEdges,
       selectedNodeId: null,
@@ -487,6 +588,8 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     set({
       harnessTabs: [...updatedTabs, newTab],
       activeHarnessTabId: newId,
+      savedLibraryName: null,
+      dirty: false,
       workflowName: newTab.workflowName,
       nodes: newTab.nodes,
       edges: newTab.edges,
@@ -514,6 +617,8 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     set({
       harnessTabs: syncedTabs,
       activeHarnessTabId: target.id,
+      savedLibraryName: target.savedLibraryName,
+      dirty: target.dirty,
       workflowName: target.workflowName,
       nodes: target.nodes,
       edges: target.edges,
@@ -547,6 +652,8 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     set({
       harnessTabs: remaining,
       activeHarnessTabId: next.id,
+      savedLibraryName: next.savedLibraryName,
+      dirty: next.dirty,
       workflowName: next.workflowName,
       nodes: next.nodes,
       edges: next.edges,
@@ -775,8 +882,9 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     const s = get();
     set({
       workflowName,
+      dirty: true,
       harnessTabs: s.harnessTabs.map((t) =>
-        t.id === s.activeHarnessTabId ? { ...t, workflowName } : t
+        t.id === s.activeHarnessTabId ? { ...t, workflowName, dirty: true } : t
       ),
     });
   },
@@ -1010,15 +1118,23 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     }
   },
 
-  onNodesChange: (changes) =>
+  onNodesChange: (changes) => {
+    const mutated = changes.some(
+      (c) => c.type === "remove" || c.type === "add" || (c.type === "position" && c.dragging === false)
+    );
     set({
       nodes: applyNodeChanges(changes, get().nodes),
-    }),
+      ...(mutated ? { dirty: true } : {}),
+    });
+  },
 
-  onEdgesChange: (changes) =>
+  onEdgesChange: (changes) => {
+    const mutated = changes.some((c) => c.type === "remove" || c.type === "add");
     set({
       edges: applyEdgeChanges(changes, get().edges),
-    }),
+      ...(mutated ? { dirty: true } : {}),
+    });
+  },
 
   onConnect: (connection) => {
     const isRetry =
@@ -1132,11 +1248,12 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       };
     });
 
-    set({ nodes: positioned });
+    set({ nodes: positioned, dirty: true });
   },
 
   updateNodeTitle: (id, title) =>
     set({
+      dirty: true,
       nodes: get().nodes.map((node) =>
         node.id === id ? { ...node, data: { ...node.data, title } } : node
       ),
@@ -1144,6 +1261,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
 
   updateNodeConfig: (id, patch) =>
     set({
+      dirty: true,
       nodes: get().nodes.map((node) =>
         node.id === id
           ? {
@@ -1159,6 +1277,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
 
   deleteNode: (id) =>
     set({
+      dirty: true,
       nodes: get().nodes.filter((n) => n.id !== id),
       edges: get().edges.filter((e) => e.source !== id && e.target !== id),
       selectedNodeId: get().selectedNodeId === id ? null : get().selectedNodeId,
@@ -1171,12 +1290,16 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     edges: get().edges,
   }),
 
-  importWorkflow: (file) => {
+  importWorkflow: (file, libraryName) => {
     const activeModel = get().activeModelPath.trim();
     const shortModelTitle =
       activeModel.split(/[\\/]/).pop()?.replace(/\.gguf$/i, "") || "";
+    const resolvedName = file.name || "imported-workflow";
+    const resolvedLib = libraryName ?? null;
     set({
-      workflowName: file.name || "imported-workflow",
+      workflowName: resolvedName,
+      savedLibraryName: resolvedLib,
+      dirty: false,
       nodes: (file.nodes || []).map((n) => {
         if (n.data.kind === "local_model" && activeModel) {
           return {
@@ -1203,9 +1326,46 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       pendingGate: null,
       harnessTabs: get().harnessTabs.map((t) =>
         t.id === get().activeHarnessTabId
-          ? { ...t, workflowName: file.name || "imported-workflow", runStatus: "idle", pendingGate: null }
+          ? {
+              ...t,
+              workflowName: resolvedName,
+              savedLibraryName: resolvedLib,
+              dirty: false,
+              runStatus: "idle",
+              pendingGate: null,
+            }
           : t
       ),
     });
   },
 }));
+
+// Persist open Harness tabs to localStorage (debounced) so restarting Loors restores all open tabs
+if (typeof window !== "undefined") {
+  let persistTimer: number | null = null;
+  useGraphStore.subscribe((state) => {
+    if (persistTimer) window.clearTimeout(persistTimer);
+    persistTimer = window.setTimeout(() => {
+      try {
+        const activeSnap = snapshotActiveTab(state);
+        const allTabs: PersistedHarnessTab[] = state.harnessTabs.map((t) => {
+          const src = t.id === state.activeHarnessTabId ? activeSnap : t;
+          return {
+            id: src.id,
+            workflowName: src.workflowName,
+            savedLibraryName: src.savedLibraryName,
+            dirty: src.dirty,
+            nodes: src.nodes,
+            edges: src.edges,
+          };
+        });
+        window.localStorage.setItem(
+          TABS_STORAGE_KEY,
+          JSON.stringify({ activeId: state.activeHarnessTabId, tabs: allTabs })
+        );
+      } catch {
+        // ignore quota errors
+      }
+    }, 400);
+  });
+}
