@@ -4,6 +4,8 @@ import {
   Bot,
   Boxes,
   Check,
+  ChevronDown,
+  ChevronRight,
   ChevronUp,
   Cloud,
   Copy,
@@ -234,7 +236,7 @@ export function AgentWorkspaceView() {
   const [selectedQuestionOpts, setSelectedQuestionOpts] = useState<string[]>([]);
   const [customQuestionAnswer, setCustomQuestionAnswer] = useState("");
   const [activeArtifact, setActiveArtifact] = useState<AgentArtifactPreview | null>(null);
-  const [artifactExpanded, setArtifactExpanded] = useState(true);
+  const [artifactExpanded, setArtifactExpanded] = useState(false);
   const [confirmRemoveProj, setConfirmRemoveProj] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [stagingFiles, setStagingFiles] = useState(false);
@@ -643,7 +645,7 @@ export function AgentWorkspaceView() {
           kind: p.kind,
           content: p.content,
         });
-        setArtifactExpanded(true);
+        setArtifactExpanded(false);
       } else if (p.type === "token") {
         setSession((prev) => {
           const msgs = [...prev.messages];
@@ -2080,77 +2082,79 @@ export function AgentWorkspaceView() {
               </div>
             )}
             {activeArtifact && (
-              <div
-                style={{
-                  marginBottom: 8,
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  background: "var(--bg-surface-1)",
-                  border: "1px solid var(--border-subtle)",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", minWidth: 0 }}
+              <div className={`agent-artifact-card ${artifactExpanded ? "expanded" : ""}`}>
+                <div className="agent-artifact-head">
+                  <button
+                    type="button"
+                    className="agent-artifact-toggle"
+                    title={activeArtifact.path || activeArtifact.title}
                     onClick={() => setArtifactExpanded((v) => !v)}
                   >
-                    <FileText size={13} style={{ color: "var(--accent-soft)", flexShrink: 0 }} />
-                    <strong style={{ fontSize: 12 }} className="truncate-text">
+                    {artifactExpanded ? (
+                      <ChevronDown size={13} className="agent-artifact-chev" />
+                    ) : (
+                      <ChevronRight size={13} className="agent-artifact-chev" />
+                    )}
+                    <FileText size={13} className="agent-artifact-icon" />
+                    <span className="agent-artifact-title truncate-text">
                       {activeArtifact.title}
-                    </strong>
-                    <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>
-                      {activeArtifact.kind}
                     </span>
-                  </div>
-                  <div style={{ display: "flex", gap: 4 }}>
+                    <span className="agent-artifact-badge">
+                      {activeArtifact.kind === "markdown" ? "MD" : activeArtifact.kind}
+                    </span>
+                  </button>
+                  <div className="agent-artifact-actions">
                     <button
                       type="button"
-                      className="btn-secondary btn-xs"
-                      onClick={() => navigator.clipboard?.writeText(activeArtifact.content)}
+                      className="agent-artifact-btn"
+                      title={
+                        copiedId === "artifact-copy"
+                          ? locale === "es"
+                            ? "¡Copiado!"
+                            : "Copied!"
+                          : locale === "es"
+                            ? "Copiar contenido"
+                            : "Copy content"
+                      }
+                      onClick={() => copyText("artifact-copy", activeArtifact.content)}
                     >
-                      <Copy size={11} />
+                      {copiedId === "artifact-copy" ? (
+                        <>
+                          <Check size={12} style={{ color: "#34d399" }} />
+                          <span>{locale === "es" ? "Copiado" : "Copied"}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={12} />
+                          <span>{locale === "es" ? "Copiar" : "Copy"}</span>
+                        </>
+                      )}
                     </button>
                     <button
                       type="button"
-                      className="icon-btn"
-                      style={{ width: 22, height: 22 }}
+                      className="agent-artifact-close"
+                      title={locale === "es" ? "Cerrar artefacto" : "Dismiss artifact"}
                       onClick={() => setActiveArtifact(null)}
                     >
-                      <X size={12} />
+                      <X size={13} />
                     </button>
                   </div>
                 </div>
                 {artifactExpanded && (
-                  activeArtifact.kind === "html" ? (
-                    <iframe
-                      title={activeArtifact.title}
-                      sandbox="allow-scripts"
-                      srcDoc={activeArtifact.content}
-                      style={{
-                        width: "100%",
-                        height: 240,
-                        border: "1px solid var(--border-subtle)",
-                        borderRadius: 8,
-                        background: "#ffffff",
-                      }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        maxHeight: 220,
-                        overflowY: "auto",
-                        padding: "8px 10px",
-                        borderRadius: 8,
-                        background: "var(--bg-surface-2)",
-                        fontSize: 12,
-                      }}
-                    >
-                      <MarkdownContent text={activeArtifact.content} />
-                    </div>
-                  )
+                  <div className="agent-artifact-body">
+                    {activeArtifact.kind === "html" ? (
+                      <iframe
+                        title={activeArtifact.title}
+                        sandbox="allow-scripts"
+                        srcDoc={activeArtifact.content}
+                        className="agent-artifact-iframe"
+                      />
+                    ) : (
+                      <div className="agent-artifact-md">
+                        <MarkdownContent text={activeArtifact.content} />
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}
