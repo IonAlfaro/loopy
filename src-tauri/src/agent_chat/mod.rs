@@ -507,18 +507,26 @@ where
     let dir = sessions_dir();
     let trimmed_prompt = user_prompt.trim().to_string();
     if !trimmed_prompt.is_empty() || !attachments.is_empty() {
-        if session.messages.is_empty()
-            && (session.title == "Nueva sesiÃ³n" || session.title.trim().is_empty())
-        {
+        let cur_title_lower = session.title.trim().to_ascii_lowercase();
+        let is_default_title = cur_title_lower.is_empty()
+            || cur_title_lower == "new session"
+            || cur_title_lower == "new chat"
+            || cur_title_lower == "nuevo chat"
+            || cur_title_lower.starts_with("nueva sesi");
+        if session.messages.is_empty() && is_default_title {
             let title_seed = if !trimmed_prompt.is_empty() {
-                trimmed_prompt.as_str()
+                trimmed_prompt
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
             } else {
                 Path::new(&attachments[0])
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .unwrap_or("Archivo adjunto")
+                    .unwrap_or("Attachment")
+                    .to_string()
             };
-            session.title = truncate_chars(title_seed, 46);
+            session.title = truncate_chars(&title_seed, 46);
         }
         session.messages.push(AgentChatMessage {
             id: format!("u-{}", now_epoch_secs()),

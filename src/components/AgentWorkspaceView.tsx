@@ -1009,7 +1009,7 @@ export function AgentWorkspaceView() {
     try {
       const updated = await invoke<AgentSession>("run_agent_turn", {
         backend: selectedBackend,
-        session: { ...curSession, workspace: activeWs },
+        session: { ...curSession, workspace: activeWs, title: nextSession.title },
         userPrompt: trimmed,
         overrideCtx: null,
         attachments: attachmentsToSend,
