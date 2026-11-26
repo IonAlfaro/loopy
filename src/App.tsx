@@ -59,6 +59,7 @@ import {
 
 const nodeTypes: NodeTypes = {
   loorsNode: LoorsNode,
+  loopyNode: LoorsNode,
 };
 
 function LoorsStudioInner() {

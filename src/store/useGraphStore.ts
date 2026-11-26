@@ -898,6 +898,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
         if (n.data.kind === "local_model" && activeModel) {
           return {
             ...n,
+            type: "loorsNode",
             data: {
               ...n.data,
               title: shortModelTitle || n.data.title,
@@ -908,6 +909,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
         }
         return {
           ...n,
+          type: "loorsNode",
           data: { ...n.data, status: "idle" },
         };
       }),
