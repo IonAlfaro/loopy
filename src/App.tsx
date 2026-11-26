@@ -672,8 +672,12 @@ function LoopyStudioInner() {
                 <div className="topbar-load-row">
                   <span className="model-vram-name truncate-text" style={{ maxWidth: 160 }}>
                     {modelLoadProgress.stage === "unloading"
-                      ? `Liberando ${parseGgufMetadata(modelLoadProgress.model_name).baseName}…`
-                      : `Cargando ${parseGgufMetadata(modelLoadProgress.model_name).baseName}`}
+                      ? locale === "es"
+                        ? `Liberando ${parseGgufMetadata(modelLoadProgress.model_name).baseName}…`
+                        : `Unloading ${parseGgufMetadata(modelLoadProgress.model_name).baseName}…`
+                      : locale === "es"
+                        ? `Cargando ${parseGgufMetadata(modelLoadProgress.model_name).baseName}`
+                        : `Loading ${parseGgufMetadata(modelLoadProgress.model_name).baseName}`}
                   </span>
                   {modelLoadProgress.percent != null && (
                     <span className="topbar-load-pct tabular-nums">
