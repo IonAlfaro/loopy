@@ -171,23 +171,21 @@ fn choose_profile_dir(port: u16) -> (PathBuf, bool) {
     (dir, false)
 }
 
-async fn start_persistent_browser(width: u32, height: u32) -> Result<PersistentBrowser, String> {
-    let browser_bin = match find_system_browser() {
-        Some(path) => path,
-        None => ensure_portable_browser().await?,
-    };
-    let port = pick_free_port()?;
-    let (profile_dir, persistent_profile) = choose_profile_dir(port);
-    let vw = width.clamp(360, 2400);
-    let vh = height.clamp(300, 1600);
-
+async fn spawn_browser_with_profile(
+    browser_bin: &Path,
+    port: u16,
+    profile_dir: PathBuf,
+    persistent_profile: bool,
+    vw: u32,
+    vh: u32,
+) -> Result<PersistentBrowser, String> {
     let is_headless_shell = browser_bin
         .file_name()
         .and_then(|s| s.to_str())
         .map(|s| s.to_ascii_lowercase().contains("headless-shell"))
         .unwrap_or(false);
 
-    let mut cmd = Command::new(&browser_bin);
+    let mut cmd = Command::new(browser_bin);
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x0800_0000);
     if !is_headless_shell {
@@ -198,8 +196,10 @@ async fn start_persistent_browser(width: u32, height: u32) -> Result<PersistentB
     }
     cmd.args([
         "--disable-gpu",
+        "--disable-extensions",
         "--no-first-run",
         "--no-default-browser-check",
+        "--remote-debugging-address=127.0.0.1",
         &format!("--window-size={vw},{vh}"),
         &format!("--remote-debugging-port={port}"),
         &format!("--user-data-dir={}", profile_dir.display()),
@@ -213,7 +213,7 @@ async fn start_persistent_browser(width: u32, height: u32) -> Result<PersistentB
         .spawn()
         .map_err(|e| format!("Failed to start browser ({}): {e}", browser_bin.display()))?;
 
-    let (target_id, ws_url) = match wait_for_page_target(port).await {
+    let (target_id, ws_url) = match wait_for_page_target_checked(port, Some(&mut child)).await {
         Ok(res) => res,
         Err(err) => {
             let _ = child.kill().await;
@@ -236,6 +236,31 @@ async fn start_persistent_browser(width: u32, height: u32) -> Result<PersistentB
         viewport_width: vw,
         viewport_height: vh,
     })
+}
+
+async fn start_persistent_browser(width: u32, height: u32) -> Result<PersistentBrowser, String> {
+    let browser_bin = match find_system_browser() {
+        Some(path) => path,
+        None => ensure_portable_browser().await?,
+    };
+    let vw = width.clamp(360, 2400);
+    let vh = height.clamp(300, 1600);
+    let port = pick_free_port()?;
+    let (profile_dir, persistent_profile) = choose_profile_dir(port);
+
+    match spawn_browser_with_profile(&browser_bin, port, profile_dir, persistent_profile, vw, vh).await {
+        Ok(b) => Ok(b),
+        Err(first_err) if persistent_profile => {
+            // Persistent profile may be locked by an orphaned browser instance — fall back cleanly to an isolated temp profile
+            let fallback_port = pick_free_port()?;
+            let temp_dir = std::env::temp_dir().join(format!("loopy-cdp-{fallback_port}"));
+            let _ = fs::create_dir_all(&temp_dir);
+            spawn_browser_with_profile(&browser_bin, fallback_port, temp_dir, false, vw, vh)
+                .await
+                .map_err(|e| format!("{first_err} (fallback also failed: {e})"))
+        }
+        Err(err) => Err(err),
+    }
 }
 
 async fn list_cdp_tabs(port: u16, active_id: &str) -> Vec<BrowserTabInfo> {
@@ -757,10 +782,28 @@ pub async fn run_browser_action(workspace: &str, args: &Value) -> String {
 }
 
 async fn wait_for_page_target(port: u16) -> Result<(String, String), String> {
-    let client = reqwest::Client::new();
+    wait_for_page_target_checked(port, None).await
+}
+
+async fn wait_for_page_target_checked(
+    port: u16,
+    mut child: Option<&mut Child>,
+) -> Result<(String, String), String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_millis(300))
+        .timeout(Duration::from_millis(600))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
     let list_url = format!("http://127.0.0.1:{port}/json/list");
 
-    for _ in 0..45 {
+    for _ in 0..35 {
+        if let Some(c) = child.as_deref_mut() {
+            if let Ok(Some(status)) = c.try_wait() {
+                return Err(format!(
+                    "Browser process exited early ({status}) before opening CDP port {port}."
+                ));
+            }
+        }
         if let Ok(resp) = client.get(&list_url).send().await {
             if let Ok(pages) = resp.json::<Vec<Value>>().await {
                 if let Some(found) = pages.iter().find_map(|p| {
@@ -779,7 +822,7 @@ async fn wait_for_page_target(port: u16) -> Result<(String, String), String> {
                 }
             }
         }
-        tokio::time::sleep(Duration::from_millis(140)).await;
+        tokio::time::sleep(Duration::from_millis(150)).await;
     }
     Err("Timeout connecting to local browser CDP port.".to_string())
 }
