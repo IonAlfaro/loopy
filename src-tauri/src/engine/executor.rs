@@ -1129,7 +1129,26 @@ async fn run_node(
                             }
                         };
                         let chat_res = if let Some(p) = port {
-                            llama.chat_stream(p, agent_req, Some(cancel), &mut handle_tok).await
+                            let retry_req = agent_req.clone();
+                            let first = llama.chat_stream(p, agent_req, Some(cancel), &mut handle_tok).await;
+                            match first {
+                                Err(ref err) if err.contains("Failed to parse tool call arguments as JSON") => {
+                                    let bumped_rp = (retry_req.repeat_penalty.unwrap_or(1.0) + 0.10).clamp(1.08, 1.18);
+                                    let bumped_temp = retry_req.temperature.max(0.55);
+                                    log(
+                                        iter,
+                                        LogStreamKind::System,
+                                        format!(
+                                            "Tool call JSON truncado por bucle de repetición; reintentando automáticamente con repeat_penalty={bumped_rp:.2}, temperature={bumped_temp:.2}..."
+                                        ),
+                                    );
+                                    let mut adjusted = retry_req;
+                                    adjusted.repeat_penalty = Some(bumped_rp);
+                                    adjusted.temperature = bumped_temp;
+                                    llama.chat_stream(p, adjusted, Some(cancel), &mut handle_tok).await
+                                }
+                                other => other,
+                            }
                         } else {
                             crate::inference::cloud::chat_stream_cloud(
                                 &model_path,
