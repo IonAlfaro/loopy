@@ -1,6 +1,6 @@
 [package]
 name = "loors"
-version = "0.1.1"
+version = "0.1.2"
 description = "Visual agentic development loop studio with embedded local inference"
 authors = ["Loors"]
 edition = "2021"

@@ -2,6 +2,19 @@
 
 All notable changes to **Loors** are documented in this file.
 
+## [0.1.2] — Multi-Harness Tabs, Concurrent Execution & Autonomous Product Team
+
+### Added
+- **Multi-Harness Tabs & Concurrent Execution**: Open and run multiple harnesses simultaneously in isolated tabs (`[ ● tab × ] [ + ]`) while chatting in **Agent Mode** at the same time; backed by a per-tab `EngineManager` run map and `--parallel 2` concurrent slots in `llama.cpp`.
+- **Autonomous Product Team Template**: Added an end-to-end unattended harness template (`PM & Architect → JSON Backlog Validator → For Each Task → Senior Engineer + Build & Test + Tech Lead Judge → QA & Delivery Report`).
+- **Refreshed Loors Documentation Screenshots**: Updated README screenshots (`agent-mode`, `harness-studio`, `settings-apis`) with Loors branding and the polished UI.
+
+### Fixed & Improved
+- **Passive Windows Updater (`/P`)**: Windows NSIS/MSI updates now apply directly with a clean progress bar instead of reopening the full step-by-step installer wizard.
+- **Collapsible Artifact Card**: Polished the Agent Mode artifact viewer to start collapsed by default with proper Obsidian/Violet styling, chevron toggle, and working Copy confirmation feedback.
+- **Security**: Upgraded the Rust `zip` crate from `v2.6.1` to `v9.8.2`, resolving 3 Dependabot advisories (1 Critical, 1 High, 1 Moderate).
+- **Responsive Harness Canvas**: Protected center canvas width with `minmax(320px, 1fr)` on narrow viewports.
+
 ## [0.1.1] — Loors Rebrand, Live Screencast Browser & UI Polish
 
 ### Added
