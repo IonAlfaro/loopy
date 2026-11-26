@@ -358,8 +358,21 @@ where
 pub fn launch_installer(installer_path: &PathBuf) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new(installer_path)
-            .spawn()
+        let lower = installer_path
+            .to_string_lossy()
+            .to_ascii_lowercase();
+        let mut cmd = if lower.ends_with(".msi") {
+            let mut c = std::process::Command::new("msiexec");
+            c.arg("/i").arg(installer_path).arg("/passive");
+            c
+        } else {
+            // Tauri NSIS installers accept `/P` for passive in-place updates (no wizard screens,
+            // clean progress bar only, automatic app relaunch on finish).
+            let mut c = std::process::Command::new(installer_path);
+            c.arg("/P");
+            c
+        };
+        cmd.spawn()
             .map_err(|e| format!("No se pudo lanzar el instalador: {e}"))?;
         Ok(true)
     }
