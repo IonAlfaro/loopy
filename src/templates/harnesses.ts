@@ -14,6 +14,277 @@ export interface HarnessTemplate {
 
 export const HARNESS_TEMPLATES: HarnessTemplate[] = [
   {
+    id: "autonomous-product-team",
+    name: "autonomous-product-team",
+    label: "Autonomous Product Team (Spec → Build → Test → QA)",
+    nodes: [
+      {
+        id: "pt-in",
+        type: "loorsNode",
+        position: { x: 20, y: 200 },
+        data: {
+          kind: "task_input",
+          title: "Product Description",
+          status: "idle",
+          config: {
+            ...NODE_BLUEPRINTS.task_input.defaultConfig,
+            workspace: ".",
+            prompt:
+              "Describe the application you want to build (features, target users, preferred stack, and key UX goals). The autonomous engineering team will plan, implement, test, review, and deliver it end-to-end.",
+            maxLlmCalls: 80,
+            maxRunMinutes: 60,
+          },
+        },
+      },
+      {
+        id: "pt-model",
+        type: "loorsNode",
+        position: { x: 300, y: 520 },
+        data: {
+          kind: "local_model",
+          title: "Model (GGUF / API)",
+          status: "idle",
+          config: { ...NODE_BLUEPRINTS.local_model.defaultConfig },
+        },
+      },
+      {
+        id: "pt-rag",
+        type: "loorsNode",
+        position: { x: 580, y: 520 },
+        data: {
+          kind: "knowledge_rag",
+          title: "Codebase RAG",
+          status: "idle",
+          config: {
+            ...NODE_BLUEPRINTS.knowledge_rag.defaultConfig,
+            mode: "hybrid",
+            queryTemplate: "{{item}}",
+          },
+        },
+      },
+      {
+        id: "pt-pm",
+        type: "loorsNode",
+        position: { x: 300, y: 200 },
+        data: {
+          kind: "agent",
+          title: "PM & Architect",
+          status: "idle",
+          config: {
+            ...NODE_BLUEPRINTS.agent.defaultConfig,
+            maxSteps: 12,
+            systemPrompt:
+              "You are the Product Manager and Software Architect.\n" +
+              "1. Inspect the workspace first to see if this is a greenfield folder or an existing repo.\n" +
+              "2. Write `.loors/spec.md` with crystal-clear functional requirements, UX/UI details, edge cases, and acceptance criteria.\n" +
+              "3. Write `.loors/architecture.md` with the exact tech stack, folder structure, data models, API contracts, and exact build/test commands.\n" +
+              "4. Create `.loors/progress.md` initialized with '# Engineering Progress\\n'.\n" +
+              "5. Your FINAL response MUST be ONLY a valid JSON array of 4 to 8 ordered, atomic, self-contained engineering tasks (strings), from scaffolding to final polish, each stating the goal and acceptance criteria. No prose outside the JSON array.",
+          },
+        },
+      },
+      {
+        id: "pt-val",
+        type: "loorsNode",
+        position: { x: 580, y: 200 },
+        data: {
+          kind: "json_validator",
+          title: "Validate Backlog JSON",
+          status: "idle",
+          config: {
+            sourceTemplate: "{{agent_output}}",
+            expectType: "array",
+            requiredKeys: "",
+          },
+        },
+      },
+      {
+        id: "pt-plan-guard",
+        type: "loorsNode",
+        position: { x: 580, y: 20 },
+        data: {
+          kind: "loop_guard",
+          title: "Plan Retry Guard",
+          status: "idle",
+          config: {
+            maxIterations: 2,
+            feedbackTemplate:
+              "Your backlog failed JSON array validation ({{stderr}}). Return ONLY a valid JSON array of atomic task strings, e.g. [\"1. Scaffold project...\", \"2. Implement...\"].",
+          },
+        },
+      },
+      {
+        id: "pt-each",
+        type: "loorsNode",
+        position: { x: 860, y: 200 },
+        data: {
+          kind: "for_each",
+          title: "For Each Task",
+          status: "idle",
+          config: {
+            itemsSource: "{{custom_output}}",
+            splitMode: "auto",
+            maxItems: 12,
+          },
+        },
+      },
+      {
+        id: "pt-eng",
+        type: "loorsNode",
+        position: { x: 1140, y: 200 },
+        data: {
+          kind: "agent",
+          title: "Senior Engineer",
+          status: "idle",
+          config: {
+            ...NODE_BLUEPRINTS.agent.defaultConfig,
+            maxSteps: 18,
+            systemPrompt:
+              "You are a Senior Full-Stack Engineer executing task {{item_index}}/{{item_total}}:\n" +
+              "TASK: {{item}}\n\n" +
+              "Rules:\n" +
+              "- Read `.loors/spec.md`, `.loors/architecture.md`, and `.loors/progress.md` for full context before editing.\n" +
+              "- Implement ONLY this task cleanly with production-grade code and unit tests where appropriate.\n" +
+              "- Run local build/typecheck commands via shell to verify your changes compile cleanly before finishing.\n" +
+              "- Never leave placeholders or broken imports. Summarize the exact files changed and verification performed.",
+          },
+        },
+      },
+      {
+        id: "pt-verify",
+        type: "loorsNode",
+        position: { x: 1420, y: 200 },
+        data: {
+          kind: "shell",
+          title: "Build & Test",
+          status: "idle",
+          config: {
+            command:
+              "if (Test-Path .loors/verify.ps1) { & powershell -ExecutionPolicy Bypass -File .loors/verify.ps1 } elseif (Test-Path package.json) { npm run build; if ($LASTEXITCODE -eq 0 -and (Select-String -Path package.json -Pattern '\"test\"' -Quiet)) { npm test -- --watchAll=false 2>$null; if ($LASTEXITCODE -ne 0) { npm test } } } elseif (Test-Path Cargo.toml) { cargo test } elseif (Test-Path pyproject.toml) { pytest } else { Write-Output 'No standard build manifest detected yet.' }",
+            timeoutSec: 240,
+          },
+        },
+      },
+      {
+        id: "pt-diff",
+        type: "loorsNode",
+        position: { x: 1700, y: 200 },
+        data: {
+          kind: "git_checkpoint",
+          title: "Capture Git Diff",
+          status: "idle",
+          config: {
+            mode: "diff",
+          },
+        },
+      },
+      {
+        id: "pt-judge",
+        type: "loorsNode",
+        position: { x: 1980, y: 200 },
+        data: {
+          kind: "llm_judge",
+          title: "Tech Lead Review",
+          status: "idle",
+          config: {
+            rubric:
+              "Approve (PASS) ONLY if: (1) exit_code == 0 (build & tests pass without errors), (2) the code changes cleanly implement the assigned task without placeholders or regressions. Otherwise return FAIL with specific, actionable fixes.",
+            inputTemplate:
+              "Task {{item_index}}/{{item_total}}: {{item}}\nExit code: {{exit_code}}\nStdout:\n{{stdout}}\nStderr:\n{{stderr}}\nAgent summary:\n{{agent_output}}\nGit diff:\n{{git_diff}}",
+          },
+        },
+      },
+      {
+        id: "pt-task-guard",
+        type: "loorsNode",
+        position: { x: 1560, y: 460 },
+        data: {
+          kind: "loop_guard",
+          title: "Task Retry Guard (max 3)",
+          status: "idle",
+          config: {
+            maxIterations: 3,
+            feedbackTemplate:
+              "Tech Lead / Build check FAILED for task '{{item}}' (exit_code={{exit_code}}).\nReview & errors:\n{{stderr}}\nFix the root cause completely and re-verify.",
+          },
+        },
+      },
+      {
+        id: "pt-mem",
+        type: "loorsNode",
+        position: { x: 2260, y: 200 },
+        data: {
+          kind: "memory_file",
+          title: "Record Progress",
+          status: "idle",
+          config: {
+            mode: "append",
+            filePath: ".loors/progress.md",
+            template:
+              "\n## Task {{item_index}}/{{item_total}} — {{item}}\n- Build exit_code: {{exit_code}}\n- Summary: {{agent_output}}\n",
+          },
+        },
+      },
+      {
+        id: "pt-qa",
+        type: "loorsNode",
+        position: { x: 1140, y: 20 },
+        data: {
+          kind: "agent",
+          title: "QA & Delivery Lead",
+          status: "idle",
+          config: {
+            ...NODE_BLUEPRINTS.agent.defaultConfig,
+            maxSteps: 12,
+            systemPrompt:
+              "You are the QA & Release Lead.\n" +
+              "1. Read `.loors/spec.md`, `.loors/architecture.md`, and `.loors/progress.md`.\n" +
+              "2. Run the full project build/test suite and verify every requirement from `.loors/spec.md` is met with zero broken files or TODO placeholders. Fix any minor integration issue you find.\n" +
+              "3. Write `.loors/delivery-report.md` summarizing the delivered product, architecture, key files, verification results, and exact commands to run the app.",
+          },
+        },
+      },
+      {
+        id: "pt-out",
+        type: "loorsNode",
+        position: { x: 1460, y: 20 },
+        data: {
+          kind: "output",
+          title: "Product Delivered",
+          status: "idle",
+          config: {
+            label: "Autonomous product build complete — see .loors/delivery-report.md",
+          },
+        },
+      },
+    ],
+    edges: [
+      { id: "ept-1", source: "pt-in", sourceHandle: "exec", target: "pt-pm", targetHandle: "exec" },
+      { id: "ept-m1", source: "pt-model", sourceHandle: "model_ref", target: "pt-pm", targetHandle: "model_ref", style: { stroke: "#a855f7", strokeDasharray: "5 4" } },
+      { id: "ept-m2", source: "pt-model", sourceHandle: "model_ref", target: "pt-eng", targetHandle: "model_ref", style: { stroke: "#a855f7", strokeDasharray: "5 4" } },
+      { id: "ept-m3", source: "pt-model", sourceHandle: "model_ref", target: "pt-judge", targetHandle: "model_ref", style: { stroke: "#a855f7", strokeDasharray: "5 4" } },
+      { id: "ept-m4", source: "pt-model", sourceHandle: "model_ref", target: "pt-qa", targetHandle: "model_ref", style: { stroke: "#a855f7", strokeDasharray: "5 4" } },
+      { id: "ept-rag1", source: "pt-rag", sourceHandle: "knowledge_ref", target: "pt-pm", targetHandle: "knowledge_ref", style: { stroke: "#06b6d4", strokeDasharray: "5 4" } },
+      { id: "ept-rag2", source: "pt-rag", sourceHandle: "knowledge_ref", target: "pt-eng", targetHandle: "knowledge_ref", style: { stroke: "#06b6d4", strokeDasharray: "5 4" } },
+      { id: "ept-rag3", source: "pt-rag", sourceHandle: "knowledge_ref", target: "pt-qa", targetHandle: "knowledge_ref", style: { stroke: "#06b6d4", strokeDasharray: "5 4" } },
+      { id: "ept-2", source: "pt-pm", sourceHandle: "exec", target: "pt-val", targetHandle: "exec" },
+      { id: "ept-val-ok", source: "pt-val", sourceHandle: "valid", target: "pt-each", targetHandle: "exec", style: { stroke: "#22c55e" }, label: "valid" },
+      { id: "ept-val-bad", source: "pt-val", sourceHandle: "invalid", target: "pt-plan-guard", targetHandle: "exec", style: { stroke: "#ef4444" }, label: "invalid" },
+      { id: "ept-plan-retry", source: "pt-plan-guard", sourceHandle: "retry", target: "pt-pm", targetHandle: "feedback", animated: true, style: { stroke: "#f59e0b", strokeWidth: 2 }, label: "fix JSON" },
+      { id: "ept-each", source: "pt-each", sourceHandle: "each", target: "pt-eng", targetHandle: "exec", label: "task" },
+      { id: "ept-done", source: "pt-each", sourceHandle: "done", target: "pt-qa", targetHandle: "exec", style: { stroke: "#22c55e" }, label: "all done" },
+      { id: "ept-3", source: "pt-eng", sourceHandle: "exec", target: "pt-verify", targetHandle: "exec" },
+      { id: "ept-4", source: "pt-verify", sourceHandle: "exec", target: "pt-diff", targetHandle: "exec" },
+      { id: "ept-5", source: "pt-diff", sourceHandle: "exec", target: "pt-judge", targetHandle: "exec" },
+      { id: "ept-pass", source: "pt-judge", sourceHandle: "pass", target: "pt-mem", targetHandle: "exec", style: { stroke: "#22c55e" }, label: "pass" },
+      { id: "ept-fail", source: "pt-judge", sourceHandle: "fail", target: "pt-task-guard", targetHandle: "exec", style: { stroke: "#ef4444" }, label: "fail" },
+      { id: "ept-retry", source: "pt-task-guard", sourceHandle: "retry", target: "pt-eng", targetHandle: "feedback", animated: true, style: { stroke: "#f59e0b", strokeWidth: 2 }, label: "fix & retry" },
+      { id: "ept-max", source: "pt-task-guard", sourceHandle: "max_hit", target: "pt-mem", targetHandle: "exec", style: { stroke: "#94a3b8", strokeDasharray: "4 4" }, label: "max retries" },
+      { id: "ept-next", source: "pt-mem", sourceHandle: "exec", target: "pt-each", targetHandle: "exec", animated: true, style: { stroke: "#8b5cf6", strokeWidth: 2 }, label: "next task" },
+      { id: "ept-qa-out", source: "pt-qa", sourceHandle: "exec", target: "pt-out", targetHandle: "exec", style: { stroke: "#22c55e" } },
+    ],
+  },
+  {
     id: "fix-tests-loop",
     name: "fix-tests-loop",
     label: "Coder ↔ Tester Loop",
