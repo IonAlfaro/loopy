@@ -28,6 +28,10 @@ browser-profile/
 # Runtime & test scratch folders
 .loopy/
 **/.loopy/
+.sloopy/
+**/.sloopy/
+src-tauri/*.png
+src-tauri/.*.png
 .loopy-test-webkit/
 webkit-audit/
 

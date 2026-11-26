@@ -113,6 +113,8 @@ pub struct AgentSession {
     #[serde(default)]
     pub pinned_files: Vec<String>,
     #[serde(default)]
+    pub pinned: bool,
+    #[serde(default)]
     pub allowed_session_tools: Vec<String>,
     #[serde(default)]
     pub messages: Vec<AgentChatMessage>,
@@ -133,6 +135,8 @@ pub struct AgentSessionSummary {
     pub updated_at: u64,
     pub message_count: usize,
     pub permission_mode: PermissionMode,
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -338,11 +342,12 @@ pub fn list_sessions_in(dir: &Path) -> Vec<AgentSessionSummary> {
                     updated_at: sess.updated_at,
                     message_count: sess.messages.len(),
                     permission_mode: sess.permission_mode,
+                    pinned: sess.pinned,
                 });
             }
         }
     }
-    list.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
+    list.sort_by_key(|a| (std::cmp::Reverse(a.pinned), std::cmp::Reverse(a.updated_at)));
     list
 }
 
@@ -507,18 +512,26 @@ where
     let dir = sessions_dir();
     let trimmed_prompt = user_prompt.trim().to_string();
     if !trimmed_prompt.is_empty() || !attachments.is_empty() {
-        if session.messages.is_empty()
-            && (session.title == "Nueva sesiÃ³n" || session.title.trim().is_empty())
-        {
+        let cur_title_lower = session.title.trim().to_ascii_lowercase();
+        let is_default_title = cur_title_lower.is_empty()
+            || cur_title_lower == "new session"
+            || cur_title_lower == "new chat"
+            || cur_title_lower == "nuevo chat"
+            || cur_title_lower.starts_with("nueva sesi");
+        if session.messages.is_empty() && is_default_title {
             let title_seed = if !trimmed_prompt.is_empty() {
-                trimmed_prompt.as_str()
+                trimmed_prompt
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" ")
             } else {
                 Path::new(&attachments[0])
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .unwrap_or("Archivo adjunto")
+                    .unwrap_or("Attachment")
+                    .to_string()
             };
-            session.title = truncate_chars(title_seed, 46);
+            session.title = truncate_chars(&title_seed, 46);
         }
         session.messages.push(AgentChatMessage {
             id: format!("u-{}", now_epoch_secs()),
@@ -1826,7 +1839,18 @@ where
         .await;
     }
 
-    run_single_tool(workspace, name, parsed_args, record, rag_index, cancel).await
+    let browser_args_owned;
+    let effective_args = if name == "browser_action" {
+        let mut cloned = parsed_args.clone();
+        if let Some(obj) = cloned.as_object_mut() {
+            obj.insert("__session_id".to_string(), json!(session_id));
+        }
+        browser_args_owned = cloned;
+        &browser_args_owned
+    } else {
+        parsed_args
+    };
+    run_single_tool(workspace, name, effective_args, record, rag_index, cancel).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2186,6 +2210,7 @@ mod tests {
             enabled_skills: Vec::new(),
             pinned_files: Vec::new(),
             allowed_session_tools: Vec::new(),
+            pinned: false,
             updated_at: 1,
             messages: vec![AgentChatMessage {
                 id: "m1".to_string(),

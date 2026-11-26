@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "../lib/bridge";
+import { invoke, listen } from "../lib/bridge";
 import {
   ArrowLeft,
   ArrowRight,
@@ -24,6 +24,13 @@ export interface BrowserTabInfo {
   active: boolean;
 }
 
+interface BrowserScreencastEvent {
+  sessionId: string;
+  frameBase64: string;
+  viewportWidth: number;
+  viewportHeight: number;
+}
+
 interface BrowserInteractResponse {
   active: boolean;
   url: string;
@@ -38,14 +45,18 @@ interface BrowserInteractResponse {
 }
 
 interface InteractiveBrowserPaneProps {
+  sessionId: string;
   agentFrame: BrowserFrameEvent | null;
+  agentBusy?: boolean;
   expanded: boolean;
   onToggleExpand: () => void;
   onClosePane: () => void;
 }
 
 export function InteractiveBrowserPane({
+  sessionId,
   agentFrame,
+  agentBusy = false,
   expanded,
   onToggleExpand,
   onClosePane,
@@ -60,7 +71,7 @@ export function InteractiveBrowserPane({
   const [tabs, setTabs] = useState<BrowserTabInfo[]>([]);
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
-  const [frameSrc, setFrameSrc] = useState<string | null>(null);
+  const [hasFrame, setHasFrame] = useState(false);
   const [viewportSize, setViewportSize] = useState({ width: 960, height: 720 });
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -68,37 +79,146 @@ export function InteractiveBrowserPane({
   const [viewportFocused, setViewportFocused] = useState(false);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const imgRef = useRef<HTMLImageElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const decoderImgRef = useRef<HTMLImageElement | null>(null);
+  const decodingRef = useRef(false);
+  const latestFrameUrlRef = useRef<string | null>(null);
+  const hasFrameRef = useRef(false);
+  const postClickSyncRef = useRef<number | null>(null);
+  const lastScreencastTsRef = useRef<number>(0);
+  const viewportSizeRef = useRef({ width: 960, height: 720 });
+  const omniboxInputRef = useRef<HTMLInputElement | null>(null);
   const inFlightRef = useRef(false);
   const wheelTimerRef = useRef<number | null>(null);
   const pendingWheelRef = useRef<{ x: number; y: number; dx: number; dy: number } | null>(null);
+  const pendingTextRef = useRef<string>("");
+  const textTimerRef = useRef<number | null>(null);
   const resizeTimerRef = useRef<number | null>(null);
   const measuredRef = useRef({ width: 960, height: 720 });
+  const dismissedAgentFrameRef = useRef<BrowserFrameEvent | null>(null);
+
+  const drawFrameToCanvas = useCallback((dataUrl: string) => {
+    if (!hasFrameRef.current) {
+      hasFrameRef.current = true;
+      setHasFrame(true);
+    }
+    if (decodingRef.current) {
+      // Always keep only the newest frame so we never accumulate lag or abort in-flight decodes
+      latestFrameUrlRef.current = dataUrl;
+      return;
+    }
+    if (!decoderImgRef.current) {
+      decoderImgRef.current = new Image();
+    }
+    const img = decoderImgRef.current;
+    decodingRef.current = true;
+    const finish = () => {
+      decodingRef.current = false;
+      const queued = latestFrameUrlRef.current;
+      if (queued) {
+        latestFrameUrlRef.current = null;
+        drawFrameToCanvas(queued);
+      }
+    };
+    img.onload = () => {
+      const canvas = canvasRef.current;
+      if (canvas && img.naturalWidth > 0 && img.naturalHeight > 0) {
+        if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+        }
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+        }
+      }
+      finish();
+    };
+    img.onerror = finish;
+    img.src = dataUrl;
+  }, []);
+
+  const clearCanvas = useCallback(() => {
+    hasFrameRef.current = false;
+    latestFrameUrlRef.current = null;
+    setHasFrame(false);
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      ctx?.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  }, []);
+
+  // Subscribe to continuous push CDP Page.startScreencast frames (~30-60 FPS) straight to <canvas>
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let disposed = false;
+    listen<BrowserScreencastEvent>("loopy://browser-screencast", (event) => {
+      const ev = event.payload;
+      if (!ev || !ev.frameBase64) return;
+      if (ev.sessionId && ev.sessionId !== sessionId) return;
+      lastScreencastTsRef.current = Date.now();
+      setActive(true);
+      if (ev.viewportWidth >= 200 && ev.viewportHeight >= 200) {
+        if (
+          viewportSizeRef.current.width !== ev.viewportWidth ||
+          viewportSizeRef.current.height !== ev.viewportHeight
+        ) {
+          viewportSizeRef.current = { width: ev.viewportWidth, height: ev.viewportHeight };
+          setViewportSize({ width: ev.viewportWidth, height: ev.viewportHeight });
+        }
+      }
+      drawFrameToCanvas(`data:image/jpeg;base64,${ev.frameBase64}`);
+    })
+      .then((fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [sessionId, drawFrameToCanvas]);
 
   const applyResponse = useCallback(
-    (res: BrowserInteractResponse) => {
+    (res: BrowserInteractResponse, actionName?: string) => {
+      const isCloseAction = actionName === "close_tab";
+      if (!res.active && !isCloseAction && agentBusy && agentFrame?.frame_base64 && agentFrame !== dismissedAgentFrameRef.current) {
+        // Keep displaying the live agent frame while agent is actively driving
+        return;
+      }
+      if (isCloseAction && !res.active) {
+        dismissedAgentFrameRef.current = agentFrame;
+      }
       setActive(res.active);
-      setCanGoBack(res.canGoBack);
-      setCanGoForward(res.canGoForward);
-      setTabs(res.tabs || []);
+      const isLightInput = actionName === "wheel" || actionName === "text" || actionName === "key";
+      if (!isLightInput) {
+        setCanGoBack(res.canGoBack);
+        setCanGoForward(res.canGoForward);
+        setTabs(res.tabs ?? []);
+      } else if (!res.active) {
+        setTabs([]);
+      }
       if (res.viewportWidth && res.viewportHeight) {
+        viewportSizeRef.current = { width: res.viewportWidth, height: res.viewportHeight };
         setViewportSize({ width: res.viewportWidth, height: res.viewportHeight });
       }
-      if (res.url) {
+      if (res.url && res.url !== "about:blank") {
         setUrl(res.url);
         if (!omniboxFocused) setOmnibox(res.url);
-      } else if (!res.active) {
-        setUrl("");
+      } else {
+        setUrl(res.url === "about:blank" ? "about:blank" : "");
         if (!omniboxFocused) setOmnibox("");
       }
-      if (res.frameBase64) {
-        setFrameSrc(`data:${res.frameMime || "image/jpeg"};base64,${res.frameBase64}`);
-      } else if (!res.active) {
-        setFrameSrc(null);
+      if (res.frameBase64 && res.url !== "about:blank") {
+        drawFrameToCanvas(`data:${res.frameMime || "image/jpeg"};base64,${res.frameBase64}`);
+      } else if (!res.active || res.url === "about:blank") {
+        clearCanvas();
       }
       setErrorMsg(null);
     },
-    [omniboxFocused]
+    [omniboxFocused, agentFrame, agentBusy, drawFrameToCanvas, clearCanvas]
   );
 
   const callBrowser = useCallback(
@@ -110,62 +230,135 @@ export function InteractiveBrowserPane({
       if (showSpinner) setLoading(true);
       inFlightRef.current = true;
       try {
+        const dpr = Math.min(1.25, Math.max(1, window.devicePixelRatio || 1));
         const res = await invoke<BrowserInteractResponse>("browser_interact", {
           request: {
+            sessionId,
             width: measuredRef.current.width,
             height: measuredRef.current.height,
+            deviceScaleFactor: dpr,
             ...payload,
           },
         });
-        applyResponse(res);
+        applyResponse(res, typeof payload.action === "string" ? payload.action : undefined);
       } catch (err) {
-        if (!opts?.silent) {
-          setErrorMsg(err instanceof Error ? err.message : String(err));
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!opts?.silent && !msg.includes("__BROWSER_BUSY__")) {
+          setErrorMsg(msg);
         }
       } finally {
         inFlightRef.current = false;
         if (showSpinner) setLoading(false);
+        // Immediately pipeline any accumulated wheel/text burst without waiting for another timer tick
+        if (pendingWheelRef.current && !wheelTimerRef.current) {
+          const p = pendingWheelRef.current;
+          pendingWheelRef.current = null;
+          void callBrowser(
+            { action: "wheel", x: p.x, y: p.y, deltaX: p.dx, deltaY: p.dy },
+            { silent: true }
+          );
+        } else if (pendingTextRef.current && !textTimerRef.current) {
+          const txt = pendingTextRef.current;
+          pendingTextRef.current = "";
+          void callBrowser({ action: "text", text: txt }, { silent: true });
+        }
       }
     },
-    [applyResponse]
+    [applyResponse, sessionId]
   );
 
-  // Sync live frames pushed by the AI agent's browser_action tool
+  // Measure actual pane dimensions immediately on mount so the first status call seeds preferred viewport
   useEffect(() => {
-    if (!agentFrame) return;
+    const el = viewportRef.current;
+    if (!el) return;
+    const { width: w, height: h } = computeLogicalViewport(el.clientWidth, el.clientHeight);
+    measuredRef.current = { width: w, height: h };
+    setViewportSize({ width: w, height: h });
+  }, []);
+
+  // When switching conversations, immediately reset UI to the new conversation's own tabs
+  useEffect(() => {
+    dismissedAgentFrameRef.current = agentFrame;
+    lastScreencastTsRef.current = 0;
+    setActive(false);
+    setUrl("");
+    setOmnibox("");
+    setTabs([]);
+    clearCanvas();
+    setCanGoBack(false);
+    setCanGoForward(false);
+    setErrorMsg(null);
+    if (!agentBusy) {
+      const el = viewportRef.current;
+      if (el) {
+        measuredRef.current = computeLogicalViewport(el.clientWidth, el.clientHeight);
+      }
+      void callBrowser({ action: "status" }, { silent: true });
+    }
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync live frames pushed by the AI agent's browser_action tool without colliding on CDP
+  useEffect(() => {
+    if (!agentFrame || agentFrame === dismissedAgentFrameRef.current) return;
     setActive(true);
+    setViewportSize((prev) => {
+      const next =
+        measuredRef.current.width > 0 && measuredRef.current.height > 0
+          ? { width: measuredRef.current.width, height: measuredRef.current.height }
+          : prev;
+      viewportSizeRef.current = next;
+      return next;
+    });
     if (agentFrame.url) {
       setUrl(agentFrame.url);
       if (!omniboxFocused) setOmnibox(agentFrame.url);
+      setTabs((prev) =>
+        prev.length > 0
+          ? prev.map((t) =>
+              t.active ? { ...t, url: agentFrame.url, title: agentFrame.title || agentFrame.url } : t
+            )
+          : [{ id: "agent-active", title: agentFrame.title || agentFrame.url, url: agentFrame.url, active: true }]
+      );
     }
     if (agentFrame.frame_base64) {
-      setFrameSrc(`data:image/png;base64,${agentFrame.frame_base64}`);
+      const isJpeg = agentFrame.frame_base64.startsWith("/9j/");
+      drawFrameToCanvas(`data:${isJpeg ? "image/jpeg" : "image/png"};base64,${agentFrame.frame_base64}`);
     }
-    // Refresh tab list & back/forward state quietly
-    void callBrowser({ action: "status" }, { silent: true });
-  }, [agentFrame, omniboxFocused, callBrowser]);
+  }, [agentFrame, omniboxFocused, drawFrameToCanvas]);
 
-  // Initial status sync on mount
+  // Initial status sync on mount (only when agent isn't actively driving)
   useEffect(() => {
-    void callBrowser({ action: "status" }, { silent: true });
-  }, [callBrowser]);
+    if (!agentBusy && !agentFrame) {
+      void callBrowser({ action: "status" }, { silent: true });
+    }
+  }, [callBrowser, agentBusy, agentFrame]);
 
-  // Keep Chromium viewport synced 1:1 with the visible right pane dimensions
+  const computeLogicalViewport = (clientW: number, clientH: number) => {
+    const rawW = Math.max(360, Math.round(clientW));
+    const rawH = Math.max(300, Math.round(clientH));
+    // Ensure a comfortable minimum desktop width (820px) so popups/modals don't clip on narrow splits
+    if (rawW < 820) {
+      const ratio = rawH / rawW;
+      return { width: 820, height: Math.max(480, Math.round(820 * ratio)) };
+    }
+    return { width: rawW, height: rawH };
+  };
+
+  // Keep Chromium viewport synced to the visible right pane proportions
   useEffect(() => {
     const el = viewportRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
       if (!rect) return;
-      const w = Math.max(360, Math.round(rect.width));
-      const h = Math.max(300, Math.round(rect.height));
+      const { width: w, height: h } = computeLogicalViewport(rect.width, rect.height);
       if (Math.abs(w - measuredRef.current.width) < 6 && Math.abs(h - measuredRef.current.height) < 6) {
         return;
       }
       measuredRef.current = { width: w, height: h };
       if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
       resizeTimerRef.current = window.setTimeout(() => {
-        if (active && !inFlightRef.current) {
+        if (active && !agentBusy && !inFlightRef.current) {
           void callBrowser({ action: "resize", width: w, height: h }, { silent: true });
         }
       }, 240);
@@ -175,18 +368,34 @@ export function InteractiveBrowserPane({
       ro.disconnect();
       if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
     };
-  }, [active, callBrowser]);
+  }, [active, agentBusy, callBrowser]);
 
-  // Lightweight live refresh so dynamic SPAs / OAuth redirects update smoothly
+  // When the agent finishes/pauses and hands control to the user, fit Chromium cleanly to the pane
   useEffect(() => {
-    if (!active) return;
+    if (!active || agentBusy) return;
+    const el = viewportRef.current;
+    if (!el) return;
+    const { width: w, height: h } = computeLogicalViewport(el.clientWidth, el.clientHeight);
+    measuredRef.current = { width: w, height: h };
+    if (!inFlightRef.current) {
+      void callBrowser({ action: "resize", width: w, height: h }, { silent: true });
+    }
+  }, [active, agentBusy, callBrowser]);
+
+  // Gentle metadata/URL sync (screencast already pushes live frames at 30-60 FPS without polling!)
+  useEffect(() => {
+    if (!active || agentBusy) return;
     const id = window.setInterval(() => {
       if (!inFlightRef.current && document.visibilityState === "visible") {
-        void callBrowser({ action: "refresh" }, { silent: true });
+        // Only poll fast if screencast hasn't delivered a frame recently; otherwise sync URL/tabs every 4s
+        const screencastLive = Date.now() - lastScreencastTsRef.current < 5000;
+        if (!screencastLive) {
+          void callBrowser({ action: "refresh" }, { silent: true });
+        }
       }
-    }, 2200);
+    }, 3500);
     return () => window.clearInterval(id);
-  }, [active, callBrowser]);
+  }, [active, agentBusy, callBrowser]);
 
   const handleNavigate = (targetUrl?: string) => {
     const next = (targetUrl ?? omnibox).trim();
@@ -196,23 +405,33 @@ export function InteractiveBrowserPane({
     void callBrowser({ action: "navigate", url: next }, { showSpinner: true });
   };
 
-  const mapPointerCoords = (e: React.MouseEvent<HTMLImageElement>) => {
-    const img = imgRef.current;
-    if (!img) return { x: 0, y: 0 };
-    const rect = img.getBoundingClientRect();
-    const scaleX = viewportSize.width / Math.max(1, rect.width);
-    const scaleY = viewportSize.height / Math.max(1, rect.height);
+  const mapPointerCoords = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current;
+    const vw = viewportSizeRef.current.width || viewportSize.width;
+    const vh = viewportSizeRef.current.height || viewportSize.height;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const natW = canvas.width || vw || Math.max(1, rect.width);
+    const natH = canvas.height || vh || Math.max(1, rect.height);
+    // Matches `object-fit: contain; object-position: top left;`
+    const scale = Math.min(rect.width / natW, rect.height / natH);
+    const renderedW = Math.max(1, natW * scale);
+    const renderedH = Math.max(1, natH * scale);
+    const relX = Math.max(0, Math.min(renderedW, clientX - rect.left));
+    const relY = Math.max(0, Math.min(renderedH, clientY - rect.top));
+    // Map rendered canvas ratio -> CSS logical viewport coordinates expected by CDP Input.dispatchMouseEvent
     return {
-      x: Math.round((e.clientX - rect.left) * scaleX),
-      y: Math.round((e.clientY - rect.top) * scaleY),
+      x: Math.round((relX / renderedW) * vw),
+      y: Math.round((relY / renderedH) * vh),
     };
   };
 
-  const handleViewportMouseDown = (e: React.MouseEvent<HTMLImageElement>) => {
+  const handleViewportMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (agentBusy) return;
     e.preventDefault();
     viewportRef.current?.focus();
     setViewportFocused(true);
-    const { x, y } = mapPointerCoords(e);
+    const { x, y } = mapPointerCoords(e.clientX, e.clientY);
     const button = e.button === 2 ? "right" : e.button === 1 ? "middle" : "left";
     void callBrowser({
       action: "click",
@@ -221,13 +440,19 @@ export function InteractiveBrowserPane({
       button,
       clickCount: e.detail >= 2 ? 2 : 1,
     });
+    // Sync omnibox URL & tab title shortly after clicking in case the click triggered a navigation
+    if (postClickSyncRef.current) window.clearTimeout(postClickSyncRef.current);
+    postClickSyncRef.current = window.setTimeout(() => {
+      postClickSyncRef.current = null;
+      if (!inFlightRef.current && !agentBusy) {
+        void callBrowser({ action: "status" }, { silent: true });
+      }
+    }, 900);
   };
 
   const handleViewportWheel = (e: React.WheelEvent<HTMLDivElement>) => {
-    if (!active) return;
-    const rect = imgRef.current?.getBoundingClientRect();
-    const x = rect ? Math.round(((e.clientX - rect.left) / Math.max(1, rect.width)) * viewportSize.width) : Math.round(viewportSize.width / 2);
-    const y = rect ? Math.round(((e.clientY - rect.top) / Math.max(1, rect.height)) * viewportSize.height) : Math.round(viewportSize.height / 2);
+    if (!active || agentBusy) return;
+    const { x, y } = mapPointerCoords(e.clientX, e.clientY);
     if (pendingWheelRef.current) {
       pendingWheelRef.current.dx += e.deltaX;
       pendingWheelRef.current.dy += e.deltaY;
@@ -236,18 +461,19 @@ export function InteractiveBrowserPane({
     }
     if (!wheelTimerRef.current) {
       wheelTimerRef.current = window.setTimeout(() => {
+        wheelTimerRef.current = null;
+        if (inFlightRef.current) return; // Will flush immediately in finally()
         const p = pendingWheelRef.current;
         pendingWheelRef.current = null;
-        wheelTimerRef.current = null;
         if (p) {
           void callBrowser({ action: "wheel", x: p.x, y: p.y, deltaX: p.dx, deltaY: p.dy }, { silent: true });
         }
-      }, 90);
+      }, 16);
     }
   };
 
   const handleViewportKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!active) return;
+    if (!active || agentBusy) return;
     // Allow paste to be handled by onPaste
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
       return;
@@ -259,7 +485,18 @@ export function InteractiveBrowserPane({
       (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
 
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      void callBrowser({ action: "text", text: e.key }, { silent: true });
+      pendingTextRef.current += e.key;
+      if (!textTimerRef.current) {
+        textTimerRef.current = window.setTimeout(() => {
+          textTimerRef.current = null;
+          if (inFlightRef.current) return; // Will flush immediately in finally()
+          const txt = pendingTextRef.current;
+          pendingTextRef.current = "";
+          if (txt) {
+            void callBrowser({ action: "text", text: txt }, { silent: true });
+          }
+        }, 24);
+      }
       return;
     }
 
@@ -275,7 +512,7 @@ export function InteractiveBrowserPane({
   };
 
   const handleViewportPaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
-    if (!active) return;
+    if (!active || agentBusy) return;
     const text = e.clipboardData.getData("text");
     if (text) {
       e.preventDefault();
@@ -304,7 +541,7 @@ export function InteractiveBrowserPane({
                 className={`embedded-browser-tab ${tab.active ? "active" : ""}`}
                 title={tab.url || tab.title}
                 onClick={() => {
-                  if (!tab.active) {
+                  if (!tab.active && !agentBusy) {
                     void callBrowser({ action: "switch_tab", tabId: tab.id }, { showSpinner: true });
                   }
                 }}
@@ -314,10 +551,13 @@ export function InteractiveBrowserPane({
                 <button
                   type="button"
                   className="embedded-browser-tab-close"
+                  disabled={agentBusy}
                   title={L("Close tab", "Cerrar pestaña")}
                   onClick={(e) => {
                     e.stopPropagation();
-                    void callBrowser({ action: "close_tab", tabId: tab.id }, { showSpinner: true });
+                    if (!agentBusy) {
+                      void callBrowser({ action: "close_tab", tabId: tab.id }, { showSpinner: true });
+                    }
                   }}
                 >
                   <X size={11} />
@@ -333,8 +573,14 @@ export function InteractiveBrowserPane({
           <button
             type="button"
             className="embedded-browser-icon-btn"
+            disabled={agentBusy}
             title={L("New tab", "Nueva pestaña")}
-            onClick={() => void callBrowser({ action: "new_tab", url: "https://www.google.com" }, { showSpinner: true })}
+            onClick={() => {
+              if (agentBusy) return;
+              setOmnibox("");
+              void callBrowser({ action: "new_tab", url: "about:blank" }, { showSpinner: true });
+              window.setTimeout(() => omniboxInputRef.current?.focus(), 60);
+            }}
           >
             <Plus size={13} />
           </button>
@@ -365,7 +611,7 @@ export function InteractiveBrowserPane({
           <button
             type="button"
             className="embedded-browser-icon-btn"
-            disabled={!canGoBack}
+            disabled={!canGoBack || agentBusy}
             title={L("Back", "Atrás")}
             onClick={() => void callBrowser({ action: "back" }, { showSpinner: true })}
           >
@@ -374,7 +620,7 @@ export function InteractiveBrowserPane({
           <button
             type="button"
             className="embedded-browser-icon-btn"
-            disabled={!canGoForward}
+            disabled={!canGoForward || agentBusy}
             title={L("Forward", "Adelante")}
             onClick={() => void callBrowser({ action: "forward" }, { showSpinner: true })}
           >
@@ -383,7 +629,7 @@ export function InteractiveBrowserPane({
           <button
             type="button"
             className="embedded-browser-icon-btn"
-            disabled={!active}
+            disabled={!active || agentBusy}
             title={L("Reload", "Recargar")}
             onClick={() => void callBrowser({ action: "reload" }, { showSpinner: true })}
           >
@@ -395,7 +641,7 @@ export function InteractiveBrowserPane({
           className="embedded-browser-omnibox"
           onSubmit={(e) => {
             e.preventDefault();
-            handleNavigate();
+            if (!agentBusy) handleNavigate();
           }}
         >
           {isSecure ? (
@@ -404,7 +650,9 @@ export function InteractiveBrowserPane({
             <Globe size={12} className="embedded-browser-lock" />
           )}
           <input
+            ref={omniboxInputRef}
             type="text"
+            disabled={agentBusy}
             value={omnibox}
             placeholder={L("Enter URL or search...", "Escribe una URL o busca en la web...")}
             onFocus={(e) => {
@@ -463,21 +711,34 @@ export function InteractiveBrowserPane({
           </div>
         )}
 
-        {active && frameSrc ? (
-          <img
-            ref={imgRef}
-            className="embedded-browser-surface"
-            src={frameSrc}
-            alt={url || "Embedded Browser"}
-            draggable={false}
-            onMouseDown={handleViewportMouseDown}
-          />
-        ) : (
+        <canvas
+          ref={canvasRef}
+          className="embedded-browser-surface"
+          style={{ display: active && hasFrame ? "block" : "none" }}
+          onMouseDown={handleViewportMouseDown}
+        />
+
+        {!(active && hasFrame) && (
           <div className="embedded-browser-start">
             <Globe size={24} style={{ color: "var(--muted)", opacity: 0.55 }} />
             <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
               {L("Enter a URL above to browse", "Escribe una URL arriba para navegar")}
             </span>
+          </div>
+        )}
+
+        {agentBusy && (
+          <div
+            className="embedded-browser-agent-lock"
+            onMouseDown={(e) => e.preventDefault()}
+            onWheel={(e) => e.stopPropagation()}
+          >
+            <div className="embedded-browser-agent-pill">
+              <span className="embedded-browser-agent-dot" />
+              <span>
+                {L("Agent is controlling the browser…", "El agente está controlando el navegador…")}
+              </span>
+            </div>
           </div>
         )}
       </div>

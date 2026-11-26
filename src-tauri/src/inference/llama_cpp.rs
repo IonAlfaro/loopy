@@ -89,7 +89,7 @@ impl LlamaCppManager {
                 "unloading",
                 &prev_name,
                 Some(5),
-                format!("Liberando {prev_name} de VRAM…"),
+                format!("Unloading {prev_name} from VRAM…"),
             );
             let _ = current.child.kill().await;
             let _ = current.child.wait().await;
@@ -100,7 +100,7 @@ impl LlamaCppManager {
             "starting",
             &target_name,
             Some(10),
-            format!("Iniciando llama-server para {target_name}…"),
+            format!("Starting llama-server for {target_name}…"),
         );
 
         let port = pick_free_port()?;
@@ -196,7 +196,7 @@ impl LlamaCppManager {
                                 "loading",
                                 &model_for_log,
                                 Some(last_pct),
-                                format!("Cargando tensores en GPU ({last_pct}%)…"),
+                                format!("Loading tensors to GPU ({last_pct}%)…"),
                             );
                         }
                     }
@@ -215,7 +215,7 @@ impl LlamaCppManager {
                                 "loading",
                                 &model_for_log,
                                 Some(last_pct),
-                                "Leyendo metadatos GGUF…",
+                                "Reading GGUF metadata…",
                             );
                         } else if lower.contains("offloaded") && lower.contains("layers") {
                             if last_pct < 85 {
@@ -225,7 +225,7 @@ impl LlamaCppManager {
                                 "loading",
                                 &model_for_log,
                                 Some(last_pct),
-                                format!("Capas cargadas en GPU ({last_pct}%)…"),
+                                format!("Layers offloaded to GPU ({last_pct}%)…"),
                             );
                         } else if (lower.contains("kv_cache") || lower.contains("create_context") || lower.contains("graph_reserve")) && last_pct < 92 {
                             last_pct = 92;
@@ -233,7 +233,7 @@ impl LlamaCppManager {
                                 "loading",
                                 &model_for_log,
                                 Some(last_pct),
-                                "Reservando caché KV y contexto…",
+                                "Allocating KV cache and context…",
                             );
                         } else if (lower.contains("warming up") || lower.contains("server is listening") || lower.contains("model loaded")) && last_pct < 97 {
                             last_pct = 97;
@@ -241,7 +241,7 @@ impl LlamaCppManager {
                                 "loading",
                                 &model_for_log,
                                 Some(last_pct),
-                                "Finalizando inicialización…",
+                                "Finalizing initialization…",
                             );
                         }
 
@@ -269,7 +269,7 @@ impl LlamaCppManager {
                     "error",
                     &target_name,
                     None,
-                    format!("Error cargando {target_name}"),
+                    format!("Error loading {target_name}"),
                 );
                 let clean_tail = regex::Regex::new(r"\x1b\[[0-9;]*[a-zA-Z]")
                     .map(|re| re.replace_all(&tail, "").into_owned())
@@ -298,10 +298,10 @@ impl LlamaCppManager {
                 "error",
                 &target_name,
                 None,
-                format!("Timeout cargando {target_name}"),
+                format!("Timeout loading {target_name}"),
             );
             return Err(format!(
-                "Timeout (180s) esperando a que llama-server cargue el modelo GGUF.\n{tail}"
+                "Timeout (180s) waiting for llama-server to load the GGUF model.\n{tail}"
             ));
         }
 
@@ -309,7 +309,7 @@ impl LlamaCppManager {
             "ready",
             &target_name,
             Some(100),
-            format!("{target_name} listo"),
+            format!("{target_name} ready"),
         );
 
         *guard = Some(ActiveRuntime {
@@ -328,11 +328,11 @@ impl LlamaCppManager {
                 "unloading",
                 &prev_name,
                 Some(50),
-                format!("Liberando {prev_name} de VRAM…"),
+                format!("Unloading {prev_name} from VRAM…"),
             );
             let _ = current.child.kill().await;
             let _ = current.child.wait().await;
-            emit_load_progress("unloaded", &prev_name, None, "VRAM liberada");
+            emit_load_progress("unloaded", &prev_name, None, "VRAM cleared");
         }
         *guard = None;
     }
