@@ -2,6 +2,20 @@
 
 All notable changes to **Loors** are documented in this file.
 
+## [0.1.1] — Loors Rebrand, Live Screencast Browser & UI Polish
+
+### Added
+- **Rebrand to Loors**: Renamed application, CLI (`loors-cli`), Rust library (`loors_lib`), NSIS installer banners, documentation, and repository (`IonAlfaro/loors`) with full backward compatibility for legacy `.loopy.json` (`loopyNode`) workflow files.
+- **Multiplexed CDP Screencast (`<canvas>`)**: Upgraded the embedded browser to a single multiplexed CDP actor streaming live `Page.startScreencast` frames directly onto `<canvas>` for low-latency scrolling, typing, and clicking.
+- **Per-Conversation Browser Tabs & Agent Lock**: Isolated browser tabs per chat session, added a clean blank New Tab start view, fixed full-area expand/restore, and added a non-intrusive viewport lock while the AI agent is actively browsing.
+- **Conversation Sidebar Actions**: Added three-dots (`···`) menu to pin/unpin, inline-rename, and delete conversations, plus automatic chat title generation from the first prompt (EN & ES).
+- **First-Run Onboarding Modal**: Moved the AI runtime/provider setup wizard out of the empty chat screen into a clean, dismissible first-run modal.
+
+### Fixed
+- **Console Bar & Auto-Scroll**: Redesigned the Harness Studio console bar with flat underline tabs and a single unified status indicator; fixed auto-scroll disabling itself while logs stream.
+- **Browser CDP Reliability**: Added early browser exit detection with automatic isolated profile fallback on locked profiles, exact `object-fit: contain` click/wheel coordinate mapping, and `human_action_required` pause detection for CAPTCHAs/logins.
+- **Localization**: Localized model loading/unloading progress pill and `llama.cpp` status messages in EN & ES.
+
 ## [0.1.0] — Initial Public Release
 
 ### Added
