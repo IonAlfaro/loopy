@@ -1,0 +1,428 @@
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowDownToLine,
+  ChevronDown,
+  ChevronUp,
+  FileText,
+  GitCompare,
+  RefreshCw,
+  Terminal,
+  Trash2,
+} from "lucide-react";
+import { invoke } from "../lib/bridge";
+import { useGraphStore } from "../store/useGraphStore";
+import { useI18n } from "../i18n";
+import type { WorkspaceMemoryFileInfo } from "../types/graph";
+
+const STATUS_LABELS: Record<string, string> = {
+  idle: "Ready",
+  running: "Running",
+  completed: "Completed",
+  exhausted: "Limit reached",
+  failed: "Error",
+  cancelled: "Stopped",
+};
+
+export function ConsolePanel() {
+  const { locale, t } = useI18n();
+  const nodes = useGraphStore((s) => s.nodes);
+  const runStatus = useGraphStore((s) => s.runStatus);
+  const currentIteration = useGraphStore((s) => s.currentIteration);
+  const maxIterations = useGraphStore((s) => s.maxIterations);
+  const runSummary = useGraphStore((s) => s.runSummary);
+  const activeActivity = useGraphStore((s) => s.activeActivity);
+  const logs = useGraphStore((s) => s.logs);
+  const consoleOpen = useGraphStore((s) => s.consoleOpen);
+  const setConsoleOpen = useGraphStore((s) => s.setConsoleOpen);
+  const clearLogs = useGraphStore((s) => s.clearLogs);
+
+  const [tab, setTab] = useState<"logs" | "diff" | "reports">("logs");
+  const [iterFilter, setIterFilter] = useState<number | "all">("all");
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [panelHeight, setPanelHeight] = useState(230);
+  const [diffText, setDiffText] = useState<string>("");
+  const [loadingDiff, setLoadingDiff] = useState(false);
+  const [reportFiles, setReportFiles] = useState<WorkspaceMemoryFileInfo[]>([]);
+  const [selectedReportPath, setSelectedReportPath] = useState<string>("");
+  const [loadingReports, setLoadingReports] = useState(false);
+  const prevRunStatusRef = useRef(runStatus);
+
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = panelHeight;
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.min(520, Math.max(120, startH + (startY - ev.clientY)));
+      setPanelHeight(next);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const iterations = useMemo(() => {
+    const set = new Set<number>();
+    for (const l of logs) set.add(l.iteration);
+    return Array.from(set).sort((a, b) => a - b);
+  }, [logs]);
+
+  const filteredLogs = useMemo(() => {
+    if (iterFilter === "all") return logs;
+    return logs.filter((l) => l.iteration === iterFilter);
+  }, [logs, iterFilter]);
+
+  useEffect(() => {
+    if (!consoleOpen || tab !== "logs" || !autoScroll) return;
+    const el = bodyRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [filteredLogs.length, consoleOpen, tab, autoScroll]);
+
+  const handleScroll = () => {
+    const el = bodyRef.current;
+    if (!el || el.scrollHeight <= el.clientHeight + 8) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 36;
+    if (!nearBottom && autoScroll) {
+      setAutoScroll(false);
+    }
+  };
+
+  const getActiveWorkspace = useCallback(() => {
+    const inputNode = nodes.find((n) => n.data.kind === "task_input");
+    return String(inputNode?.data.config.workspace ?? ".");
+  }, [nodes]);
+
+  const refreshDiff = useCallback(async () => {
+    const workspace = getActiveWorkspace();
+    setLoadingDiff(true);
+    try {
+      const diff = await invoke<string>("get_workspace_diff", { workspace });
+      setDiffText(diff);
+    } catch {
+      setDiffText("Disponible en modo escritorio (Tauri).");
+    } finally {
+      setLoadingDiff(false);
+    }
+  }, [getActiveWorkspace]);
+
+  const refreshReports = useCallback(async () => {
+    const workspace = getActiveWorkspace();
+    setLoadingReports(true);
+    try {
+      const list = await invoke<WorkspaceMemoryFileInfo[]>(
+        "read_workspace_memory_files",
+        { workspace }
+      );
+      setReportFiles(list);
+      if (list.length > 0) {
+        setSelectedReportPath((prev) =>
+          list.some((f) => f.relPath === prev) ? prev : list[0].relPath
+        );
+      } else {
+        setSelectedReportPath("");
+      }
+    } catch {
+      setReportFiles([]);
+    } finally {
+      setLoadingReports(false);
+    }
+  }, [getActiveWorkspace]);
+
+  const handleClearReport = async (relPath: string) => {
+    const workspace = getActiveWorkspace();
+    try {
+      await invoke("clear_workspace_memory_file", { workspace, relPath });
+      await refreshReports();
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    const prev = prevRunStatusRef.current;
+    prevRunStatusRef.current = runStatus;
+    if (prev === "running" && runStatus !== "running" && tab === "reports") {
+      void refreshReports();
+    }
+  }, [runStatus, tab, refreshReports]);
+
+  useEffect(() => {
+    const onOpenReports = () => {
+      setTab("reports");
+      setConsoleOpen(true);
+      void refreshReports();
+    };
+    window.addEventListener("loopy:open-reports", onOpenReports);
+    return () => window.removeEventListener("loopy:open-reports", onOpenReports);
+  }, [setConsoleOpen, refreshReports]);
+
+  const openDiffTab = () => {
+    setTab("diff");
+    setConsoleOpen(true);
+    void refreshDiff();
+  };
+
+  const openReportsTab = () => {
+    setTab("reports");
+    setConsoleOpen(true);
+    void refreshReports();
+  };
+
+  const activeReport =
+    reportFiles.find((f) => f.relPath === selectedReportPath) ?? reportFiles[0] ?? null;
+
+  return (
+    <section
+      className={`console-panel ${consoleOpen ? "open" : "collapsed"}`}
+      style={consoleOpen ? { height: panelHeight } : undefined}
+    >
+      {consoleOpen && (
+        <div
+          className="console-resizer"
+          title="Arrastra para cambiar altura de la consola"
+          onMouseDown={startResize}
+        />
+      )}
+      <div className="console-bar">
+        <div className="console-left">
+          <button
+            type="button"
+            className="console-toggle"
+            onClick={() => setConsoleOpen(!consoleOpen)}
+          >
+            <Terminal size={14} />
+            <span>{t("canvas.console")}</span>
+            {consoleOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+          </button>
+
+          <div className="iter-tabs">
+            <button
+              type="button"
+              className={`iter-tab ${tab === "logs" ? "active" : ""}`}
+              onClick={() => {
+                setTab("logs");
+                setConsoleOpen(true);
+              }}
+            >
+              Logs
+            </button>
+            <button
+              type="button"
+              className={`iter-tab ${tab === "diff" ? "active" : ""}`}
+              onClick={openDiffTab}
+            >
+              <GitCompare size={11} style={{ marginRight: 4, verticalAlign: -1 }} />
+              Git Diff
+            </button>
+            <button
+              type="button"
+              className={`iter-tab ${tab === "reports" ? "active" : ""}`}
+              onClick={openReportsTab}
+            >
+              <FileText size={11} style={{ marginRight: 4, verticalAlign: -1 }} />
+              {t("canvas.reports")}
+              {reportFiles.length > 0 ? ` (${reportFiles.length})` : ""}
+            </button>
+          </div>
+
+          <span className={`run-pill run-${runStatus}`}>
+            {STATUS_LABELS[runStatus] ?? runStatus}
+          </span>
+
+          {currentIteration > 0 && (
+            <span className="iter-badge">
+              Iter {currentIteration}
+              {maxIterations ? ` / ${maxIterations}` : ""}
+            </span>
+          )}
+
+          {runStatus === "running" && activeActivity ? (
+            <span className="live-activity">
+              <span className="live-pulse" />
+              {activeActivity}
+            </span>
+          ) : (
+            runSummary && <span className="run-summary">{runSummary}</span>
+          )}
+        </div>
+
+        <div className="console-right">
+          {tab === "logs" && (
+            <button
+              type="button"
+              className={`iter-tab ${autoScroll ? "active" : ""}`}
+              title={
+                locale === "es"
+                  ? autoScroll
+                    ? "Auto-scroll activo (clic para desactivar)"
+                    : "Auto-scroll desactivado (clic para activar)"
+                  : autoScroll
+                    ? "Auto-scroll enabled (click to disable)"
+                    : "Auto-scroll disabled (click to enable)"
+              }
+              onClick={() => {
+                const next = !autoScroll;
+                setAutoScroll(next);
+                if (next && bodyRef.current) {
+                  bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+                }
+              }}
+            >
+              <ArrowDownToLine size={11} style={{ marginRight: 3, verticalAlign: -1 }} />
+              Auto
+            </button>
+          )}
+
+          {tab === "logs" && iterations.length > 0 && (
+            <div className="iter-tabs">
+              <button
+                type="button"
+                className={`iter-tab ${iterFilter === "all" ? "active" : ""}`}
+                onClick={() => setIterFilter("all")}
+              >
+                Todas ({logs.length})
+              </button>
+              {iterations.map((it) => (
+                <button
+                  key={it}
+                  type="button"
+                  className={`iter-tab ${iterFilter === it ? "active" : ""}`}
+                  onClick={() => setIterFilter(it)}
+                >
+                  Iter {it}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {tab === "diff" ? (
+            <button
+              type="button"
+              className="icon-btn"
+              title="Actualizar Git Diff"
+              onClick={() => void refreshDiff()}
+            >
+              <RefreshCw size={14} className={loadingDiff ? "spin" : ""} />
+            </button>
+          ) : tab === "reports" ? (
+            <>
+              {activeReport && (
+                <button
+                  type="button"
+                  className="btn-mini"
+                  title="Vaciar / limpiar archivo seleccionado"
+                  onClick={() => void handleClearReport(activeReport.relPath)}
+                >
+                  <Trash2 size={11} />
+                  <span>Vaciar archivo</span>
+                </button>
+              )}
+              <button
+                type="button"
+                className="icon-btn"
+                title="Recargar archivos .loopy/*.md"
+                onClick={() => void refreshReports()}
+              >
+                <RefreshCw size={14} className={loadingReports ? "spin" : ""} />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="icon-btn"
+              title="Limpiar logs"
+              onClick={clearLogs}
+            >
+              <Trash2 size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {consoleOpen && (
+        <div className="console-body" ref={bodyRef} onScroll={handleScroll}>
+          {tab === "diff" ? (
+            <pre className="diff-inline">
+              {loadingDiff
+                ? locale === "es"
+                  ? "Leyendo git diff…"
+                  : "Reading git diff…"
+                : diffText.trim() ||
+                  (locale === "es"
+                    ? "(Sin cambios en el workspace actual)"
+                    : "(No changes in current workspace)")}
+            </pre>
+          ) : tab === "reports" ? (
+            loadingReports ? (
+              <div className="console-empty">
+                {locale === "es"
+                  ? "Leyendo reportes en `.loopy/`…"
+                  : "Reading reports in `.loopy/`…"}
+              </div>
+            ) : reportFiles.length === 0 ? (
+              <div className="console-empty">
+                {locale === "es"
+                  ? "No se encontraron archivos Markdown en `.loopy/` del workspace actual."
+                  : "No Markdown files found in `.loopy/` for the current workspace."}
+              </div>
+            ) : (
+              <div className="reports-viewer">
+                <div className="reports-file-bar">
+                  {reportFiles.map((rf) => (
+                    <button
+                      key={rf.relPath}
+                      type="button"
+                      className={`iter-tab ${
+                        activeReport?.relPath === rf.relPath ? "active" : ""
+                      }`}
+                      onClick={() => setSelectedReportPath(rf.relPath)}
+                    >
+                      {rf.relPath} ({Math.max(1, Math.round(rf.sizeBytes / 1024))} KB)
+                    </button>
+                  ))}
+                </div>
+                {activeReport && (
+                  <pre className="diff-inline reports-pre">
+                    {activeReport.content.trim() ||
+                      (locale === "es" ? "(Archivo vacío)" : "(Empty file)")}
+                  </pre>
+                )}
+              </div>
+            )
+          ) : filteredLogs.length === 0 ? (
+            <div className="console-empty">
+              {locale === "es" ? (
+                <>
+                  Pulsa <strong>Ejecutar</strong> para ver el pensamiento,
+                  streaming de tokens, tools y stdout/stderr en vivo.
+                </>
+              ) : (
+                <>
+                  Click <strong>Run</strong> to stream live thinking, tokens,
+                  tool calls, and stdout/stderr.
+                </>
+              )}
+            </div>
+          ) : (
+            filteredLogs.map((entry) => (
+              <div key={entry.id} className={`log-line stream-${entry.stream}`}>
+                <span className="log-time">{entry.timestamp}</span>
+                <span className="log-iter">#{entry.iteration}</span>
+                <span className="log-node">{entry.nodeTitle}</span>
+                <span className="log-text">
+                  {entry.stream === "thinking" ? `[thinking] ${entry.text}` : entry.text}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </section>
+  );
+}

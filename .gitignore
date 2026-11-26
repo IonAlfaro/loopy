@@ -1,0 +1,38 @@
+# Dependencies & build outputs
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+
+# Installers & packaged binaries
+*.exe
+*.msi
+*.dmg
+*.AppImage
+*.deb
+
+# Secrets, local configs & user data
+*.local
+.env
+.env.*
+providers.json
+mcp_servers.json
+updater.json
+browser-profile/
+/models/
+*.gguf
+*.log
+*.sqlite
+*.db
+
+# Runtime & test scratch folders
+.loopy/
+**/.loopy/
+.loopy-test-webkit/
+webkit-audit/
+
+# OS & IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
