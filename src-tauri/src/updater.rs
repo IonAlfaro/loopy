@@ -358,22 +358,42 @@ where
 pub fn launch_installer(installer_path: &PathBuf) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
         let lower = installer_path
             .to_string_lossy()
             .to_ascii_lowercase();
-        let mut cmd = if lower.ends_with(".msi") {
-            let mut c = std::process::Command::new("msiexec");
-            c.arg("/i").arg(installer_path).arg("/passive");
-            c
+        let inst_escaped = installer_path
+            .to_string_lossy()
+            .replace('\'', "''");
+        let exe_escaped = std::env::current_exe()
+            .ok()
+            .map(|p| p.to_string_lossy().replace('\'', "''"))
+            .unwrap_or_default();
+
+        // Run a hidden detached PowerShell helper that waits briefly for Loors to exit,
+        // runs the NSIS (/S) or MSI (/qn) installer 100% silently with zero wizard UI,
+        // and automatically relaunches the updated Loors executable.
+        let ps_script = if lower.ends_with(".msi") {
+            format!(
+                "Start-Sleep -Milliseconds 700; \
+                 $p = Start-Process 'msiexec.exe' -ArgumentList '/i','\"{inst_escaped}\"','/qn','/norestart' -PassThru -Wait; \
+                 if ('{exe_escaped}' -ne '' -and (Test-Path '{exe_escaped}')) {{ Start-Process '{exe_escaped}' }}"
+            )
         } else {
-            // Tauri NSIS installers accept `/P` for passive in-place updates (no wizard screens,
-            // clean progress bar only, automatic app relaunch on finish).
-            let mut c = std::process::Command::new(installer_path);
-            c.arg("/P");
-            c
+            format!(
+                "Start-Sleep -Milliseconds 700; \
+                 $p = Start-Process '{inst_escaped}' -ArgumentList '/S' -PassThru -Wait; \
+                 if ('{exe_escaped}' -ne '' -and (Test-Path '{exe_escaped}')) {{ Start-Process '{exe_escaped}' }}"
+            )
         };
-        cmd.spawn()
-            .map_err(|e| format!("No se pudo lanzar el instalador: {e}"))?;
+
+        std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("No se pudo lanzar el actualizador silencioso: {e}"))?;
         Ok(true)
     }
 
