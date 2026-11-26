@@ -416,6 +416,21 @@ export function AgentWorkspaceView() {
 
   const [installedBackends, setInstalledBackends] = useState<RuntimeBackendKind[]>([]);
   const [setupChecked, setSetupChecked] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("loors_onboarding_dismissed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const dismissOnboarding = () => {
+    setOnboardingDismissed(true);
+    try {
+      localStorage.setItem("loors_onboarding_dismissed", "1");
+    } catch {
+      // ignore
+    }
+  };
   useEffect(() => {
     invoke<RuntimeStatusSnapshot>("get_runtime_status")
       .then((snap) => {
@@ -1758,129 +1773,27 @@ export function AgentWorkspaceView() {
                   <span className="zero-ws-kicker">{activeWsShort}</span>
                   <h2>{t("agent.heroTitle")}</h2>
 
-                  {setupChecked &&
-                  !(
-                    (installedBackends.length > 0 && localModels.length > 0) ||
-                    cloudProviders.some((p) => p.enabled && p.models.length > 0)
-                  ) ? (
-                    <div className="onboarding-card">
-                      <div className="onboarding-title">{t("onboarding.title")}</div>
-
-                      <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em", marginTop: 2 }}>
-                        {t("onboarding.optA")}
-                      </div>
-
+                  <div className="zero-suggestions">
+                    {(session.workspace && session.workspace !== "."
+                      ? [t("suggest.ws1"), t("suggest.ws2"), t("suggest.ws3")]
+                      : [t("suggest.free1"), t("suggest.free2"), t("suggest.free3")]
+                    ).map((prompt) => (
                       <button
+                        key={prompt}
                         type="button"
-                        className={`onboarding-step ${installedBackends.length > 0 ? "is-done" : ""}`}
-                        disabled={autoInstallingRt}
+                        className="zero-suggestion-btn"
                         onClick={() => {
-                          if (installedBackends.length > 0) {
-                            window.dispatchEvent(new CustomEvent("loors:open-runtime-modal"));
+                          if (session.modelPath) {
+                            void sendTurn(prompt);
                           } else {
-                            void handleAutoInstallRuntime();
+                            setInput(prompt);
                           }
                         }}
                       >
-                        <span className="onboarding-step-num">
-                          {installedBackends.length > 0 ? <Check size={12} /> : <Download size={12} />}
-                        </span>
-                        <div className="onboarding-step-text">
-                          <strong>
-                            {installedBackends.length > 0
-                              ? t("onboarding.rtReady")
-                              : autoInstallingRt
-                                ? t("onboarding.rtInstalling")
-                                : t("onboarding.rtInstallCta")}
-                          </strong>
-                          <span>
-                            {installedBackends.length > 0
-                              ? `${t("onboarding.rtInstalledPrefix")} (${installedBackends.join(", ")})`
-                              : rtInstallProgress?.message
-                                ? rtInstallProgress.message
-                                : t("onboarding.rtInstallDesc")}
-                          </span>
-                        </div>
+                        <span>{prompt}</span>
                       </button>
-
-                      {autoInstallingRt && rtInstallProgress?.percent !== null && rtInstallProgress?.percent !== undefined && (
-                        <div className="progress-track" style={{ marginTop: -2 }}>
-                          <div
-                            className="progress-fill"
-                            style={{
-                              width: `${Math.min(100, Math.max(0, rtInstallProgress.percent))}%`,
-                            }}
-                          />
-                        </div>
-                      )}
-
-                      <button
-                        type="button"
-                        className={`onboarding-step ${localModels.length > 0 ? "is-done" : ""}`}
-                        onClick={() =>
-                          window.dispatchEvent(new CustomEvent("loors:open-models-modal"))
-                        }
-                      >
-                        <span className="onboarding-step-num">
-                          {localModels.length > 0 ? <Check size={12} /> : <Boxes size={12} />}
-                        </span>
-                        <div className="onboarding-step-text">
-                          <strong>{t("onboarding.ggufCta")}</strong>
-                          <span>
-                            {localModels.length > 0
-                              ? `${localModels.length} ${t("onboarding.ggufDetected")}`
-                              : t("onboarding.ggufDesc")}
-                          </span>
-                        </div>
-                      </button>
-
-                      <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em", marginTop: 6 }}>
-                        {t("onboarding.optB")}
-                      </div>
-
-                      <button
-                        type="button"
-                        className="onboarding-step"
-                        onClick={() =>
-                          window.dispatchEvent(
-                            new CustomEvent("loors:open-models-modal", {
-                              detail: { tab: "cloud" },
-                            })
-                          )
-                        }
-                      >
-                        <span className="onboarding-step-num">
-                          <Cloud size={12} />
-                        </span>
-                        <div className="onboarding-step-text">
-                          <strong>{t("onboarding.cloudCta")}</strong>
-                          <span>{t("onboarding.cloudDesc")}</span>
-                        </div>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="zero-suggestions">
-                      {(session.workspace && session.workspace !== "."
-                        ? [t("suggest.ws1"), t("suggest.ws2"), t("suggest.ws3")]
-                        : [t("suggest.free1"), t("suggest.free2"), t("suggest.free3")]
-                      ).map((prompt) => (
-                        <button
-                          key={prompt}
-                          type="button"
-                          className="zero-suggestion-btn"
-                          onClick={() => {
-                            if (session.modelPath) {
-                              void sendTurn(prompt);
-                            } else {
-                              setInput(prompt);
-                            }
-                          }}
-                        >
-                          <span>{prompt}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -3254,6 +3167,149 @@ export function AgentWorkspaceView() {
           )}
         </div>
       </div>
+
+      {/* First-run setup modal (only shown once on fresh install until configured or skipped) */}
+      {setupChecked &&
+        !onboardingDismissed &&
+        !(
+          (installedBackends.length > 0 && localModels.length > 0) ||
+          cloudProviders.some((p) => p.enabled && p.models.length > 0)
+        ) && (
+          <div className="modal-backdrop" onClick={dismissOnboarding}>
+            <div
+              className="modal-card"
+              style={{ maxWidth: 480, padding: 20 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="modal-head" style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <h3 style={{ margin: 0, fontSize: 15 }}>
+                    {locale === "es" ? "Bienvenido a Loors" : "Welcome to Loors"}
+                  </h3>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                    {t("onboarding.title")}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={dismissOnboarding}
+                  title={locale === "es" ? "Cerrar" : "Close"}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div className="onboarding-card" style={{ border: "none", padding: 0, background: "transparent", width: "100%", maxWidth: "none" }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  {t("onboarding.optA")}
+                </div>
+
+                <button
+                  type="button"
+                  className={`onboarding-step ${installedBackends.length > 0 ? "is-done" : ""}`}
+                  disabled={autoInstallingRt}
+                  onClick={() => {
+                    if (installedBackends.length > 0) {
+                      dismissOnboarding();
+                      window.dispatchEvent(new CustomEvent("loors:open-runtime-modal"));
+                    } else {
+                      void handleAutoInstallRuntime();
+                    }
+                  }}
+                >
+                  <span className="onboarding-step-num">
+                    {installedBackends.length > 0 ? <Check size={12} /> : <Download size={12} />}
+                  </span>
+                  <div className="onboarding-step-text">
+                    <strong>
+                      {installedBackends.length > 0
+                        ? t("onboarding.rtReady")
+                        : autoInstallingRt
+                          ? t("onboarding.rtInstalling")
+                          : t("onboarding.rtInstallCta")}
+                    </strong>
+                    <span>
+                      {installedBackends.length > 0
+                        ? `${t("onboarding.rtInstalledPrefix")} (${installedBackends.join(", ")})`
+                        : rtInstallProgress?.message
+                          ? rtInstallProgress.message
+                          : t("onboarding.rtInstallDesc")}
+                    </span>
+                  </div>
+                </button>
+
+                {autoInstallingRt && rtInstallProgress?.percent !== null && rtInstallProgress?.percent !== undefined && (
+                  <div className="progress-track" style={{ marginTop: -2 }}>
+                    <div
+                      className="progress-fill"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, rtInstallProgress.percent))}%`,
+                      }}
+                    />
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className={`onboarding-step ${localModels.length > 0 ? "is-done" : ""}`}
+                  onClick={() => {
+                    dismissOnboarding();
+                    window.dispatchEvent(new CustomEvent("loors:open-models-modal"));
+                  }}
+                >
+                  <span className="onboarding-step-num">
+                    {localModels.length > 0 ? <Check size={12} /> : <Boxes size={12} />}
+                  </span>
+                  <div className="onboarding-step-text">
+                    <strong>{t("onboarding.ggufCta")}</strong>
+                    <span>
+                      {localModels.length > 0
+                        ? `${localModels.length} ${t("onboarding.ggufDetected")}`
+                        : t("onboarding.ggufDesc")}
+                    </span>
+                  </div>
+                </button>
+
+                <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em", marginTop: 6 }}>
+                  {t("onboarding.optB")}
+                </div>
+
+                <button
+                  type="button"
+                  className="onboarding-step"
+                  onClick={() => {
+                    dismissOnboarding();
+                    window.dispatchEvent(
+                      new CustomEvent("loors:open-models-modal", {
+                        detail: { tab: "cloud" },
+                      })
+                    );
+                  }}
+                >
+                  <span className="onboarding-step-num">
+                    <Cloud size={12} />
+                  </span>
+                  <div className="onboarding-step-text">
+                    <strong>{t("onboarding.cloudCta")}</strong>
+                    <span>{t("onboarding.cloudDesc")}</span>
+                  </div>
+                </button>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ fontSize: 12, padding: "5px 12px" }}
+                  onClick={dismissOnboarding}
+                >
+                  {locale === "es" ? "Configurar más tarde" : "Skip for now"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
     </div>
   );
 }
