@@ -958,6 +958,7 @@ async fn run_agent_turn(
     user_prompt: String,
     override_ctx: Option<u32>,
     attachments: Option<Vec<String>>,
+    turn_id: Option<String>,
 ) -> Result<AgentSession, String> {
     let is_cloud = inference::cloud::is_cloud_model(&session.model_path);
     if !is_cloud && engine.is_running() {
@@ -1023,7 +1024,12 @@ async fn run_agent_turn(
         override_ctx,
         attachments.unwrap_or_default(),
         move |ev| {
-            let _ = app_events.emit("loors://agent-chat-event", ev);
+            if let Ok(mut payload) = serde_json::to_value(ev) {
+                if let Some(object) = payload.as_object_mut() {
+                    object.insert("turn_id".into(), serde_json::json!(turn_id));
+                }
+                let _ = app_events.emit("loors://agent-chat-event", payload);
+            }
         },
     )
     .await

@@ -268,6 +268,7 @@ export function AgentWorkspaceView() {
   const [gitDiffText, setGitDiffText] = useState("");
   const diffRequestId = useRef(0);
   const previewRequestId = useRef(0);
+  const activeTurnIds = useRef(new Map<string, string>());
   const pinRequestId = useRef(0);
   const refreshWorkspaceDiff = async (id: string, workspace: string) => {
     const request = ++diffRequestId.current;
@@ -668,7 +669,7 @@ export function AgentWorkspaceView() {
     listen<AgentChatEvent>("loors://agent-chat-event", (ev) => {
       if (cancelled) return;
       const p = ev.payload;
-      if (!runningTurns.current.has(p.session_id)) return;
+      if (!runningTurns.current.has(p.session_id) || p.turn_id !== activeTurnIds.current.get(p.session_id)) return;
       if (p.type !== "token" && pendingTokens.size) flushTokens();
       if (p.type === "context_usage") {
         setContextUsage((prev) => ({ ...prev, [p.session_id]: p }));
@@ -1206,6 +1207,8 @@ export function AgentWorkspaceView() {
       updatedAt: Math.floor(Date.now() / 1000),
     };
 
+    const turnId = crypto.randomUUID();
+    activeTurnIds.current.set(id, turnId);
     runningTurns.current.set(id, nextSession);
     setRunningSessionIds([...runningTurns.current.keys()]);
     setAgentStatus(true, nextSession.title);
@@ -1226,6 +1229,7 @@ export function AgentWorkspaceView() {
         userPrompt: trimmed,
         overrideCtx: null,
         attachments: attachmentsToSend,
+        turnId,
       });
       discardBufferedTokens.current(id);
       completedTurns.current.set(id, updated);
@@ -1257,6 +1261,7 @@ export function AgentWorkspaceView() {
       turnErrors.current.set(id, msg);
     } finally {
       discardBufferedTokens.current(id);
+      activeTurnIds.current.delete(id);
       runningTurns.current.delete(id);
       setRunningSessionIds([...runningTurns.current.keys()]);
       const otherTurn = runningTurns.current.values().next().value;

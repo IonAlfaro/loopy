@@ -395,7 +395,7 @@ export interface PendingAgentQuestion {
   allowMultiple: boolean;
 }
 
-export type AgentChatEvent =
+export type AgentChatEvent = { turn_id?: string | null } & (
   | {
       type: "token";
       session_id: string;
@@ -460,7 +460,7 @@ export type AgentChatEvent =
       context_used_chars: number;
       context_max_tokens: number;
       summary: string;
-    };
+    });
 
 export interface BrowserFrameEvent {
   session_id: string;
