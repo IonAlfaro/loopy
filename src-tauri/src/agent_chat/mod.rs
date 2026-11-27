@@ -1083,6 +1083,23 @@ where
             break;
         }
 
+        // Preserve each model iteration as its own chronological assistant message.
+        let assistant_msg_id = if _step == 1 {
+            assistant_msg_id.clone()
+        } else {
+            let id = format!("{}-{}", assistant_msg_id, _step);
+            session.messages.push(AgentChatMessage {
+                id: id.clone(),
+                role: "assistant".to_string(),
+                content: String::new(),
+                thinking: String::new(),
+                attachments: Vec::new(),
+                tool_calls: Vec::new(),
+                timestamp: now_epoch_secs(),
+            });
+            id
+        };
+
         compact_agent_messages(&mut llm_messages, tool_bytes, effective_compact_budget);
         emit(AgentChatEvent::ContextUsage {
             session_id: session.id.clone(),
