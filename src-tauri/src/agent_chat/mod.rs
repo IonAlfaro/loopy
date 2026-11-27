@@ -471,6 +471,31 @@ pub fn enabled_tools_for_mode(mode: &PermissionMode) -> Vec<String> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AgentWorkMode { Chat, Plan, Agent }
+
+impl AgentWorkMode {
+    fn from_prompt(prompt: &str) -> (Self, &str) {
+        for (prefix, mode) in [("/chat", Self::Chat), ("/plan", Self::Plan), ("/agent", Self::Agent)] {
+            if let Some(rest) = prompt.strip_prefix(prefix) {
+                if rest.is_empty() || rest.starts_with(char::is_whitespace) {
+                    return (mode, rest.trim());
+                }
+            }
+        }
+        (Self::Agent, prompt)
+    }
+
+    fn allows_tool(self, name: &str) -> bool {
+        match self {
+            Self::Agent => true,
+            Self::Chat => false,
+            Self::Plan => READONLY_TOOLS.contains(&name)
+                || matches!(name, "search_knowledge" | "knowledge_tree" | "set_execution_plan"),
+        }
+    }
+}
+
 pub fn tool_requires_permission(name: &str) -> bool {
     if name.starts_with("mcp__") {
         return true;
@@ -712,9 +737,10 @@ where
     let cancel = turn.cancel.clone();
     let is_cloud = crate::inference::cloud::is_cloud_model(&session.model_path);
     let dir = sessions_dir();
-    let trimmed_prompt = user_prompt.trim().to_string();
+    let (work_mode, prompt_body) = AgentWorkMode::from_prompt(user_prompt.trim());
+    let trimmed_prompt = prompt_body.to_string();
     // Resume is explicit: unrelated requests must not inherit an old plan.
-    let resume_requested = trimmed_prompt.eq_ignore_ascii_case("/resume");
+    let resume_requested = work_mode == AgentWorkMode::Agent && trimmed_prompt.eq_ignore_ascii_case("/resume");
     if resume_requested {
         let checkpoint = session.execution_checkpoint.as_ref()
             .ok_or_else(|| "No execution checkpoint to resume.".to_string())?;
@@ -925,6 +951,11 @@ where
         }
     }
 
+    match work_mode {
+        AgentWorkMode::Chat => system_prompt.push_str("\nChat mode: answer conversationally without tools."),
+        AgentWorkMode::Plan => system_prompt.push_str("\nPlan mode: inspect read-only, prepare pending tasks, and present the plan. Do not implement or execute it."),
+        AgentWorkMode::Agent => {}
+    }
     let base_system_prompt = system_prompt.clone();
     // Build LLM messages: frozen system prompt + compact historical turns + current user turn
     let mut llm_messages = vec![ChatMessage {
@@ -1369,6 +1400,7 @@ where
         profile.compact_at_tokens
     };
     let effective_compact_budget = compaction_threshold(context_size, target_compact_tokens);
+    tool_defs.retain(|tool| tool["function"]["name"].as_str().map_or(false, |name| work_mode.allows_tool(name)));
     let tool_bytes = chat_tool_bytes(&tool_defs);
 
     let mut last_call_sig = String::new();
@@ -1613,7 +1645,7 @@ where
                         .collect::<Vec<_>>().join("; ")
                 })
             });
-            if let Some(remaining) = unfinished {
+            if let Some(remaining) = unfinished.filter(|_| work_mode == AgentWorkMode::Agent) {
                 if _step < max_steps && plan_reminders < 3 {
                     plan_reminders += 1;
                     llm_messages.push(ChatMessage {
@@ -1723,7 +1755,11 @@ where
                     // Once a plan exists, side-effecting tools require an active task.
                     let plan_requires_task = state.execution_plan.lock()
                         .map(|slot| slot.is_some()).unwrap_or(true);
-                    if plan_requires_task && active_task_id.is_none()
+                    if !work_mode.allows_tool(&tc.function.name) {
+                        denied = true;
+                        record.status = "denied".into();
+                        tool_output = "Tool unavailable in the selected work mode.".into();
+                    } else if plan_requires_task && active_task_id.is_none()
                         && tool_requires_permission(&tc.function.name)
                     {
                         denied = true;
