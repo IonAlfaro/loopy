@@ -1290,7 +1290,7 @@ export function AgentWorkspaceView() {
         const next = queuedMessages.find((message) => message.sessionId === id);
         if (!next) continue;
         setMessageQueue((prev) => prev.filter((message) => message.id !== next.id));
-        const target = id === activeSessionIdRef.current ? sessionRef.current : completed;
+        const target = completed;
         void sendTurn(next.text, false, next.attachments ?? [], target);
       }
     }
@@ -2332,10 +2332,14 @@ export function AgentWorkspaceView() {
                   setMessageQueue((prev) => prev.filter((q) => q.id !== id))
                 }
                 onRunNext={() => {
-                  if (messageQueue.length === 0) return;
-                  const [next] = messageQueue;
-                  setMessageQueue((prev) => prev.filter((item) => item.id !== next.id));
-                  void sendTurn(next.text, false, next.attachments ?? []);
+                  const id = session.id;
+                  if (activeSessionIdRef.current !== id || runningTurns.current.has(id)) return;
+                  const next = queuedMessages.find(item => item.sessionId === id);
+                  if (!next) return;
+                  const target = completedTurns.current.get(id) ?? sessionRef.current;
+                  if (target.id !== id) return;
+                  setMessageQueue(prev => prev.filter(item => item.id !== next.id));
+                  void sendTurn(next.text, false, next.attachments ?? [], target);
                 }}
               />
               <AgentComposerAttachments pendingAttachments={pendingAttachments} pinnedFiles={session.pinnedFiles} stagingFiles={!!stagingFiles} locale={locale} onRemove={att => setPendingAttachments(prev => prev.filter(x => x !== att))} onUnpin={rel => void togglePinFile(rel)} />
