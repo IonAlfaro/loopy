@@ -1,9 +1,10 @@
-﻿import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardCopy,
   Download,
   FolderOpen,
   Save,
+  Search,
   Trash2,
   Upload,
   X,
@@ -26,13 +27,16 @@ interface WorkflowIoModalProps {
 }
 
 export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProps) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
+  const L = (en: string, es: string) => (locale === "es" ? es : en);
   const workflowName = useGraphStore((s) => s.workflowName);
   const exportWorkflow = useGraphStore((s) => s.exportWorkflow);
   const importWorkflow = useGraphStore((s) => s.importWorkflow);
   const markSaved = useGraphStore((s) => s.markSaved);
   const loadTemplate = useGraphStore((s) => s.loadTemplate);
 
+  const [tab, setTab] = useState<"library" | "templates" | "json">("library");
+  const [search, setSearch] = useState("");
   const [savedList, setSavedList] = useState<SavedWorkflowEntry[]>([]);
   const [pasteJson, setPasteJson] = useState("");
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
@@ -49,8 +53,29 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
     if (!open) return;
     setStatusMsg(null);
     setErrorMsg(null);
+    setSearch("");
     refreshLibrary();
   }, [open]);
+
+  const filteredSaved = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return savedList;
+    return savedList.filter(
+      (e) =>
+        e.name.toLowerCase().includes(q) ||
+        e.path.toLowerCase().includes(q)
+    );
+  }, [savedList, search]);
+
+  const filteredTemplates = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return HARNESS_TEMPLATES;
+    return HARNESS_TEMPLATES.filter(
+      (tpl) =>
+        tpl.label.toLowerCase().includes(q) ||
+        tpl.name.toLowerCase().includes(q)
+    );
+  }, [search]);
 
   if (!open) return null;
 
@@ -64,14 +89,17 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
         content,
       });
       markSaved(data.name);
-      setStatusMsg(`Guardado en biblioteca: ${savedPath}`);
-      onNotice(`Guardado: ${data.name}`);
+      setStatusMsg(L(`Saved to library: ${savedPath}`, `Guardado en biblioteca: ${savedPath}`));
+      onNotice(L(`Saved: ${data.name}`, `Guardado: ${data.name}`));
       refreshLibrary();
     } catch (err) {
       setErrorMsg(
         typeof err === "string"
           ? err
-          : "Biblioteca local disponible en modo escritorio (usa Descargar JSON en navegador)."
+          : L(
+              "Local library is available in desktop mode (use Export JSON in browser).",
+              "Biblioteca local disponible en modo escritorio (usa Exportar JSON en navegador)."
+            )
       );
     }
   };
@@ -84,7 +112,7 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
       });
       const wf = parseWorkflowJson(raw);
       importWorkflow(wf, wf.name || entry.name);
-      onNotice(`Loaded harness: ${wf.name}`);
+      onNotice(L(`Loaded harness: ${wf.name}`, `Arnés cargado: ${wf.name}`));
       onClose();
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
@@ -96,7 +124,11 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
       await invoke("delete_workflow_from_library", { path: entry.path });
       refreshLibrary();
     } catch (err) {
-      setErrorMsg(typeof err === "string" ? err : "No se pudo eliminar.");
+      setErrorMsg(
+        typeof err === "string"
+          ? err
+          : L("Could not delete harness.", "No se pudo eliminar.")
+      );
     }
   };
 
@@ -111,16 +143,21 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
     a.download = `${data.name || "workflow"}.loors.json`;
     a.click();
     URL.revokeObjectURL(url);
-    setStatusMsg(`Exportado ${data.name || "workflow"}.loors.json`);
+    setStatusMsg(
+      L(
+        `Exported ${data.name || "workflow"}.loors.json`,
+        `Exportado ${data.name || "workflow"}.loors.json`
+      )
+    );
   };
 
   const handleCopyJson = async () => {
     const content = JSON.stringify(exportWorkflow(), null, 2);
     try {
       await navigator.clipboard.writeText(content);
-      setStatusMsg("JSON copiado al portapapeles.");
+      setStatusMsg(L("JSON copied to clipboard.", "JSON copiado al portapapeles."));
     } catch {
-      setErrorMsg("No se pudo acceder al portapapeles.");
+      setErrorMsg(L("Could not access clipboard.", "No se pudo acceder al portapapeles."));
     }
   };
 
@@ -131,10 +168,14 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
     try {
       const wf = parseWorkflowJson(await file.text());
       importWorkflow(wf);
-      onNotice(`Importado: ${wf.name}`);
+      onNotice(L(`Imported: ${wf.name}`, `Importado: ${wf.name}`));
       onClose();
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "Archivo JSON inválido.");
+      setErrorMsg(
+        err instanceof Error
+          ? err.message
+          : L("Invalid JSON file.", "Archivo JSON inválido.")
+      );
     }
     e.target.value = "";
   };
@@ -145,28 +186,39 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
       const wf = parseWorkflowJson(pasteJson);
       importWorkflow(wf);
       setPasteJson("");
-      onNotice(`Importado desde JSON: ${wf.name}`);
+      onNotice(L(`Imported from JSON: ${wf.name}`, `Importado desde JSON: ${wf.name}`));
       onClose();
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "JSON inválido.");
+      setErrorMsg(
+        err instanceof Error ? err.message : L("Invalid JSON.", "JSON inválido.")
+      );
     }
   };
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card modal-wide" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="modal-card modal-wide"
+        style={{ height: "min(680px, calc(100vh - 48px))" }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
           <div className="modal-title">
             <FolderOpen size={18} />
             <span>{t("library.title")}</span>
           </div>
-          <button type="button" className="icon-btn" aria-label={t("models.close")} onClick={onClose}>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={t("models.close")}
+            onClick={onClose}
+          >
             <X size={16} />
           </button>
         </div>
 
-        <div className="modal-body">
-          <div className="io-actions" style={{ flexWrap: "nowrap", gap: 8 }}>
+        <div className="io-modal-toolbar">
+          <div className="io-actions" style={{ flexWrap: "wrap", gap: 8 }}>
             <button
               type="button"
               className="btn-primary"
@@ -209,90 +261,172 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
             />
           </div>
 
+          <div className="io-tabs-bar">
+            <div className="io-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "library"}
+                className={`io-tab-btn ${tab === "library" ? "active" : ""}`}
+                onClick={() => setTab("library")}
+              >
+                <span>{L("My Harnesses", "Mis arneses")}</span>
+                <span className="io-tab-count">{savedList.length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "templates"}
+                className={`io-tab-btn ${tab === "templates" ? "active" : ""}`}
+                onClick={() => setTab("templates")}
+              >
+                <span>{L("Templates", "Plantillas")}</span>
+                <span className="io-tab-count">{HARNESS_TEMPLATES.length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "json"}
+                className={`io-tab-btn ${tab === "json" ? "active" : ""}`}
+                onClick={() => setTab("json")}
+              >
+                <span>{L("Paste JSON", "Pegar JSON")}</span>
+              </button>
+            </div>
+
+            {tab !== "json" && (
+              <div className="io-search-box">
+                <Search size={13} />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={
+                    tab === "library"
+                      ? L("Filter saved harnesses...", "Filtrar arneses...")
+                      : L("Filter templates...", "Filtrar plantillas...")
+                  }
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="modal-body" style={{ paddingTop: 10 }}>
           {statusMsg && <div className="hw-note">{statusMsg}</div>}
           {errorMsg && <div className="hw-error">{errorMsg}</div>}
 
-          <div className="installed-list">
-            <div className="panel-title">Biblioteca local de arneses</div>
-            {savedList.length === 0 ? (
-              <div className="hw-note">
-                Aún no has guardado arneses en tu biblioteca local. También
-                puedes arrastrar y soltar un archivo <code>.loors.json</code>{" "}
-                directamente sobre el canvas.
-              </div>
-            ) : (
-              savedList.map((entry) => (
-                <div key={entry.path} className="installed-item">
-                  <div className="installed-meta">
-                    <div className="installed-name">{entry.name}</div>
-                    <div className="installed-path">{entry.path}</div>
+          {tab === "library" && (
+            <div className="installed-list">
+              {filteredSaved.length === 0 ? (
+                <div className="hw-note">
+                  {savedList.length === 0
+                    ? L(
+                        "No saved harnesses yet. Click Save to library, or drag & drop any .loors.json directly onto the canvas.",
+                        "Aún no has guardado arneses en tu biblioteca local. También puedes arrastrar y soltar un archivo .loors.json directamente sobre el canvas."
+                      )
+                    : L(
+                        "No saved harnesses match your search.",
+                        "Ningún arnés guardado coincide con tu búsqueda."
+                      )}
+                </div>
+              ) : (
+                filteredSaved.map((entry) => (
+                  <div key={entry.path} className="installed-item">
+                    <div className="installed-meta">
+                      <div className="installed-name">{entry.name}</div>
+                      <div className="installed-path">{entry.path}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => handleLoadFromLibrary(entry)}
+                    >
+                      {L("Load", "Cargar")}
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-btn danger"
+                      title={L("Delete harness", "Eliminar arnés")}
+                      onClick={() => handleDeleteFromLibrary(entry)}
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => handleLoadFromLibrary(entry)}
-                  >
-                    Cargar
-                  </button>
-                  <button
-                    type="button"
-                    className="icon-btn danger"
-                    title="Eliminar arnés"
-                    onClick={() => handleDeleteFromLibrary(entry)}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
+                ))
+              )}
+            </div>
+          )}
 
-          <div className="installed-list">
-            <div className="panel-title">Plantillas de ejemplo</div>
-            {HARNESS_TEMPLATES.map((tpl) => (
-              <div key={tpl.id} className="installed-item">
-                <div className="installed-meta">
-                  <div className="installed-name">{tpl.label}</div>
+          {tab === "templates" && (
+            <div className="installed-list">
+              {filteredTemplates.length === 0 ? (
+                <div className="hw-note">
+                  {L(
+                    "No templates match your search.",
+                    "Ninguna plantilla coincide con tu búsqueda."
+                  )}
                 </div>
+              ) : (
+                filteredTemplates.map((tpl) => (
+                  <div key={tpl.id} className="installed-item">
+                    <div className="installed-meta">
+                      <div className="installed-name">{tpl.label}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => {
+                        loadTemplate(tpl.id);
+                        onNotice(
+                          L(`Template loaded: ${tpl.name}`, `Plantilla cargada: ${tpl.name}`)
+                        );
+                        onClose();
+                      }}
+                    >
+                      {L("Use", "Usar")}
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {tab === "json" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <label className="field">
+                <span>
+                  {L("Import by pasting JSON directly", "Importar pegando JSON directamente")}
+                </span>
+                <textarea
+                  rows={10}
+                  placeholder={L(
+                    'Paste .loors.json content here {"schemaVersion": 1, "name": "...", "nodes": [...], "edges": [...]}',
+                    'Pega aquí el contenido de un .loors.json {"schemaVersion": 1, "name": "...", "nodes": [...], "edges": [...]}'
+                  )}
+                  value={pasteJson}
+                  onChange={(e) => setPasteJson(e.target.value)}
+                />
+              </label>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <button
                   type="button"
-                  className="btn-secondary"
-                  onClick={() => {
-                    loadTemplate(tpl.id);
-                    onNotice(`Plantilla cargada: ${tpl.name}`);
-                    onClose();
-                  }}
+                  className="btn-primary"
+                  disabled={!pasteJson.trim()}
+                  onClick={handleImportPaste}
                 >
-                  Usar
+                  <Upload size={14} />
+                  <span>{L("Import pasted JSON", "Importar JSON pegado")}</span>
                 </button>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+        </div>
 
-          <label className="field">
-            <span>Importar pegando JSON directamente</span>
-            <textarea
-              rows={4}
-              placeholder='Pega aquí el contenido de un .loors.json {"schemaVersion": 1, "name": "...", "nodes": [...], "edges": [...]}'
-              value={pasteJson}
-              onChange={(e) => setPasteJson(e.target.value)}
-            />
-          </label>
-
-          <div className="modal-footer">
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={!pasteJson.trim()}
-              onClick={handleImportPaste}
-            >
-              <Upload size={14} />
-              <span>Importar JSON pegado</span>
-            </button>
-            <button type="button" className="btn-primary" onClick={onClose}>
-              Cerrar
-            </button>
-          </div>
+        <div className="modal-footer io-modal-footer">
+          <button type="button" className="btn-secondary" onClick={onClose}>
+            {L("Close", "Cerrar")}
+          </button>
         </div>
       </div>
     </div>

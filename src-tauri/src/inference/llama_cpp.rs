@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::net::TcpListener;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tokio::process::{Child, Command};
@@ -76,7 +77,21 @@ impl LlamaCppManager {
     }
 
     pub async fn ensure_loaded(&self, config: ModelLoadConfig) -> Result<u16, String> {
+        self.ensure_loaded_cancellable(config, None).await
+    }
+
+    pub async fn ensure_loaded_cancellable(
+        &self,
+        config: ModelLoadConfig,
+        cancel: Option<&Arc<AtomicBool>>,
+    ) -> Result<u16, String> {
+        if cancel.map(|c| c.load(Ordering::SeqCst)).unwrap_or(false) {
+            return Err("__CANCELLED__".to_string());
+        }
         let mut guard = self.active.lock().await;
+        if cancel.map(|c| c.load(Ordering::SeqCst)).unwrap_or(false) {
+            return Err("__CANCELLED__".to_string());
+        }
         let target_name = short_model_name(&config.model_path);
 
         if let Some(ref mut current) = *guard {
@@ -258,8 +273,20 @@ impl LlamaCppManager {
 
         let health_url = format!("http://127.0.0.1:{port}/health");
         let mut ready = false;
-        // Allow up to 180 seconds for large GGUF models and first-time Vulkan/CUDA shader compilation
-        for _ in 0..720 {
+        // Allow up to 180 seconds for large GGUF models and first-time Vulkan/CUDA shader compilation,
+        // polling every 100ms so user cancellation stops loading immediately.
+        for _ in 0..1800 {
+            if cancel.map(|c| c.load(Ordering::SeqCst)).unwrap_or(false) {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                emit_load_progress(
+                    "cancelled",
+                    &target_name,
+                    None,
+                    format!("Cancelled loading {target_name}"),
+                );
+                return Err("__CANCELLED__".to_string());
+            }
             if let Ok(Some(status)) = child.try_wait() {
                 let tail = stderr_tail
                     .lock()
@@ -285,7 +312,7 @@ impl LlamaCppManager {
                     break;
                 }
             }
-            tokio::time::sleep(Duration::from_millis(250)).await;
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
         if !ready {
