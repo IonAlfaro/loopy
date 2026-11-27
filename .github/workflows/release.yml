@@ -79,6 +79,10 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Build CLI executable
+        shell: bash
+        run: cargo build --manifest-path src-tauri/Cargo.toml --release --bin loors-cli ${{ matrix.args }}
+
       - name: Build and publish installers
         uses: tauri-apps/tauri-action@v0
         env:
@@ -110,6 +114,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Build CLI executable
+        run: cargo build --manifest-path src-tauri/Cargo.toml --release --bin loors-cli
 
       - name: Build Windows installers (NSIS & MSI)
         env:

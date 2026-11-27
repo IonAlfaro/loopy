@@ -6,6 +6,7 @@ use loors_lib::headless::{
 use serde_json::json;
 use std::path::PathBuf;
 
+#[path = "../cli_agent_command.rs"]
 mod agent_command;
 
 fn print_help() {
