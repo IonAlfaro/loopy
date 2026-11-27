@@ -1,3 +1,4 @@
+import { AgentAssistantMessage } from "./AgentAssistantMessage";
 import { AgentUserMessage, getAttachmentBadge } from "./AgentUserMessage";
 import { AgentDiff } from "./AgentDiff";
 import { PanelResizer } from "./PanelResizer";
@@ -48,10 +49,7 @@ import { InteractiveBrowserPane } from "./InteractiveBrowserPane";
 import {
   MarkdownContent,
   MessageQueueTray,
-  ModelLoadInlineBar,
   ReasoningEffortSelect,
-  ThinkingDisclosure,
-  ToolCallGroup,
   WorkspaceFileTree,
   type QueuedMessageItem,
 } from "./ChatActivity";
@@ -1463,6 +1461,12 @@ export function AgentWorkspaceView() {
   const retryUserMessage = useCallback((msg: AgentChatMessage) => {
     void retryUserMessageRef.current(msg.content, false, msg.attachments);
   }, []);
+  const assistantActions = useRef({ copyText, handleUndoToolCall });
+  assistantActions.current = { copyText, handleUndoToolCall };
+  const assistantCopy = useCallback((id: string, content: string) => { void assistantActions.current.copyText(id, content); }, []);
+  const assistantUndo = useCallback((id: string, callId: string) => { void assistantActions.current.handleUndoToolCall(id, callId); }, []);
+  const assistantToggleThinking = useCallback((id: string, next: boolean) => setExpandedThinking(p => ({ ...p, [id]: next })), []);
+  const assistantToggleTool = useCallback((id: string, next: boolean) => setExpandedTools(p => ({ ...p, [id]: next })), []);
   const lastUserMsgIndex = useMemo(() => {
     for (let i = session.messages.length - 1; i >= 0; i--) {
       if (session.messages[i].role === "user") return i;
@@ -1991,92 +1995,8 @@ export function AgentWorkspaceView() {
                   return <AgentUserMessage key={msg.id} msg={msg} locale={locale} canRetry={idx === lastUserMsgIndex && !isCurrentRunning} deferred={!!historyStyle} onRetry={retryUserMessage} />;
                 }
 
-                const isLastMsg = idx === session.messages.length - 1;
-                const hasRunningTools = msg.toolCalls.some((t) => t.status === "running");
-                const isThinkingLive =
-                  isCurrentRunning &&
-                  isLastMsg &&
-                  !msg.content &&
-                  !msg.toolCalls.length;
-                const thinkOpen = expandedThinking[msg.id] ?? false;
-                const continuation = idx > 0 && session.messages[idx - 1].role === "assistant";
+                return <AgentAssistantMessage key={msg.id} msg={msg} active={isCurrentRunning && idx === session.messages.length - 1} continuation={idx > 0 && session.messages[idx - 1].role === "assistant"} deferred={!!historyStyle} locale={locale} modelPath={session.modelPath} thinkingOpen={expandedThinking[msg.id] ?? false} copied={copiedId === msg.id} modelLoadProgress={idx === session.messages.length - 1 ? modelLoadProgress : null} expandedTools={expandedTools} savedShots={savedShots} onCopy={assistantCopy} onToggleThinking={assistantToggleThinking} onToggleTool={assistantToggleTool} onUndo={assistantUndo} />;
 
-                return (
-                  <div key={msg.id} style={historyStyle} className={`agent-assistant-row${continuation ? " agent-assistant-continuation" : ""}`}>
-                    <div className="agent-assistant-head">
-                      <span className="agent-model-tag">
-                        {!continuation && <Bot size={13} style={{ color: "#a855f7" }} />}
-                        <span>
-                          {continuation ? (locale === "es" ? "Continuación" : "Continuation") : (session.modelPath.split(/[\\/]/).pop() || "Agente Loors")}
-                        </span>
-                      </span>
-                      {msg.tokensPerSecond != null && <span className="agent-model-tag">{msg.tokensPerSecond.toFixed(1)} tok/s</span>}
-                      {msg.promptTokens != null && <span className="agent-model-tag">{msg.promptTokens.toLocaleString()}{msg.contextCapacity != null && msg.contextCapacity > 0 ? ` / ${msg.contextCapacity.toLocaleString()} (${(100 * msg.promptTokens / msg.contextCapacity).toFixed(1)}%)` : ""} ctx tokens</span>}
-                      {msg.prefillMs != null && <span className="agent-model-tag">Prefill {(msg.prefillMs / 1000).toFixed(2)} s</span>}
-                      {msg.generationMs != null && <span className="agent-model-tag">Gen {(msg.generationMs / 1000).toFixed(2)} s</span>}
-                      {msg.inferenceMs != null && <span className="agent-model-tag" title={locale === "es" ? "Duración de inferencia / primer fragmento" : "Inference duration / first chunk"}>{(msg.inferenceMs / 1000).toFixed(2)} s{msg.firstTokenMs != null ? ` · TTFT ${(msg.firstTokenMs / 1000).toFixed(2)} s` : ""}</span>}
-                      {msg.content && (
-                        <button
-                          type="button"
-                          className="micro-action-btn"
-                          onClick={() => copyText(msg.id, msg.content)}
-                        >
-                          {copiedId === msg.id ? <Check size={11} /> : <Copy size={11} />}
-                          <span>{copiedId === msg.id ? (locale === "es" ? "Copiado" : "Copied") : (locale === "es" ? "Copiar" : "Copy")}</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {msg.thinking && (
-                      <ThinkingDisclosure
-                        text={msg.thinking}
-                        isStreaming={isThinkingLive}
-                        open={thinkOpen}
-                        onToggle={() =>
-                          setExpandedThinking((p) => ({ ...p, [msg.id]: !thinkOpen }))
-                        }
-                      />
-                    )}
-
-                    {msg.content ? (
-                      <div className="agent-assistant-body">
-                        <MarkdownContent text={msg.content} streaming={isCurrentRunning && isLastMsg && !msg.toolCalls.length} />
-                      </div>
-                    ) : (
-                      isCurrentRunning &&
-                      idx === session.messages.length - 1 && !msg.toolCalls.length && (
-                        modelLoadProgress &&
-                        (modelLoadProgress.stage === "unloading" ||
-                          modelLoadProgress.stage === "starting" ||
-                          modelLoadProgress.stage === "loading") ? (
-                          <ModelLoadInlineBar progress={modelLoadProgress} />
-                        ) : (
-                          <div className="agent-typing-hint">
-                            <RefreshCw size={12} className="spin" />
-                            <span>{locale === "es" ? "Generando respuesta…" : "Generating response…"}</span>
-                          </div>
-                        )
-                      )
-                    )}
-                    {isCurrentRunning && isLastMsg && hasRunningTools && <div className="agent-typing-hint"><RefreshCw size={12} className="spin" /><span>{locale === "es" ? "Ejecutando herramientas…" : "Running tools…"}</span></div>}
-                    {msg.toolCalls.length > 0 && (
-                      <ToolCallGroup
-                        calls={msg.toolCalls}
-                        expandedTools={expandedTools}
-                        onToggleTool={(id, next) =>
-                          setExpandedTools((p) => ({ ...p, [id]: next }))
-                        }
-                        extras={(call) => ({
-                          shotB64: call.screenshotPath
-                            ? savedShots[call.screenshotPath]
-                            : undefined,
-                          onUndo: () => void handleUndoToolCall(msg.id, call.id),
-                        })}
-                      />
-                    )}
-
-                  </div>
-                );
               })}
 
               {/* Interactive Permission Approval Card */}
