@@ -84,7 +84,7 @@ Usa **exactamente** estos `kind` y nombres de puertos (`sourceHandle` / `targetH
 - `context_compactor`: in `[exec]` out `[exec]` | config: `{ maxChars, template }`
 - `human_gate`: in `[exec]` out `[approved, rejected]` | config: `{ message }`
 - `parallel_fanout`: in `[exec]` out `[branch_a, branch_b, merged]` | config: `{ useWorktrees }`
-- `swarm`: in `[exec, model_ref, skill_ref, mcp_ref, knowledge_ref, workspace_ref, feedback]` out `[exec, error]` | config: `{ objectiveTemplate ("{{current_prompt}}"), coordinatorPrompt, maxRounds (8), maxConcurrency (3), useWorktrees (false), workers: [{ id, name, role, systemPrompt, modelPath (opcional), tools, maxSteps }] }` — Enjambre sincronizado de agentes especialistas con pizarra compartida (`@menciones`) dentro del arnés. Publica `{{swarm_output}}` y `{{swarm_board}}`.
+- `swarm`: in `[exec, model_ref, skill_ref, mcp_ref, knowledge_ref, workspace_ref, feedback]` out `[exec, error]` | config: `{ planningMode ("auto"|"manual"), objectiveTemplate ("{{current_prompt}}"), coordinatorPrompt, maxRounds (8), maxConcurrency (0=Auto Hardware), useWorktrees (false), workers: [{ id, name, role, systemPrompt, modelPath (opcional), tools, maxSteps }] }` — Enjambre sincronizado con Planner automático según tarea y hardware (RAM/CPU/VRAM) o equipo fijo, pizarra `@menciones` y worktrees opcionales. Publica `{{swarm_output}}` y `{{swarm_board}}`.
 - `subgraph`: in `[exec]` out `[ok, error]` | config: `{ workflowPath, inputTemplate }`
 - `custom`: in `[exec, model_ref]` out `[ok, error]` | config: `{ customNodeId, runner ("shell"|"prompt"|"http"), commandTemplate, promptTemplate, httpMethod, httpUrl, httpHeaders, httpBody, branchOnExit }`
 - `output`: in `[exec]` | config: `{ label }`

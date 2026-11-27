@@ -176,9 +176,16 @@ function summarizeConfig(node: LoorsFlowNode["data"], locale: "en" | "es"): stri
         ? es ? "2 ramas · git worktrees aislados" : "2 branches · isolated git worktrees"
         : es ? "2 ramas en paralelo" : "2 parallel branches";
     case "swarm": {
+      const mode = String(c.planningMode ?? (Array.isArray(c.workers) && c.workers.length > 0 ? "manual" : "auto"));
       const workers = Array.isArray(c.workers) ? c.workers.length : 0;
       const rounds = Number(c.maxRounds ?? 8);
+      const conc = Number(c.maxConcurrency ?? 0);
       const wt = Boolean(c.useWorktrees);
+      if (mode === "auto") {
+        return es
+          ? `Auto Planner · pool ${conc === 0 ? "auto HW" : conc} · máx ${rounds}r${wt ? " · wt" : ""}`
+          : `Auto Planner · ${conc === 0 ? "HW pool" : `${conc} parallel`} · max ${rounds}r${wt ? " · wt" : ""}`;
+      }
       return es
         ? `${workers} workers · máx ${rounds} rondas${wt ? " · worktrees" : ""}`
         : `${workers} workers · max ${rounds} rounds${wt ? " · worktrees" : ""}`;
@@ -289,7 +296,7 @@ export function LoorsNode({ id, data, selected }: NodeProps<LoorsFlowNode>) {
 
       {nodeSwarmRoster.length > 0 && (
         <div className="swarm-node-roster">
-          {nodeSwarmRoster.map((a) => (
+          {nodeSwarmRoster.slice(0, 6).map((a) => (
             <span
               key={a.agentId}
               className={`swarm-roster-chip is-${a.status}`}
@@ -299,6 +306,11 @@ export function LoorsNode({ id, data, selected }: NodeProps<LoorsFlowNode>) {
               <span>@{a.agentId}</span>
             </span>
           ))}
+          {nodeSwarmRoster.length > 6 && (
+            <span className="swarm-roster-chip">
+              +{nodeSwarmRoster.length - 6}
+            </span>
+          )}
         </div>
       )}
 

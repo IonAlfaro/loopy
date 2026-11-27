@@ -432,6 +432,9 @@ export function ConsolePanel() {
           ) : tab === "swarm" ? (
             (() => {
               const agentsList = Object.values(swarmAgents);
+              const workingCount = agentsList.filter((a) => a.status === "working").length;
+              const queuedCount = agentsList.filter((a) => a.status === "queued").length;
+              const doneCount = agentsList.filter((a) => a.status === "done").length;
               const filteredMsgs =
                 swarmAgentFilter === "all"
                   ? swarmMessages
@@ -459,7 +462,11 @@ export function ConsolePanel() {
                         className={`swarm-agent-pill ${swarmAgentFilter === "all" ? "is-selected" : ""}`}
                         onClick={() => setSwarmAgentFilter("all")}
                       >
-                        <span>{L("All", "Todos")} ({swarmMessages.length})</span>
+                        <span>
+                          {L("All", "Todos")} ({swarmMessages.length})
+                          {agentsList.length > 1 &&
+                            ` · ${workingCount}W / ${queuedCount}Q / ${doneCount}D`}
+                        </span>
                       </button>
                       {agentsList.map((ag) => (
                         <button

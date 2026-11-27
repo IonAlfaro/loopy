@@ -8877,6 +8877,10 @@ body,
   word-break: break-word;
 }
 
+.swarm-roster-chip.is-queued .swarm-roster-dot,
+.swarm-agent-pill.is-queued .swarm-roster-dot {
+  background: #f59e0b;
+}
 
 /* =====================================================================
    Harness Library Modal Toolbar, Tabs & Search

@@ -1,6 +1,6 @@
 use crate::engine::executor::{capture_git_diff, parse_inline_tool_calls, EventEmitter};
 use crate::engine::types::{EngineEvent, LogStreamKind};
-use crate::hardware::RuntimeBackendKind;
+use crate::hardware::{detect_hardware_profile, HardwareProfile, RuntimeBackendKind};
 use crate::inference::llama_cpp::LlamaCppManager;
 use crate::inference::{resolve_load_config_with_profile, ChatMessage, ChatRequest};
 use crate::runtime::find_installed_binary;
@@ -27,6 +27,8 @@ pub struct SwarmWorkerSpec {
     #[serde(default)]
     pub system_prompt: String,
     #[serde(default)]
+    pub task: String,
+    #[serde(default)]
     pub model_path: String,
     #[serde(default)]
     pub tools: Vec<String>,
@@ -38,6 +40,7 @@ pub struct SwarmWorkerSpec {
 
 #[derive(Debug, Clone)]
 pub struct SwarmConfig {
+    pub planning_mode: String,
     pub objective: String,
     pub coordinator_prompt: String,
     pub max_rounds: usize,
@@ -167,6 +170,88 @@ fn now_hhmmss() -> String {
     format!("{h:02}:{m:02}:{s:02}")
 }
 
+pub fn compute_hardware_concurrency(
+    hw: &HardwareProfile,
+    model_path: &str,
+    use_worktrees: bool,
+) -> (usize, String) {
+    let is_cloud = crate::inference::cloud::is_cloud_model(model_path);
+    let cores = hw.cpu_cores.max(2);
+    let total_ram_mb = hw.total_ram_mb.max(4096);
+    let max_vram_mb = hw.gpus.iter().filter_map(|g| g.vram_mb).max().unwrap_or(0);
+
+    if is_cloud {
+        let cap = if use_worktrees { 6 } else { 12 };
+        let slots = (cores / 2).clamp(4, cap);
+        let note = format!(
+            "Cloud API · {} CPU cores · {} GB RAM => pool paralelo automático de {} slots{}",
+            cores,
+            total_ram_mb / 1024,
+            slots,
+            if use_worktrees { " (worktrees)" } else { "" }
+        );
+        return (slots, note);
+    }
+
+    let model_mb = if !model_path.trim().is_empty() {
+        fs::metadata(model_path)
+            .map(|m| m.len() / (1024 * 1024))
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    let free_ram_mb = total_ram_mb.saturating_sub(model_mb + 4096);
+    let ram_slots = ((free_ram_mb / 1536) as usize).max(1);
+    let cpu_slots = (cores / 4).max(2);
+    let cap = if use_worktrees { 3 } else { 4 };
+    let slots = cpu_slots.min(ram_slots).clamp(1, cap);
+    let vram_note = if max_vram_mb > 0 {
+        format!(" · {} GB VRAM", max_vram_mb / 1024)
+    } else {
+        String::new()
+    };
+    let note = format!(
+        "Local GGUF ({} MB) · {} CPU cores · {} GB RAM{} => GPU serializada + {} slots paralelos de I/O{}",
+        model_mb,
+        cores,
+        total_ram_mb / 1024,
+        vram_note,
+        slots,
+        if use_worktrees { " (worktrees)" } else { "" }
+    );
+    (slots, note)
+}
+
+fn sanitize_worker_spec(mut w: SwarmWorkerSpec, fallback_idx: usize) -> SwarmWorkerSpec {
+    let clean_id: String = w
+        .id
+        .trim()
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .collect();
+    w.id = if clean_id.is_empty() || clean_id == "coordinator" || clean_id == "all" {
+        format!("worker-{}", fallback_idx + 1)
+    } else {
+        clean_id
+    };
+    if w.name.trim().is_empty() {
+        w.name = w.id.clone();
+    }
+    if w.max_steps == 0 {
+        w.max_steps = 8;
+    }
+    if w.tools.is_empty() {
+        w.tools = vec![
+            "list_files".into(),
+            "grep_search".into(),
+            "read_file".into(),
+            "run_cmd".into(),
+        ];
+    }
+    w
+}
+
 pub fn parse_swarm_config(
     config: &HashMap<String, Value>,
     rendered_objective: String,
@@ -180,8 +265,8 @@ pub fn parse_swarm_config(
     let max_concurrency = config
         .get("maxConcurrency")
         .and_then(|v| v.as_u64())
-        .map(|n| n.clamp(1, 8) as usize)
-        .unwrap_or(3);
+        .map(|n| n.min(24) as usize)
+        .unwrap_or(0);
     let use_worktrees = config
         .get("useWorktrees")
         .and_then(|v| v.as_bool())
@@ -192,14 +277,31 @@ pub fn parse_swarm_config(
         .and_then(|v| serde_json::from_value::<Vec<SwarmWorkerSpec>>(v.clone()).ok())
         .unwrap_or_default();
 
-    // Sanitize worker IDs and provide sensible defaults if empty
-    if workers.is_empty() {
+    let raw_mode = config
+        .get("planningMode")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_lowercase())
+        .unwrap_or_else(|| {
+            if workers.is_empty() {
+                "auto".to_string()
+            } else {
+                "manual".to_string()
+            }
+        });
+    let planning_mode = if raw_mode == "manual" {
+        "manual".to_string()
+    } else {
+        "auto".to_string()
+    };
+
+    if planning_mode == "manual" && workers.is_empty() {
         workers = vec![
             SwarmWorkerSpec {
                 id: "builder".into(),
                 name: "Builder".into(),
                 role: "Implementation Specialist".into(),
                 system_prompt: "Execute assigned implementation tasks accurately and post concrete results to @coordinator.".into(),
+                task: String::new(),
                 model_path: String::new(),
                 tools: vec![
                     "list_files".into(),
@@ -217,6 +319,7 @@ pub fn parse_swarm_config(
                 name: "Reviewer".into(),
                 role: "QA & Verification".into(),
                 system_prompt: "Verify changes, run tests or fact-checks, and report pass/fail clearly to @coordinator.".into(),
+                task: String::new(),
                 model_path: String::new(),
                 tools: vec![
                     "read_file".into(),
@@ -229,29 +332,15 @@ pub fn parse_swarm_config(
             },
         ];
     } else {
-        for (idx, w) in workers.iter_mut().enumerate() {
-            let clean_id: String = w
-                .id
-                .trim()
-                .to_lowercase()
-                .chars()
-                .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
-                .collect();
-            w.id = if clean_id.is_empty() || clean_id == "coordinator" || clean_id == "all" {
-                format!("worker-{}", idx + 1)
-            } else {
-                clean_id
-            };
-            if w.name.trim().is_empty() {
-                w.name = w.id.clone();
-            }
-            if w.max_steps == 0 {
-                w.max_steps = 8;
-            }
-        }
+        workers = workers
+            .into_iter()
+            .enumerate()
+            .map(|(idx, w)| sanitize_worker_spec(w, idx))
+            .collect();
     }
 
     SwarmConfig {
+        planning_mode,
         objective: rendered_objective,
         coordinator_prompt: rendered_coord_prompt,
         max_rounds,
@@ -305,7 +394,7 @@ pub fn extract_mentions(
     out
 }
 
-pub fn swarm_tool_definitions(is_coordinator: bool) -> Vec<Value> {
+pub fn swarm_tool_definitions(is_coordinator: bool, allow_spawn: bool) -> Vec<Value> {
     let mut defs = vec![
         json!({
             "type": "function",
@@ -369,6 +458,55 @@ pub fn swarm_tool_definitions(is_coordinator: bool) -> Vec<Value> {
     ];
 
     if is_coordinator {
+        if allow_spawn {
+            defs.push(json!({
+                "type": "function",
+                "function": {
+                    "name": "swarm_spawn_worker",
+                    "description": "Dynamically create and add a specialist worker to the Swarm roster.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "id": { "type": "string", "description": "Short lowercase ID without spaces (e.g. 'auth-dev', 'task-1')." },
+                            "role": { "type": "string", "description": "Short role title." },
+                            "system_prompt": { "type": "string", "description": "Specialist instructions for this worker." },
+                            "task": { "type": "string", "description": "Concrete task slice assigned to this worker." },
+                            "tools": { "type": "array", "items": { "type": "string" }, "description": "Optional tool list (e.g. ['list_files','read_file','edit_file','run_cmd'] or ['web_search','fetch_url'])." },
+                            "max_steps": { "type": "integer", "description": "Optional max tool steps (default 8)." }
+                        },
+                        "required": ["id", "role", "task"]
+                    }
+                }
+            }));
+            defs.push(json!({
+                "type": "function",
+                "function": {
+                    "name": "swarm_spawn_batch",
+                    "description": "Spawn multiple workers/subtasks in one single call (up to 200). They are automatically queued and executed through the hardware-aware worker pool.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "workers": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": { "type": "string" },
+                                        "role": { "type": "string" },
+                                        "system_prompt": { "type": "string" },
+                                        "task": { "type": "string" },
+                                        "tools": { "type": "array", "items": { "type": "string" } },
+                                        "max_steps": { "type": "integer" }
+                                    },
+                                    "required": ["id", "task"]
+                                }
+                            }
+                        },
+                        "required": ["workers"]
+                    }
+                }
+            }));
+        }
         defs.push(json!({
             "type": "function",
             "function": {
@@ -436,6 +574,7 @@ async fn run_single_swarm_agent_turn(
     agent_name: &str,
     agent_role: &str,
     is_coordinator: bool,
+    allow_spawn: bool,
     system_prompt: &str,
     turn_prompt: &str,
     workspace: &str,
@@ -443,7 +582,7 @@ async fn run_single_swarm_agent_turn(
     defaults: &SwarmModelDefaults,
     enabled_tools: &[String],
     max_steps: usize,
-    valid_worker_ids: &[String],
+    roster: &Arc<Mutex<Vec<SwarmWorkerSpec>>>,
     board: &Arc<SwarmBoard>,
     backend: &RuntimeBackendKind,
     llama: &LlamaCppManager,
@@ -466,7 +605,7 @@ async fn run_single_swarm_agent_turn(
     emit_status("working", "Pensando y ejecutando turno...");
 
     let mut all_tool_defs = tools::tool_definitions(enabled_tools);
-    all_tool_defs.extend(swarm_tool_definitions(is_coordinator));
+    all_tool_defs.extend(swarm_tool_definitions(is_coordinator, allow_spawn));
 
     let mut messages = vec![
         ChatMessage {
@@ -514,6 +653,12 @@ async fn run_single_swarm_agent_turn(
     let mut final_text = String::new();
     let mut mentioned_targets: Vec<String> = Vec::new();
     let mut posted_this_turn = false;
+    let current_worker_ids = || -> Vec<String> {
+        roster
+            .lock()
+            .map(|g| g.iter().map(|w| w.id.clone()).collect())
+            .unwrap_or_default()
+    };
 
     for step in 1..=max_steps.max(1) {
         if cancel.load(Ordering::SeqCst) {
@@ -609,7 +754,8 @@ async fn run_single_swarm_agent_turn(
                                 .filter_map(|x| x.as_str().map(|s| s.to_string()))
                                 .collect()
                         });
-                    let mentions = extract_mentions(explicit_mentions, &msg, valid_worker_ids);
+                    let valid_ids_now = current_worker_ids();
+                    let mentions = extract_mentions(explicit_mentions, &msg, &valid_ids_now);
                     for m in &mentions {
                         if !mentioned_targets.contains(m) {
                             mentioned_targets.push(m.clone());
@@ -677,6 +823,133 @@ async fn run_single_swarm_agent_turn(
                     emit_status(st, summary);
                     format!("Status updated to {st}.")
                 }
+                "swarm_spawn_worker" if is_coordinator && allow_spawn => {
+                    let raw_id = args.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let raw_role = args.get("role").and_then(|v| v.as_str()).unwrap_or("Specialist").to_string();
+                    let raw_prompt = args.get("system_prompt").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let raw_task = args.get("task").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let raw_tools: Vec<String> = args
+                        .get("tools")
+                        .and_then(|v| v.as_array())
+                        .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+                        .unwrap_or_default();
+                    let raw_steps = args.get("max_steps").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
+
+                    let mut guard = roster.lock().unwrap();
+                    let idx = guard.len();
+                    let spec = sanitize_worker_spec(
+                        SwarmWorkerSpec {
+                            id: raw_id,
+                            name: raw_role.clone(),
+                            role: raw_role,
+                            system_prompt: if raw_prompt.trim().is_empty() {
+                                "Execute your assigned task accurately and report back to @coordinator.".into()
+                            } else {
+                                raw_prompt
+                            },
+                            task: raw_task.clone(),
+                            model_path: String::new(),
+                            tools: raw_tools,
+                            max_steps: raw_steps,
+                            use_worktree: None,
+                        },
+                        idx,
+                    );
+                    let wid = spec.id.clone();
+                    if let Some(existing) = guard.iter_mut().find(|w| w.id == wid) {
+                        *existing = spec.clone();
+                    } else if guard.len() < 200 {
+                        guard.push(spec.clone());
+                    }
+                    drop(guard);
+
+                    if !mentioned_targets.contains(&wid) {
+                        mentioned_targets.push(wid.clone());
+                    }
+                    emit(EngineEvent::SwarmAgentStatus {
+                        run_id: run_id.to_string(),
+                        node_id: node_id.to_string(),
+                        agent_id: wid.clone(),
+                        agent_name: spec.name.clone(),
+                        role: spec.role.clone(),
+                        status: "queued".into(),
+                        summary: if raw_task.is_empty() {
+                            "Asignado por el Coordinador".into()
+                        } else {
+                            raw_task.chars().take(80).collect()
+                        },
+                    });
+                    format!("Spawned worker @{wid} (role='{}').", spec.role)
+                }
+                "swarm_spawn_batch" if is_coordinator && allow_spawn => {
+                    let arr = args
+                        .get("workers")
+                        .and_then(|v| v.as_array())
+                        .cloned()
+                        .unwrap_or_default();
+                    let mut spawned_ids = Vec::new();
+                    let mut guard = roster.lock().unwrap();
+                    for item in arr.into_iter().take(200) {
+                        let raw_id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let raw_role = item.get("role").and_then(|v| v.as_str()).unwrap_or("Worker").to_string();
+                        let raw_prompt = item.get("system_prompt").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let raw_task = item.get("task").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let raw_tools: Vec<String> = item
+                            .get("tools")
+                            .and_then(|v| v.as_array())
+                            .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+                            .unwrap_or_default();
+                        let raw_steps = item.get("max_steps").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
+                        let idx = guard.len();
+                        let spec = sanitize_worker_spec(
+                            SwarmWorkerSpec {
+                                id: raw_id,
+                                name: raw_role.clone(),
+                                role: raw_role,
+                                system_prompt: if raw_prompt.trim().is_empty() {
+                                    "Execute your assigned task accurately and report back to @coordinator.".into()
+                                } else {
+                                    raw_prompt
+                                },
+                                task: raw_task.clone(),
+                                model_path: String::new(),
+                                tools: raw_tools,
+                                max_steps: raw_steps,
+                                use_worktree: None,
+                            },
+                            idx,
+                        );
+                        let wid = spec.id.clone();
+                        if let Some(existing) = guard.iter_mut().find(|w| w.id == wid) {
+                            *existing = spec.clone();
+                        } else if guard.len() < 200 {
+                            guard.push(spec.clone());
+                        }
+                        spawned_ids.push((wid, spec.name, spec.role, raw_task));
+                    }
+                    drop(guard);
+
+                    for (wid, wname, wrole, wtask) in &spawned_ids {
+                        if !mentioned_targets.contains(wid) {
+                            mentioned_targets.push(wid.clone());
+                        }
+                        emit(EngineEvent::SwarmAgentStatus {
+                            run_id: run_id.to_string(),
+                            node_id: node_id.to_string(),
+                            agent_id: wid.clone(),
+                            agent_name: wname.clone(),
+                            role: wrole.clone(),
+                            status: "queued".into(),
+                            summary: if wtask.is_empty() {
+                                "En cola del pool".into()
+                            } else {
+                                wtask.chars().take(80).collect()
+                            },
+                        });
+                    }
+                    let list_preview: Vec<String> = spawned_ids.iter().map(|(id, _, _, _)| format!("@{id}")).collect();
+                    format!("Batch spawned {} workers: {}", spawned_ids.len(), list_preview.join(", "))
+                }
                 "swarm_finish" if is_coordinator => {
                     let summary = args
                         .get("summary")
@@ -735,7 +1008,8 @@ async fn run_single_swarm_agent_turn(
 
     // If the agent finished speaking without calling swarm_post, mirror its final response to the board so peers see it
     if !posted_this_turn && !final_text.is_empty() {
-        let inferred_mentions = extract_mentions(None, &final_text, valid_worker_ids);
+        let valid_ids_now = current_worker_ids();
+        let inferred_mentions = extract_mentions(None, &final_text, &valid_ids_now);
         for m in &inferred_mentions {
             if !mentioned_targets.contains(m) {
                 mentioned_targets.push(m.clone());
@@ -790,7 +1064,28 @@ pub async fn run_swarm_node(
     let board = Arc::new(SwarmBoard::new(workspace, run_id));
     let gpu_semaphore = Arc::new(Semaphore::new(1));
     let git_apply_lock = Arc::new(tokio::sync::Mutex::new(()));
-    let valid_worker_ids: Vec<String> = cfg.workers.iter().map(|w| w.id.clone()).collect();
+    let roster = Arc::new(Mutex::new(cfg.workers.clone()));
+    let allow_spawn = cfg.planning_mode == "auto";
+
+    let hw = detect_hardware_profile();
+    let (hw_slots, hw_note) = compute_hardware_concurrency(&hw, &defaults.model_path, cfg.use_worktrees);
+    let effective_concurrency = if cfg.max_concurrency == 0 {
+        hw_slots
+    } else {
+        cfg.max_concurrency.max(1)
+    };
+
+    emit(EngineEvent::NodeLog {
+        run_id: run_id.to_string(),
+        node_id: node_id.to_string(),
+        node_title: node_title.to_string(),
+        iteration,
+        stream: LogStreamKind::System,
+        text: format!(
+            "Swarm modo={} | Pool={} slots ({})",
+            cfg.planning_mode, effective_concurrency, hw_note
+        ),
+    });
 
     // Emit initial roster statuses
     emit(EngineEvent::SwarmAgentStatus {
@@ -798,9 +1093,9 @@ pub async fn run_swarm_node(
         node_id: node_id.to_string(),
         agent_id: "coordinator".into(),
         agent_name: "Coordinator".into(),
-        role: "Swarm Lead".into(),
+        role: if allow_spawn { "Planner & Lead".into() } else { "Swarm Lead".into() },
         status: "waiting".into(),
-        summary: "Inicializando enjambre".into(),
+        summary: format!("Pool: {effective_concurrency} slots"),
     });
     for w in &cfg.workers {
         emit(EngineEvent::SwarmAgentStatus {
@@ -814,26 +1109,39 @@ pub async fn run_swarm_node(
         });
     }
 
-    let roster_desc = cfg
-        .workers
-        .iter()
-        .map(|w| {
-            format!(
-                "- @{} ({} — {}): tools=[{}]",
-                w.id,
-                w.name,
-                if w.role.is_empty() { "Worker" } else { &w.role },
-                w.tools.join(", ")
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    let roster_desc = if cfg.workers.is_empty() {
+        "(Sin workers fijos aún — eres el Planner: analiza la tarea y créalos dinámicamente con `swarm_spawn_worker` o `swarm_spawn_batch`)".to_string()
+    } else {
+        cfg.workers
+            .iter()
+            .map(|w| {
+                format!(
+                    "- @{} ({} — {}): tools=[{}]",
+                    w.id,
+                    w.name,
+                    if w.role.is_empty() { "Worker" } else { &w.role },
+                    w.tools.join(", ")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let coord_rules = if allow_spawn {
+        format!(
+            "## Capacidad del Hardware\n- {}\n- Pool de ejecución paralela: {} workers simultáneos (si creas 10, 50 o 200 tareas con `swarm_spawn_batch`, Loors las encola y ejecuta automáticamente de {} en {}).\n\n## Reglas de Planificación y Coordinación (Modo Auto)\n1. En la Ronda 1, analiza la complejidad real de la tarea (puedes usar `list_files` / `read_file` si necesitas ver el proyecto) y decide cuántos workers hacen falta.\n2. Usa `swarm_spawn_worker` (para 1–3 especialistas) o `swarm_spawn_batch` (para muchas subtareas independientes en una sola llamada) especificando `id`, `role`, `task`, `system_prompt` y `tools` mínimas.\n3. Opcionalmente publica instrucciones adicionales con `swarm_post(message, mentions)`.\n4. Revisa entregas en la pizarra; cuando todo esté completo y verificado, llama OBLIGATORIAMENTE a `swarm_finish(summary)`.",
+            hw_note, effective_concurrency, effective_concurrency, effective_concurrency
+        )
+    } else {
+        let first_id = cfg.workers.first().map(|s| s.id.as_str()).unwrap_or("all");
+        format!(
+            "## Reglas de Coordinación\n1. En la primera ronda, divide el objetivo y asigna tareas concretas usando `swarm_post` con `mentions` (ej. `mentions: [\"{first_id}\"]` o `[\"all\"]`).\n2. Revisa las respuestas de los workers en la pizarra. Si falta algo o hay errores, vuelve a mencionar al worker correspondiente.\n3. Cuando el objetivo esté cumplido y verificado, llama OBLIGATORIAMENTE a `swarm_finish(summary)` con la síntesis final completa."
+        )
+    };
 
     let coord_system = format!(
-        "{}\n\n## Equipo del Enjambre (usa swarm_post con mentions para asignar)\n{}\n\n## Reglas de Coordinación\n1. En la primera ronda, divide el objetivo y asigna tareas concretas usando `swarm_post` con `mentions` (ej. `mentions: [\"{}\"]` o `[\"all\"]`).\n2. Revisa las respuestas de los workers en la pizarra. Si falta algo o hay errores, vuelve a mencionar al worker correspondiente.\n3. Cuando el objetivo esté cumplido y verificado, llama OBLIGATORIAMENTE a `swarm_finish(summary)` con la síntesis final completa.",
-        cfg.coordinator_prompt,
-        roster_desc,
-        valid_worker_ids.first().map(|s| s.as_str()).unwrap_or("all")
+        "{}\n\n## Equipo Inicial del Enjambre\n{}\n\n{}",
+        cfg.coordinator_prompt, roster_desc, coord_rules
     );
 
     let mut coord_last_seq: u64 = 0;
@@ -861,8 +1169,14 @@ pub async fn run_swarm_node(
                 format!("\n\n## Contexto adicional del arnés\n{extra_context}")
             };
             format!(
-                "## Objetivo del Enjambre\n{}{}\n\nInicia la coordinación ahora: asigna las tareas iniciales a tus workers con `swarm_post`.",
-                cfg.objective, extra
+                "## Objetivo del Enjambre\n{}{}\n\n{}",
+                cfg.objective,
+                extra,
+                if allow_spawn {
+                    "Planifica el equipo necesario según la tarea y el hardware, créalo con `swarm_spawn_worker` o `swarm_spawn_batch` y arranca la ejecución."
+                } else {
+                    "Inicia la coordinación ahora: asigna las tareas iniciales a tus workers con `swarm_post`."
+                }
             )
         } else {
             let delta_text = if delta.is_empty() {
@@ -875,8 +1189,9 @@ pub async fn run_swarm_node(
                     .join("\n")
             };
             format!(
-                "Ronda {round}/{}. Nuevos mensajes en la pizarra:\n{delta_text}\n\nEvalúa el progreso: si ya está completo, llama a `swarm_finish(summary)`; si no, coordina los siguientes pasos con `swarm_post`.",
-                cfg.max_rounds
+                "Ronda {round}/{}. Nuevos mensajes en la pizarra:\n{delta_text}\n\nEvalúa el progreso: si ya está completo, llama a `swarm_finish(summary)`; si no, coordina los siguientes pasos con `swarm_post`{}.",
+                cfg.max_rounds,
+                if allow_spawn { " (o crea nuevos workers si hacen falta)" } else { "" }
             )
         };
 
@@ -887,16 +1202,17 @@ pub async fn run_swarm_node(
             iteration,
             "coordinator",
             "Coordinator",
-            "Swarm Lead",
+            if allow_spawn { "Planner & Lead" } else { "Swarm Lead" },
             true,
+            allow_spawn,
             &coord_system,
             &coord_turn_prompt,
             workspace,
             &defaults.model_path,
             &defaults,
             &["list_files".into(), "read_file".into(), "git_diff".into()],
-            4,
-            &valid_worker_ids,
+            if allow_spawn && round == 1 { 6 } else { 4 },
+            &roster,
             &board,
             &backend,
             &llama,
@@ -916,6 +1232,12 @@ pub async fn run_swarm_node(
             });
         }
 
+        let current_roster: Vec<SwarmWorkerSpec> = roster.lock().unwrap().clone();
+        let valid_worker_ids: Vec<String> = current_roster.iter().map(|w| w.id.clone()).collect();
+        if valid_worker_ids.is_empty() {
+            continue;
+        }
+
         // Determine which workers to wake up this round
         let target_ids: Vec<String> = {
             let mentioned_workers: Vec<String> = coord_mentions
@@ -929,11 +1251,11 @@ pub async fn run_swarm_node(
             }
         };
 
-        let concurrency_sem = Arc::new(Semaphore::new(cfg.max_concurrency.max(1)));
+        let concurrency_sem = Arc::new(Semaphore::new(effective_concurrency.max(1)));
         let mut join_set = JoinSet::new();
 
         for wid in target_ids {
-            let Some(worker) = cfg.workers.iter().find(|w| w.id == wid).cloned() else {
+            let Some(worker) = current_roster.iter().find(|w| w.id == wid).cloned() else {
                 continue;
             };
             let prev_seq = *worker_last_seq.get(&wid).unwrap_or(&0);
@@ -951,7 +1273,7 @@ pub async fn run_swarm_node(
             let ws_orig = workspace.to_string();
             let objective_c = cfg.objective.clone();
             let defaults_c = defaults.clone();
-            let valid_ids_c = valid_worker_ids.clone();
+            let roster_c = roster.clone();
             let board_c = board.clone();
             let backend_c = backend.clone();
             let llama_c = llama.clone();
@@ -963,6 +1285,19 @@ pub async fn run_swarm_node(
             let use_wt = worker.use_worktree.unwrap_or(cfg.use_worktrees);
 
             join_set.spawn(async move {
+                emit_c(EngineEvent::SwarmAgentStatus {
+                    run_id: run_id_c.clone(),
+                    node_id: node_id_c.clone(),
+                    agent_id: worker.id.clone(),
+                    agent_name: worker.name.clone(),
+                    role: worker.role.clone(),
+                    status: "queued".into(),
+                    summary: if worker.task.is_empty() {
+                        "Esperando turno en el pool".into()
+                    } else {
+                        worker.task.chars().take(80).collect()
+                    },
+                });
                 let _conc_permit = conc_sem_c
                     .acquire()
                     .await
@@ -1001,8 +1336,13 @@ pub async fn run_swarm_node(
                     "Eres @{} ({}, rol: {}) en un enjambre coordinado de Loors.\n{}\n\nUsa `swarm_post(message, mentions)` para reportar resultados concretos a `@coordinator` (o a otro compañero si necesitas algo). Sé directo, basado en evidencia y conciso.",
                     worker.id, worker.name, worker.role, worker.system_prompt
                 );
+                let task_block = if worker.task.trim().is_empty() {
+                    String::new()
+                } else {
+                    format!("\n\n## Tu tarea asignada\n{}", worker.task)
+                };
                 let worker_prompt = format!(
-                    "## Objetivo general\n{objective_c}\n\n## Mensajes recientes en la pizarra\n{board_snapshot}\n\nEjecuta tu parte ahora y reporta en la pizarra con `swarm_post`."
+                    "## Objetivo general\n{objective_c}{task_block}\n\n## Mensajes recientes en la pizarra\n{board_snapshot}\n\nEjecuta tu parte ahora y reporta en la pizarra con `swarm_post`."
                 );
 
                 let res = run_single_swarm_agent_turn(
@@ -1014,6 +1354,7 @@ pub async fn run_swarm_node(
                     &worker.name,
                     &worker.role,
                     false,
+                    false,
                     &worker_sys,
                     &worker_prompt,
                     &effective_ws,
@@ -1021,7 +1362,7 @@ pub async fn run_swarm_node(
                     &defaults_c,
                     &worker.tools,
                     worker.max_steps,
-                    &valid_ids_c,
+                    &roster_c,
                     &board_c,
                     &backend_c,
                     &llama_c,
@@ -1165,11 +1506,14 @@ mod tests {
     #[test]
     fn swarm_config_parses_defaults_and_workers() {
         let cfg = parse_swarm_config(&HashMap::new(), "Objetivo".into(), "Coordina".into());
+        assert_eq!(cfg.planning_mode, "auto");
         assert_eq!(cfg.max_rounds, 8);
-        assert_eq!(cfg.workers.len(), 2);
+        assert_eq!(cfg.max_concurrency, 0);
+        assert!(cfg.workers.is_empty());
         assert!(!cfg.use_worktrees);
 
         let mut raw = HashMap::new();
+        raw.insert("planningMode".into(), json!("manual"));
         raw.insert("maxRounds".into(), json!(5));
         raw.insert("useWorktrees".into(), json!(true));
         raw.insert(
@@ -1179,6 +1523,7 @@ mod tests {
             ]),
         );
         let cfg2 = parse_swarm_config(&raw, "Obj".into(), "Coord".into());
+        assert_eq!(cfg2.planning_mode, "manual");
         assert_eq!(cfg2.max_rounds, 5);
         assert!(cfg2.use_worktrees);
         assert_eq!(cfg2.workers.len(), 1);
@@ -1186,15 +1531,37 @@ mod tests {
     }
 
     #[test]
-    fn swarm_tool_definitions_restricts_finish_to_coordinator() {
-        let coord_tools = swarm_tool_definitions(true);
-        let worker_tools = swarm_tool_definitions(false);
-        assert!(coord_tools
-            .iter()
-            .any(|t| t["function"]["name"] == "swarm_finish"));
-        assert!(!worker_tools
-            .iter()
-            .any(|t| t["function"]["name"] == "swarm_finish"));
+    fn swarm_tool_definitions_restricts_finish_and_spawn_to_coordinator() {
+        let coord_auto = swarm_tool_definitions(true, true);
+        let coord_manual = swarm_tool_definitions(true, false);
+        let worker_tools = swarm_tool_definitions(false, false);
+        assert!(coord_auto.iter().any(|t| t["function"]["name"] == "swarm_finish"));
+        assert!(coord_auto.iter().any(|t| t["function"]["name"] == "swarm_spawn_worker"));
+        assert!(coord_auto.iter().any(|t| t["function"]["name"] == "swarm_spawn_batch"));
+        assert!(!coord_manual.iter().any(|t| t["function"]["name"] == "swarm_spawn_worker"));
+        assert!(!worker_tools.iter().any(|t| t["function"]["name"] == "swarm_finish"));
+    }
+
+    #[test]
+    fn hardware_concurrency_scales_for_cloud_vs_local() {
+        let hw = HardwareProfile {
+            os: "windows".into(),
+            arch: "x86_64".into(),
+            cpu_brand: "Ryzen".into(),
+            cpu_cores: 16,
+            total_ram_mb: 32768,
+            gpus: vec![crate::hardware::GpuInfo {
+                name: "RTX 4090".into(),
+                vendor: "NVIDIA".into(),
+                vram_mb: Some(24576),
+            }],
+            recommended_backend: RuntimeBackendKind::Cuda,
+            available_backends: vec![RuntimeBackendKind::Cuda],
+        };
+        let (cloud_slots, _) = compute_hardware_concurrency(&hw, "cloud::openai::gpt-4o", false);
+        let (local_slots, _) = compute_hardware_concurrency(&hw, "C:/models/qwen.gguf", false);
+        assert!(cloud_slots >= 6);
+        assert!(local_slots >= 2 && local_slots <= 4);
     }
 
     #[test]
