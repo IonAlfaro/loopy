@@ -392,7 +392,7 @@ export function ThinkingDisclosure({
 
   return (
     <div className={`codex-think ${isStreaming ? "is-live" : ""}`}>
-      <button type="button" className="codex-think-head" onClick={onToggle}>
+      <button type="button" className="codex-think-head" aria-expanded={open} onClick={onToggle}>
         <span className="codex-think-chevron">
           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </span>
@@ -451,7 +451,16 @@ export function ToolActivityRow({
     <div className={`codex-tool-row status-${call.status}`}>
       <div
         className={`codex-tool-head ${hasBody ? "is-clickable" : ""}`}
+        role={hasBody ? "button" : undefined}
+        tabIndex={hasBody ? 0 : undefined}
+        aria-expanded={hasBody ? open : undefined}
         onClick={() => hasBody && onToggle()}
+        onKeyDown={(e) => {
+          if (hasBody && e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+            e.preventDefault();
+            onToggle();
+          }
+        }}
       >
         <span className="codex-tool-status">
           {isRunning ? (
@@ -487,10 +496,10 @@ export function ToolActivityRow({
               }}
             >
               <Undo2 size={11} />
-              <span>Deshacer</span>
+              <span>{locale === "es" ? "Deshacer" : "Undo"}</span>
             </button>
           )}
-          {call.undone && <span className="undone-pill">Deshecho</span>}
+          {call.undone && <span className="undone-pill">{locale === "es" ? "Deshecho" : "Undone"}</span>}
           {typeof call.durationMs === "number" && !isRunning && (
             <span className="codex-tool-ms tabular-nums">
               {call.durationMs >= 1000
