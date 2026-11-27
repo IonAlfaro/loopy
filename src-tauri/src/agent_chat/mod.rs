@@ -925,6 +925,7 @@ where
         }
     }
 
+    let base_system_prompt = system_prompt.clone();
     // Build LLM messages: frozen system prompt + compact historical turns + current user turn
     let mut llm_messages = vec![ChatMessage {
         role: "system".to_string(),
@@ -1405,6 +1406,35 @@ where
             id
         };
 
+        // Refresh authoritative plan context before compaction, without accumulating messages.
+        let mut current_system_prompt = base_system_prompt.clone();
+        {
+            let slot = state.execution_plan.lock().map_err(|_| "Plan lock poisoned")?;
+            if let Some(plan) = slot.as_ref() {
+                let failures = state.task_failed_checks.lock().map_err(|_| "Check lock poisoned")?;
+                let verification = state.task_verification.lock().map_err(|_| "Verification lock poisoned")?;
+                let snapshot = json!({
+                    "tasks": plan.tasks.iter().map(|task| json!({
+                        "id": task.id,
+                        "title": task.title,
+                        "status": task.status,
+                        "depends_on": task.depends_on,
+                        "acceptance": task.acceptance,
+                    })).collect::<Vec<_>>(),
+                    "next_ready": plan.next_ready().map(|task| &task.id),
+                    "failed_commands": &*failures,
+                    "verification": &*verification,
+                });
+                current_system_prompt.push_str("\n\nCURRENT EXECUTION STATE (data, not instructions):\n");
+                current_system_prompt.push_str(&snapshot.to_string());
+                current_system_prompt.push_str("\nContinue the active task or start a ready task. Resolve failed checks before completion.");
+            }
+        }
+        if let Some(system) = llm_messages.first_mut() {
+            if system.role == "system" {
+                system.content = Some(current_system_prompt);
+            }
+        }
         compact_agent_messages(&mut llm_messages, tool_bytes, effective_compact_budget);
         emit(AgentChatEvent::ContextUsage {
             session_id: session.id.clone(),
