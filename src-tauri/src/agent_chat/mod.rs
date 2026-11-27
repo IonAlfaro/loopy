@@ -303,6 +303,7 @@ impl AgentChatState {
 
 #[derive(Default)]
 struct AgentTurnState {
+    execution_plan: Mutex<Option<ExecutionPlan>>,
     cancel: Arc<AtomicBool>,
     pending_permission: Mutex<Option<oneshot::Sender<PermissionDecision>>>,
     pending_question: Mutex<Option<oneshot::Sender<QuestionDecision>>>,
@@ -1279,6 +1280,7 @@ where
     let mut repeat_count: u32 = 0;
     // A turn is only completed after an explicit non-truncated final response.
     let mut execution = ExecutionState::new(max_steps);
+    let mut plan_reminders = 0usize;
     let mut final_summary = format!("Iteration budget exhausted ({max_steps}); work may be incomplete.");
 
     for _step in 1..=max_steps {
@@ -1479,6 +1481,31 @@ where
                     image_paths: Vec::new(),
                 });
                 continue;
+            }
+            let unfinished = turn.execution_plan.lock().ok().and_then(|slot| {
+                slot.as_ref().filter(|plan| !plan.is_complete()).map(|plan| {
+                    plan.tasks.iter().filter(|task| task.status != PlanTaskStatus::Done)
+                        .map(|task| format!("{}: {}", task.id, task.title))
+                        .collect::<Vec<_>>().join("; ")
+                })
+            });
+            if let Some(remaining) = unfinished {
+                if _step < max_steps && plan_reminders < 3 {
+                    plan_reminders += 1;
+                    llm_messages.push(ChatMessage {
+                        role: "assistant".into(), content: Some(resp.content.clone()),
+                        tool_calls: None, tool_call_id: None, image_paths: Vec::new(),
+                    });
+                    llm_messages.push(ChatMessage {
+                        role: "user".into(),
+                        content: Some(format!("Execution plan is unfinished: {remaining}. Continue the next ready task, verify results, and update set_execution_plan. If blocked, explain the blocker without claiming completion.")),
+                        tool_calls: None, tool_call_id: None, image_paths: Vec::new(),
+                    });
+                    continue;
+                }
+                execution.finish(TurnOutcome::Incomplete);
+                final_summary = format!("Unfinished plan: {remaining}");
+                break;
             }
             if truncated {
                 execution.finish(TurnOutcome::Incomplete);
@@ -2048,6 +2075,10 @@ where
         if let Err(err) = plan.validate() {
             record.status = "error".into();
             return err;
+        }
+        match state.execution_plan.lock() {
+            Ok(mut slot) => *slot = Some(plan.clone()),
+            Err(_) => { record.status = "error".into(); return "Plan lock poisoned.".into(); }
         }
         let items = plan.tasks.iter().map(|task| AgentTodoItem {
             title: task.title.clone(),
