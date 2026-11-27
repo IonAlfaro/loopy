@@ -775,13 +775,23 @@ where
                     summary_tools.join(", ")
                 ));
             }
-            llm_messages.push(ChatMessage {
-                role: "assistant".to_string(),
-                content: Some(txt),
-                tool_calls: None,
-                tool_call_id: None,
-                image_paths: Vec::new(),
-            });
+            // UI iterations are separate messages, but historical assistant turns
+            // must remain compatible with templates requiring alternating roles.
+            if let Some(previous) = llm_messages.last_mut().filter(|m| m.role == "assistant") {
+                let content = previous.content.get_or_insert_with(String::new);
+                if !content.is_empty() && !txt.is_empty() {
+                    content.push_str("\n\n");
+                }
+                content.push_str(&txt);
+            } else {
+                llm_messages.push(ChatMessage {
+                    role: "assistant".to_string(),
+                    content: Some(txt),
+                    tool_calls: None,
+                    tool_call_id: None,
+                    image_paths: Vec::new(),
+                });
+            }
         }
     }
 
