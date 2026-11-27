@@ -109,4 +109,17 @@ export const AgentAssistantMessage = memo(function AgentAssistantMessage({ msg, 
 
                   </div>
                 );
+}, (previous, next) => {
+  // Shared maps change when any tool expands or screenshot arrives.
+  // Only invalidate rows whose own tool entries changed.
+  const { expandedTools: oldTools, savedShots: oldShots, ...oldProps } = previous;
+  const { expandedTools: newTools, savedShots: newShots, ...newProps } = next;
+  for (const key of Object.keys(oldProps) as (keyof typeof oldProps)[]) {
+    if (!Object.is(oldProps[key], newProps[key])) return false;
+  }
+  for (const call of next.msg.toolCalls) {
+    if (oldTools[call.id] !== newTools[call.id]) return false;
+    if (call.screenshotPath && oldShots[call.screenshotPath] !== newShots[call.screenshotPath]) return false;
+  }
+  return true;
 });
