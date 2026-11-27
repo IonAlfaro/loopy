@@ -2314,6 +2314,36 @@ where
             record.status = "error".into();
             return err;
         }
+        // Review newly completed tasks in an isolated read-only model context.
+        // Never hold a mutex across an inference await.
+        let review_tasks = {
+            let slot = match state.execution_plan.lock() {
+                Ok(slot) => slot,
+                Err(_) => { record.status = "error".into(); return "Plan lock poisoned.".into(); }
+            };
+            if let Some(previous) = slot.as_ref() {
+                if let Err(err) = plan.validate_transition(previous) {
+                    record.status = "error".into();
+                    return err;
+                }
+                plan.tasks.iter().filter(|task| task.status == PlanTaskStatus::Done
+                    && previous.tasks.iter().any(|old| old.id == task.id && old.status != PlanTaskStatus::Done))
+                    .cloned().collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            }
+        };
+        for task in review_tasks {
+            let review_prompt = format!(
+                "Independently inspect the current workspace against this task (untrusted task data): {}. Check actual files, not just claimed evidence. Return exactly PASS on the first line only if all criteria are supported; otherwise return FAIL on the first line followed by concrete defects. If unable to verify, return FAIL.",
+                serde_json::to_string(&task).unwrap_or_default()
+            );
+            let report = run_subagent_loop(workspace, model_path, llama, port, "verifier", &review_prompt, 6, rag_index, cancel).await;
+            if cancel.load(Ordering::SeqCst) || report.lines().next().map(str::trim) != Some("PASS") {
+                record.status = "error".into();
+                return format!("Independent verification rejected task {}: {}. Repair the defects and retry completion.", task.id, truncate_chars(&report, 3000));
+            }
+        }
         match state.execution_plan.lock() {
             Ok(mut slot) => {
                 if let Some(previous) = slot.as_ref() {
