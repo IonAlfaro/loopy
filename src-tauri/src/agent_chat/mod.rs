@@ -788,6 +788,19 @@ where
             .to_string()
     };
 
+    if has_workspace {
+        system_prompt.push_str(
+            "\n\nWORKFLOW FOR MULTI-STEP ENGINEERING TASKS:\n\
+             - Inspect relevant files and existing tests before proposing changes.\n\
+             - For nontrivial implementation, create a structured plan with set_execution_plan before editing files.\n\
+             - Start with pending tasks, explicit dependencies and observable acceptance criteria.\n\
+             - Work on one ready task at a time; update its status as work progresses.\n\
+             - Run relevant checks and record actual results before marking a task done.\n\
+             - If checks fail, repair or report a blocker; never invent evidence.\n\
+             - For simple questions or small edits, avoid unnecessary planning overhead."
+        );
+    }
+
     if has_workspace && session.use_rag {
         if let Ok((idx, stats)) = build_or_update_index(&session.workspace, "") {
             let tree = build_knowledge_tree(&idx, None, 2800);
@@ -2077,7 +2090,24 @@ where
             return err;
         }
         match state.execution_plan.lock() {
-            Ok(mut slot) => *slot = Some(plan.clone()),
+            Ok(mut slot) => {
+                if let Some(previous) = slot.as_ref() {
+                    for old in &previous.tasks {
+                        if !plan.tasks.iter().any(|task| task.id == old.id) {
+                            record.status = "error".into();
+                            return format!("Cannot silently remove task {} from the active plan.", old.id);
+                        }
+                    }
+                } else if plan.tasks.iter().any(|task| task.status != PlanTaskStatus::Pending) {
+                    record.status = "error".into();
+                    return "Initial plan must contain only pending tasks.".into();
+                }
+                if plan.tasks.iter().filter(|task| task.status == PlanTaskStatus::InProgress).count() > 1 {
+                    record.status = "error".into();
+                    return "Only one task may be in progress at a time.".into();
+                }
+                *slot = Some(plan.clone());
+            },
             Err(_) => { record.status = "error".into(); return "Plan lock poisoned.".into(); }
         }
         let items = plan.tasks.iter().map(|task| AgentTodoItem {
