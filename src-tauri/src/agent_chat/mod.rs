@@ -512,6 +512,68 @@ fn is_image_attachment(path: &str) -> bool {
         || lower.ends_with(".bmp")
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TurnOutcome { Completed, Incomplete, StepLimit, Cancelled, Error }
+
+impl TurnOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Incomplete => "incomplete",
+            Self::StepLimit => "step_limit",
+            Self::Cancelled => "cancelled",
+            Self::Error => "error",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExecutionPhase { Reasoning, ExecutingTools, Finished(TurnOutcome) }
+
+struct ExecutionState {
+    phase: ExecutionPhase,
+    iterations: usize,
+    budget: usize,
+}
+
+impl ExecutionState {
+    fn new(budget: usize) -> Self {
+        Self { phase: ExecutionPhase::Reasoning, iterations: 0, budget }
+    }
+    fn begin_iteration(&mut self) -> bool {
+        if matches!(self.phase, ExecutionPhase::Finished(_)) { return false; }
+        if self.iterations >= self.budget {
+            self.finish(TurnOutcome::StepLimit);
+            return false;
+        }
+        self.iterations += 1;
+        self.phase = ExecutionPhase::Reasoning;
+        true
+    }
+    fn execute_tools(&mut self) { self.phase = ExecutionPhase::ExecutingTools; }
+    fn finish(&mut self, outcome: TurnOutcome) { self.phase = ExecutionPhase::Finished(outcome); }
+    fn outcome(&self) -> TurnOutcome {
+        match self.phase {
+            ExecutionPhase::Finished(outcome) => outcome,
+            _ => TurnOutcome::StepLimit,
+        }
+    }
+}
+
+#[cfg(test)]
+mod execution_state_tests {
+    use super::*;
+    #[test]
+    fn budget_and_terminal_state() {
+        let mut state = ExecutionState::new(1);
+        assert!(state.begin_iteration());
+        state.execute_tools();
+        assert!(!state.begin_iteration());
+        assert_eq!(state.outcome(), TurnOutcome::StepLimit);
+        assert!(!state.begin_iteration());
+    }
+}
+
 pub async fn run_agent_turn<F>(
     llama: &LlamaCppManager,
     binary_path: String,
@@ -1124,12 +1186,13 @@ where
     let mut last_call_sig = String::new();
     let mut repeat_count: u32 = 0;
     // A turn is only completed after an explicit non-truncated final response.
-    let mut final_status = "step_limit".to_string();
+    let mut execution = ExecutionState::new(max_steps);
     let mut final_summary = format!("Iteration budget exhausted ({max_steps}); work may be incomplete.");
 
     for _step in 1..=max_steps {
+        if !execution.begin_iteration() { break; }
         if cancel.load(Ordering::SeqCst) {
-            final_status = "cancelled".to_string();
+            execution.finish(TurnOutcome::Cancelled);
             final_summary = "Detenido por el usuario.".to_string();
             break;
         }
@@ -1270,12 +1333,12 @@ where
         let resp = match chat_res {
             Ok(r) => r,
             Err(err) if err == "__CANCELLED__" => {
-                final_status = "cancelled".to_string();
+                execution.finish(TurnOutcome::Cancelled);
                 final_summary = "Detenido por el usuario.".to_string();
                 break;
             }
             Err(err) => {
-                final_status = "error".to_string();
+                execution.finish(TurnOutcome::Error);
                 final_summary = err.clone();
                 if let Some(last) = session.messages.last_mut() {
                     if !last.content.is_empty() {
@@ -1326,10 +1389,10 @@ where
                 continue;
             }
             if truncated {
-                final_status = "incomplete".to_string();
+                execution.finish(TurnOutcome::Incomplete);
                 final_summary = "The model did not produce a complete final response.".to_string();
             } else {
-                final_status = "completed".to_string();
+                execution.finish(TurnOutcome::Completed);
                 final_summary.clear();
             }
             break;
@@ -1359,6 +1422,7 @@ where
             repeat_count = 1;
         }
 
+        execution.execute_tools();
         let mut attach_shots: Vec<String> = Vec::new();
 
         for tc in tool_calls {
@@ -1615,11 +1679,11 @@ where
         }
     }
 
-    if cancel.load(Ordering::SeqCst) && final_status == "step_limit" {
-        final_status = "cancelled".to_string();
+    if cancel.load(Ordering::SeqCst) && execution.outcome() == TurnOutcome::StepLimit {
+        execution.finish(TurnOutcome::Cancelled);
         final_summary = "Stopped by the user.".to_string();
     }
-    if final_status == "step_limit" || final_status == "incomplete" {
+    if execution.outcome() == TurnOutcome::StepLimit || execution.outcome() == TurnOutcome::Incomplete {
         if let Some(last) = session.messages.last_mut() {
             last.content.push_str(&format!("\n\n[Agent: {}]", final_summary));
         }
@@ -1635,7 +1699,7 @@ where
 
     emit(AgentChatEvent::TurnFinished {
         session_id: session.id.clone(),
-        status: final_status,
+        status: execution.outcome().as_str().to_string(),
         context_used_chars: used_chars,
         context_max_tokens: context_size,
         summary: final_summary,
