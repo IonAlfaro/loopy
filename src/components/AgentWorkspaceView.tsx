@@ -1,3 +1,4 @@
+import { AgentModelSearch } from "./AgentModelSearch";
 import { AgentModelPickerTrigger } from "./AgentModelPickerTrigger";
 import { AgentComposerActions } from "./AgentComposerActions";
 import { AgentComposerAttachments } from "./AgentComposerAttachments";
@@ -2432,50 +2433,7 @@ export function AgentWorkspaceView() {
 
                     {modelPickerOpen && (
                       <div className="model-popover">
-                        <div className="model-pop-search">
-                          <Search size={13} />
-                          <input
-                            type="text"
-                            autoFocus
-                            placeholder={t("agent.searchModel")}
-                            value={modelPickerQuery}
-                            onChange={(e) => setModelPickerQuery(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Escape") {
-                                e.stopPropagation();
-                                setModelPickerOpen(false);
-                              }
-                            }}
-                          />
-                          {modelPickerQuery && (
-                            <button
-                              type="button"
-                              className="icon-btn"
-                              onClick={() => setModelPickerQuery("")}
-                            >
-                              <X size={11} />
-                            </button>
-                          )}
-                          {hiddenModels.length > 0 && (
-                            <button
-                              type="button"
-                              className={`model-pop-hidden-toggle ${showHiddenModels ? "active" : ""}`}
-                              title={
-                                showHiddenModels
-                                  ? locale === "es"
-                                    ? "Ocultar modelos escondidos"
-                                    : "Hide hidden models"
-                                  : locale === "es"
-                                    ? `Mostrar ${hiddenModels.length} ocultos`
-                                    : `Show ${hiddenModels.length} hidden`
-                              }
-                              onClick={() => setShowHiddenModels((v) => !v)}
-                            >
-                              {showHiddenModels ? <Eye size={11} /> : <EyeOff size={11} />}
-                              <span>{hiddenModels.length}</span>
-                            </button>
-                          )}
-                        </div>
+                        <AgentModelSearch query={modelPickerQuery} onQuery={setModelPickerQuery} hiddenCount={hiddenModels.length} showHidden={showHiddenModels} onToggleHidden={() => setShowHiddenModels(v => !v)} onClose={() => setModelPickerOpen(false)} label={t("agent.searchModel")} locale={locale} />
 
                         <div className="model-pop-list">
                           {(() => {
