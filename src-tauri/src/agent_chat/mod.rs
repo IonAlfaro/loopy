@@ -1123,8 +1123,9 @@ where
 
     let mut last_call_sig = String::new();
     let mut repeat_count: u32 = 0;
-    let mut final_status = "completed".to_string();
-    let mut final_summary = String::new();
+    // A turn is only completed after an explicit non-truncated final response.
+    let mut final_status = "step_limit".to_string();
+    let mut final_summary = format!("Iteration budget exhausted ({max_steps}); work may be incomplete.");
 
     for _step in 1..=max_steps {
         if cancel.load(Ordering::SeqCst) {
@@ -1323,6 +1324,13 @@ where
                     image_paths: Vec::new(),
                 });
                 continue;
+            }
+            if truncated {
+                final_status = "incomplete".to_string();
+                final_summary = "The model did not produce a complete final response.".to_string();
+            } else {
+                final_status = "completed".to_string();
+                final_summary.clear();
             }
             break;
         }
@@ -1604,6 +1612,16 @@ where
                 image_paths: Vec::new(),
             });
             repeat_count = 0;
+        }
+    }
+
+    if cancel.load(Ordering::SeqCst) && final_status == "step_limit" {
+        final_status = "cancelled".to_string();
+        final_summary = "Stopped by the user.".to_string();
+    }
+    if final_status == "step_limit" || final_status == "incomplete" {
+        if let Some(last) = session.messages.last_mut() {
+            last.content.push_str(&format!("\n\n[Agent: {}]", final_summary));
         }
     }
 
