@@ -1006,6 +1006,107 @@ async fn run_single_swarm_agent_turn(
         }
     }
 
+    // Wrap-up turn: if the agent spent all max_steps on exploration tools without posting or speaking,
+    // force one final reporting turn with ONLY swarm coordination tools so the board never stays silent.
+    if !posted_this_turn
+        && final_text.is_empty()
+        && !(is_coordinator && board.finished_summary().is_some())
+        && !cancel.load(Ordering::SeqCst)
+    {
+        emit_status("working", "Sintetizando entrega final...");
+        messages.push(ChatMessage {
+            role: "user".into(),
+            content: Some(if is_coordinator {
+                "Límite de pasos de exploración alcanzado. Publica ya tus asignaciones con `swarm_post(message, mentions)` o cierra con `swarm_finish(summary)`.".into()
+            } else {
+                "Límite de pasos de exploración alcanzado. Resume ahora lo que has encontrado (archivos, líneas, hallazgos o bloqueos) y publícalo con `swarm_post(message, mentions: [\"coordinator\"])`.".into()
+            }),
+            tool_calls: None,
+            tool_call_id: None,
+            image_paths: Vec::new(),
+        });
+        let wrap_req = ChatRequest {
+            messages: messages.clone(),
+            tools: swarm_tool_definitions(is_coordinator, allow_spawn),
+            temperature: defaults.temperature,
+            top_p: defaults.top_p,
+            max_tokens: defaults.max_tokens,
+            min_p: Some(0.05),
+            repeat_penalty: defaults.repeat_penalty,
+            seed: None,
+            reasoning_effort: None,
+        };
+        let wrap_res = if is_cloud {
+            crate::inference::cloud::chat_stream_cloud(model_path, wrap_req, Some(cancel), |_, _| {}).await
+        } else if let Some(port) = local_port {
+            let _permit = gpu_semaphore.acquire().await.map_err(|_| "Semaphore closed".to_string())?;
+            llama.chat_stream(port, wrap_req, Some(cancel), |_, _| {}).await
+        } else {
+            Err("No model port".into())
+        };
+        if let Ok(wresp) = wrap_res {
+            if !wresp.content.trim().is_empty() {
+                final_text = wresp.content.trim().to_string();
+            }
+            let mut wcalls = wresp.tool_calls;
+            if wcalls.is_empty() && wresp.content.contains("<tool_call>") {
+                wcalls = parse_inline_tool_calls(&wresp.content);
+            }
+            for call in wcalls {
+                let args: Value = serde_json::from_str(&call.function.arguments).unwrap_or_else(|_| json!({}));
+                match call.function.name.as_str() {
+                    "swarm_post" => {
+                        let msg = args.get("message").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                        if !msg.is_empty() {
+                            let explicit_mentions: Option<Vec<String>> = args
+                                .get("mentions")
+                                .and_then(|v| v.as_array())
+                                .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect());
+                            let valid_ids_now = current_worker_ids();
+                            let mentions = extract_mentions(explicit_mentions, &msg, &valid_ids_now);
+                            for m in &mentions {
+                                if !mentioned_targets.contains(m) {
+                                    mentioned_targets.push(m.clone());
+                                }
+                            }
+                            let entry = board.post(agent_id, mentions, &msg);
+                            posted_this_turn = true;
+                            emit(EngineEvent::SwarmBoardMessage {
+                                run_id: run_id.to_string(),
+                                node_id: node_id.to_string(),
+                                seq: entry.seq,
+                                from: entry.from.clone(),
+                                mentions: entry.mentions.clone(),
+                                content: entry.content.clone(),
+                                timestamp: entry.timestamp.clone(),
+                            });
+                        }
+                    }
+                    "swarm_finish" if is_coordinator => {
+                        let summary = args.get("summary").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+                        let final_summary = if summary.is_empty() { final_text.clone() } else { summary };
+                        if !final_summary.is_empty() {
+                            board.set_finished(final_summary.clone());
+                            let entry = board.post(agent_id, Vec::new(), &format!("[DONE] {final_summary}"));
+                            posted_this_turn = true;
+                            emit(EngineEvent::SwarmBoardMessage {
+                                run_id: run_id.to_string(),
+                                node_id: node_id.to_string(),
+                                seq: entry.seq,
+                                from: entry.from.clone(),
+                                mentions: Vec::new(),
+                                content: entry.content.clone(),
+                                timestamp: entry.timestamp.clone(),
+                            });
+                            emit_status("done", "Enjambre completado");
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
     // If the agent finished speaking without calling swarm_post, mirror its final response to the board so peers see it
     if !posted_this_turn && !final_text.is_empty() {
         let valid_ids_now = current_worker_ids();
@@ -1211,7 +1312,7 @@ pub async fn run_swarm_node(
             &defaults.model_path,
             &defaults,
             &["list_files".into(), "read_file".into(), "git_diff".into()],
-            if allow_spawn && round == 1 { 6 } else { 4 },
+            6,
             &roster,
             &board,
             &backend,
