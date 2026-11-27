@@ -300,6 +300,7 @@ export function AgentWorkspaceView() {
       if (current()) setGitDiffText(`Error: ${String(err)}`);
     }
   };
+  const [turnOutcomes, setTurnOutcomes] = useState<Record<string, Extract<AgentChatEvent, { type: "turn_finished" }>>>({});
   const [harnessProgress, setHarnessProgress] = useState<Record<string, Extract<AgentChatEvent, { type: "harness_progress" }>>>({});
   const clearHarnessProgress = (id: string) => setHarnessProgress(prev => {
     if (!prev[id]) return prev;
@@ -730,6 +731,7 @@ export function AgentWorkspaceView() {
         return;
       }
       if (p.type === "turn_finished") {
+        setTurnOutcomes(prev => ({ ...prev, [p.session_id]: p }));
         clearHarnessProgress(p.session_id);
         setPermissionReq(null, p.session_id);
         setPendingQuestion(null, p.session_id);
@@ -1241,6 +1243,11 @@ export function AgentWorkspaceView() {
 
     const turnId = crypto.randomUUID();
     clearHarnessProgress(id);
+    setTurnOutcomes(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     activeTurnIds.current.set(id, turnId);
     runningTurns.current.set(id, nextSession);
     setRunningSessionIds([...runningTurns.current.keys()]);
@@ -2385,6 +2392,18 @@ export function AgentWorkspaceView() {
                     value={harnessProgress[session.id].inferences} max={Math.max(1, harnessProgress[session.id].inference_limit)}
                     style={{ width: 80 }} />
                   <span>{harnessProgress[session.id].inferences}/{harnessProgress[session.id].inference_limit}</span>
+                </div>
+              )}
+              {!isCurrentRunning && turnOutcomes[session.id] && (
+                <div role="status" style={{ fontSize: 12, padding: "6px 0", overflowWrap: "anywhere" }}>
+                  <strong>{({
+                    completed: locale === "es" ? "Turno completado" : "Turn completed",
+                    incomplete: locale === "es" ? "Trabajo incompleto" : "Incomplete work",
+                    cancelled: locale === "es" ? "Cancelado" : "Cancelled",
+                    step_limit: locale === "es" ? "Límite de iteraciones" : "Iteration limit",
+                    error: locale === "es" ? "Error de ejecución" : "Execution error",
+                  } as Record<string, string>)[turnOutcomes[session.id].status] ?? turnOutcomes[session.id].status}</strong>
+                  {turnOutcomes[session.id].summary && <div>{turnOutcomes[session.id].summary}</div>}
                 </div>
               )}
               {!isCurrentRunning && (
