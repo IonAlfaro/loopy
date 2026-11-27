@@ -713,8 +713,23 @@ const markdownComponents: Components = {
   img: ({ alt }) => <span>{alt || "[image]"}</span>,
   p: ({ children }) => <p className="md-p">{children}</p>,
 };
-export const MarkdownContent = memo(function MarkdownContent({ text }: { text: string }) {
-  return <div className="md-root"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeHighlight]} components={markdownComponents}>{text}</ReactMarkdown></div>;
+const ParsedMarkdown = memo(function ParsedMarkdown({ text }: { text: string }) {
+  return <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeHighlight]} components={markdownComponents}>{text}</ReactMarkdown>;
+});
+
+export const MarkdownContent = memo(function MarkdownContent({ text, streaming = false }: { text: string; streaming?: boolean }) {
+  const [snapshot, setSnapshot] = useState(text);
+  const latest = useRef(text);
+  latest.current = text;
+  useEffect(() => {
+    if (!streaming) return;
+    const timer = setInterval(() => setSnapshot(latest.current), 120);
+    return () => clearInterval(timer);
+  }, [streaming]);
+  useEffect(() => {
+    if (!streaming) setSnapshot(text);
+  }, [streaming, text]);
+  return <div className="md-root"><ParsedMarkdown text={streaming ? snapshot : text} /></div>;
 });
 
 export function ModelLoadInlineBar({
