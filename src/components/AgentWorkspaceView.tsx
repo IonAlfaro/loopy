@@ -1,3 +1,4 @@
+import { AgentExecutionCheckpoint } from "./AgentExecutionCheckpoint";
 import { AgentPermissionPicker } from "./AgentPermissionPicker";
 import { AgentModelList } from "./AgentModelList";
 import { useAgentModelGroups } from "./useAgentModelGroups";
@@ -2353,6 +2354,11 @@ export function AgentWorkspaceView() {
               />
               <AgentComposerAttachments pendingAttachments={pendingAttachments} pinnedFiles={session.pinnedFiles} stagingFiles={!!stagingFiles} locale={locale} onRemove={att => setPendingAttachments(prev => prev.filter(x => x !== att))} onUnpin={rel => void togglePinFile(rel)} />
 
+              {!isCurrentRunning && (
+                <AgentExecutionCheckpoint checkpoint={session.executionCheckpoint} workspace={session.workspace}
+                  locale={locale} disabled={!session.modelPath || Boolean(input.trim()) || pendingAttachments.length > 0}
+                  onContinue={(command) => void sendTurn(command, false, [])} />
+              )}
               <AgentComposerInput value={input} placeholder={isCurrentRunning ? t("agent.composerQueuePlaceholder") : t("agent.composerPlaceholder")} label={t("agent.composerPlaceholder")} onChange={setInput} onFiles={(files) => void stageExternalFiles(files)} onSend={() => void sendTurn(composerPrompt())} />
 
               <div className="composer-bar">
