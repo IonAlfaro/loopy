@@ -1982,7 +1982,8 @@ where
                         let mut needs_user_approval = true;
                         let mut summary = format!("Ejecutar {}", tc.function.name);
 
-                        if session.permission_mode == PermissionMode::AutoReview && state.reserve_inference() {
+                        if session.permission_mode == PermissionMode::AutoReview
+                            && !cancel.load(Ordering::SeqCst) && state.reserve_inference() {
                             let (is_safe, reason) = llm_check_tool_safety(
                                 llama,
                                 port,
@@ -2004,7 +2005,17 @@ where
                             }
                         }
 
-                        if !needs_user_approval {
+                        if session.permission_mode == PermissionMode::AutoReview
+                            && needs_user_approval
+                            && state.inference_count.load(Ordering::SeqCst) >= state.budget.total_inferences {
+                            summary = format!("{} (automatic review budget exhausted; explicit approval required)", summary);
+                        }
+
+                        if cancel.load(Ordering::SeqCst) {
+                            denied = true;
+                            record.status = "cancelled".into();
+                            tool_output = "Cancelled before tool execution.".into();
+                        } else if !needs_user_approval {
                             tool_output = dispatch_agent_tool(
                                 state,
                                 &call_id,
