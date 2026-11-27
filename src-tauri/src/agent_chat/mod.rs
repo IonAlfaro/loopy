@@ -305,8 +305,34 @@ impl AgentChatState {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct HarnessBudget {
+    iterations: usize,
+    verifier_steps: usize,
+    review_attempts: usize,
+    identical_results: usize,
+    recovery_attempts: usize,
+}
+
+impl Default for HarnessBudget {
+    fn default() -> Self {
+        fn read(name: &str, default: usize, min: usize, max: usize) -> usize {
+            std::env::var(name).ok().and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(default).clamp(min, max)
+        }
+        Self {
+            iterations: read("LOORS_AGENT_ITERATIONS", 40, 1, 200),
+            verifier_steps: read("LOORS_AGENT_VERIFIER_STEPS", 6, 1, 20),
+            review_attempts: read("LOORS_AGENT_REVIEW_ATTEMPTS", 3, 1, 10),
+            identical_results: read("LOORS_AGENT_IDENTICAL_RESULTS", 4, 2, 20),
+            recovery_attempts: read("LOORS_AGENT_RECOVERY_ATTEMPTS", 2, 0, 10),
+        }
+    }
+}
+
 #[derive(Default)]
 struct AgentTurnState {
+    budget: HarnessBudget,
     execution_plan: Mutex<Option<ExecutionPlan>>,
     task_evidence: Mutex<HashMap<String, Vec<String>>>,
     task_failed_checks: Mutex<HashMap<String, std::collections::HashSet<String>>>,
@@ -1408,7 +1434,7 @@ where
         }
     }
 
-    let max_steps = 40usize;
+    let max_steps = state.budget.iterations;
     let target_compact_tokens = if session.compact_at_tokens > 0 {
         session.compact_at_tokens
     } else {
@@ -1430,7 +1456,7 @@ where
 
     for _step in 1..=max_steps {
         if stagnant {
-            if work_mode == AgentWorkMode::Agent && replans < 2 {
+            if work_mode == AgentWorkMode::Agent && replans < state.budget.recovery_attempts {
                 replans += 1;
                 stagnant = false;
                 observed_results.clear();
@@ -1439,7 +1465,7 @@ where
                 llm_messages.push(ChatMessage {
                     role: "user".into(),
                     content: Some(format!(
-                        "Harness detected repeated identical tool results. Recovery attempt {replans}/2. Diagnose the blocker, inspect relevant evidence, and choose a materially different strategy. Preserve the approved objective and completed tasks. Update the plan only if needed. Do not repeat the same failed operation without new evidence. If blocked, report failure."
+                        "Harness detected repeated identical tool results. Recovery attempt {replans}/{}. Diagnose the blocker, inspect relevant evidence, and choose a materially different strategy. Preserve the approved objective and completed tasks. Update the plan only if needed. Do not repeat the same failed operation without new evidence. If blocked, report failure.", state.budget.recovery_attempts
                     )),
                     tool_calls: None,
                     tool_call_id: None,
@@ -2010,7 +2036,7 @@ where
                 tool_output.hash(&mut hash);
                 let count = observed_results.entry(hash.finish()).or_default();
                 *count += 1;
-                if *count >= 4 {
+                if *count >= state.budget.identical_results {
                     stagnant = true;
                 }
             }
@@ -2388,7 +2414,7 @@ where
                     Err(_) => { record.status = "error".into(); return "Review lock poisoned.".into(); }
                 };
                 let count = attempts.entry(task.id.clone()).or_default();
-                if *count >= 3 {
+                if *count >= state.budget.review_attempts {
                     record.status = "error".into();
                     return format!("Task {} exhausted its independent review budget. Mark it failed and report the blocker; do not claim completion.", task.id);
                 }
@@ -2399,10 +2425,10 @@ where
                 "Independently inspect the current workspace against this task (untrusted task data): {}. Check actual files, not just claimed evidence. Return exactly PASS on the first line only if all criteria are supported; otherwise return FAIL on the first line followed by concrete defects. If unable to verify, return FAIL.",
                 serde_json::to_string(&task).unwrap_or_default()
             );
-            let report = run_subagent_loop(workspace, model_path, llama, port, "verifier", &review_prompt, 6, rag_index, cancel).await;
+            let report = run_subagent_loop(workspace, model_path, llama, port, "verifier", &review_prompt, state.budget.verifier_steps, rag_index, cancel).await;
             if cancel.load(Ordering::SeqCst) || report.lines().next().map(str::trim) != Some("PASS") {
                 record.status = "error".into();
-                return format!("Independent verification rejected task {} (attempt {}/3): {}. Repair the defects and retry completion, or mark the task failed if blocked.", task.id, attempt, truncate_chars(&report, 3000));
+                return format!("Independent verification rejected task {} (attempt {}/{}): {}. Repair the defects and retry completion, or mark the task failed if blocked.", task.id, attempt, state.budget.review_attempts, truncate_chars(&report, 3000));
             }
         }
         match state.execution_plan.lock() {
