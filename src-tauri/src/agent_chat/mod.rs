@@ -2458,6 +2458,23 @@ async fn run_subagent_loop(
     }
 }
 
+fn command_exit_code(output: &str) -> Option<i32> {
+    output.lines().next()?.strip_prefix("exit_code: ")?.trim().parse().ok()
+}
+
+#[cfg(test)]
+mod command_evidence_tests {
+    use super::command_exit_code;
+
+    #[test]
+    fn command_result_uses_only_header() {
+        assert_eq!(command_exit_code("exit_code: 0\nstdout:\nok"), Some(0));
+        assert_eq!(command_exit_code("exit_code: 1\nstdout:\nexit_code: 0"), Some(1));
+        assert_eq!(command_exit_code("spawn failed\nexit_code: 0"), None);
+        assert_eq!(command_exit_code("exit_code: -1"), Some(-1));
+    }
+}
+
 async fn run_single_tool(
     workspace: &str,
     name: &str,
@@ -2503,6 +2520,13 @@ async fn run_single_tool(
     }
 
     let out = execute_tool_cancellable(workspace, name, parsed_args, Some(cancel)).await;
+
+    // The command runner returns a trusted exit-code header before stdout/stderr.
+    // Missing headers (spawn errors, cancellation) are not successful checks.
+    if name == "run_cmd" && command_exit_code(&out) != Some(0) {
+        record.status = "error".into();
+    }
+
 
     if is_file_mutation {
         if let (Some(abs), Some(rel)) = (captured_abs, record.file_path.as_deref()) {
