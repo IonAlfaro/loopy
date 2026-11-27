@@ -1420,6 +1420,7 @@ where
 
     let mut observed_results: HashMap<u64, usize> = HashMap::new();
     let mut stagnant = false;
+    let mut replans = 0usize;
     let mut last_call_sig = String::new();
     let mut repeat_count: u32 = 0;
     // A turn is only completed after an explicit non-truncated final response.
@@ -1429,9 +1430,26 @@ where
 
     for _step in 1..=max_steps {
         if stagnant {
-            execution.finish(TurnOutcome::Incomplete);
-            final_summary = "Repeated identical tool results without apparent progress. Execution paused; inspect the blocker and resume with a different strategy.".into();
-            break;
+            if work_mode == AgentWorkMode::Agent && replans < 2 {
+                replans += 1;
+                stagnant = false;
+                observed_results.clear();
+                last_call_sig.clear();
+                repeat_count = 0;
+                llm_messages.push(ChatMessage {
+                    role: "user".into(),
+                    content: Some(format!(
+                        "Harness detected repeated identical tool results. Recovery attempt {replans}/2. Diagnose the blocker, inspect relevant evidence, and choose a materially different strategy. Preserve the approved objective and completed tasks. Update the plan only if needed. Do not repeat the same failed operation without new evidence. If blocked, report failure."
+                    )),
+                    tool_calls: None,
+                    tool_call_id: None,
+                    image_paths: Vec::new(),
+                });
+            } else {
+                execution.finish(TurnOutcome::Incomplete);
+                final_summary = "Repeated identical tool results after recovery budget exhausted. Execution paused; inspect the blocker before resuming.".into();
+                break;
+            }
         }
         if !execution.begin_iteration() { break; }
         if cancel.load(Ordering::SeqCst) {
