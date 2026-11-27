@@ -725,6 +725,80 @@ impl ExecutionState {
 }
 
 #[cfg(test)]
+mod harness_plan_tests {
+    use super::*;
+
+    fn task(id: &str, deps: &[&str]) -> PlanTask {
+        PlanTask {
+            id: id.into(), title: id.into(),
+            depends_on: deps.iter().map(|dep| (*dep).into()).collect(),
+            acceptance: vec!["Verified result".into()],
+            status: PlanTaskStatus::Pending, evidence: vec![],
+        }
+    }
+
+    #[test]
+    fn dependencies_control_execution_order() {
+        let mut plan = ExecutionPlan { tasks: vec![task("b", &["a"]), task("a", &[])] };
+        assert!(plan.validate().is_ok());
+        assert_eq!(plan.next_ready().unwrap().id, "a");
+        plan.tasks[0].status = PlanTaskStatus::InProgress;
+        assert!(plan.validate().is_err());
+        plan.tasks[0].status = PlanTaskStatus::Pending;
+        plan.tasks[1].status = PlanTaskStatus::Done;
+        plan.tasks[1].evidence.push("check passed".into());
+        assert!(plan.validate().is_ok());
+        assert_eq!(plan.next_ready().unwrap().id, "b");
+        assert!(!plan.is_complete());
+    }
+
+    #[test]
+    fn rejects_invalid_graphs() {
+        for tasks in [
+            vec![],
+            vec![task("a", &[]), task("a", &[])],
+            vec![task("a", &["missing"])],
+            vec![task("a", &["b"]), task("b", &["a"])],
+            vec![task("a", &["a"])],
+        ] {
+            assert!(ExecutionPlan { tasks }.validate().is_err());
+        }
+    }
+
+    #[test]
+    fn rejects_skipped_transitions_and_changed_completed_tasks() {
+        let initial = ExecutionPlan { tasks: vec![task("a", &[])] };
+        let mut next = initial.clone();
+        next.tasks[0].status = PlanTaskStatus::Done;
+        assert!(next.validate().is_err());
+        next.tasks[0].evidence.push("check passed".into());
+        assert!(next.validate_transition(&initial).is_err());
+        let mut active = initial.clone();
+        active.tasks[0].status = PlanTaskStatus::InProgress;
+        assert!(active.validate_transition(&initial).is_ok());
+        assert!(next.validate_transition(&active).is_ok());
+        assert!(next.is_complete());
+        let mut changed = next.clone();
+        changed.tasks[0].acceptance.clear();
+        assert!(changed.validate_transition(&next).is_err());
+    }
+
+    #[test]
+    fn modes_enforce_tool_boundaries() {
+        assert!(!AgentWorkMode::Chat.allows_tool("read_file"));
+        assert!(AgentWorkMode::Plan.allows_tool("read_file"));
+        assert!(AgentWorkMode::Plan.allows_tool("set_execution_plan"));
+        for name in ["write_file", "run_cmd", "browser_action", "mcp__example"] {
+            assert!(!AgentWorkMode::Plan.allows_tool(name));
+            assert!(AgentWorkMode::Agent.allows_tool(name));
+        }
+        assert!(AgentWorkMode::from_prompt("/plan feature").0 == AgentWorkMode::Plan);
+        assert_eq!(AgentWorkMode::from_prompt("/plan feature").1, "feature");
+        assert!(AgentWorkMode::from_prompt("/planet").0 == AgentWorkMode::Agent);
+    }
+}
+
+#[cfg(test)]
 mod execution_state_tests {
     use super::*;
     #[test]
