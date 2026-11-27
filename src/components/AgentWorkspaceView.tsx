@@ -1980,7 +1980,7 @@ export function AgentWorkspaceView() {
                 </div>
               )}
 
-              <AgentHistory messages={session.messages} running={isCurrentRunning} locale={locale} modelPath={session.modelPath} expandedThinking={expandedThinking} copiedId={copiedId} modelLoadProgress={modelLoadProgress} expandedTools={expandedTools} savedShots={savedShots} onRetry={retryUserMessage} onCopy={assistantCopy} onToggleThinking={assistantToggleThinking} onToggleTool={assistantToggleTool} onUndo={assistantUndo} />
+              <AgentHistory key={session.id} messages={session.messages} running={isCurrentRunning} locale={locale} modelPath={session.modelPath} expandedThinking={expandedThinking} copiedId={copiedId} modelLoadProgress={modelLoadProgress} expandedTools={expandedTools} savedShots={savedShots} onRetry={retryUserMessage} onCopy={assistantCopy} onToggleThinking={assistantToggleThinking} onToggleTool={assistantToggleTool} onUndo={assistantUndo} />
 
               {/* Interactive Permission Approval Card */}
               {permissionReq && (
