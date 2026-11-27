@@ -1,14 +1,3 @@
-function loadAgentAuxMap<T>(key: string): Map<string, T> {
-  try {
-    const raw = localStorage.getItem(key);
-    return new Map<string, T>(raw ? JSON.parse(raw) : []);
-  } catch { return new Map(); }
-}
-
-function saveAgentAuxMap<T>(key: string, map: Map<string, T>) {
-  try { localStorage.setItem(key, JSON.stringify([...map])); } catch { /* Storage unavailable or full. */ }
-}
-
 import { AgentPermissionPicker } from "./AgentPermissionPicker";
 import { AgentModelList } from "./AgentModelList";
 import { useAgentModelGroups } from "./useAgentModelGroups";
@@ -20,7 +9,7 @@ import { AgentComposerInput } from "./AgentComposerInput";
 import { AgentHistory } from "./AgentHistory";
 import { AgentDiff } from "./AgentDiff";
 import { PanelResizer } from "./PanelResizer";
-﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   Boxes,
@@ -66,7 +55,6 @@ import {
 } from "./ChatActivity";
 import {
   isCloudModelPath,
-  parseCloudModelPath,
   parseGgufMetadata,
   type AgentArtifactPreview,
   type AgentChatEvent,
@@ -85,6 +73,17 @@ import {
   type RuntimeStatusSnapshot,
   type SkillSummary,
 } from "../types/graph";
+
+function loadAgentAuxMap<T>(key: string): Map<string, T> {
+  try {
+    const raw = localStorage.getItem(key);
+    return new Map<string, T>(raw ? JSON.parse(raw) : []);
+  } catch { return new Map(); }
+}
+
+function saveAgentAuxMap<T>(key: string, map: Map<string, T>) {
+  try { localStorage.setItem(key, JSON.stringify([...map])); } catch { /* Storage unavailable or full. */ }
+}
 
 function makeSessionId(): string {
   return `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -198,8 +197,10 @@ export function AgentWorkspaceView() {
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
   const [permMenuOpen, setPermMenuOpen] = useState(false);
   const [todoItems, setTodoItems] = useState<AgentTodoItem[]>([]);
-  const todosBySession = useRef(loadAgentAuxMap<AgentTodoItem[]>("loors_agent_todos_v1"));
-  const artifactsBySession = useRef(loadAgentAuxMap<AgentArtifactPreview>("loors_agent_artifacts_v1"));
+  const [initialTodos] = useState(() => loadAgentAuxMap<AgentTodoItem[]>("loors_agent_todos_v1"));
+  const todosBySession = useRef(initialTodos);
+  const [initialArtifacts] = useState(() => loadAgentAuxMap<AgentArtifactPreview>("loors_agent_artifacts_v1"));
+  const artifactsBySession = useRef(initialArtifacts);
   const [todoCollapsed, setTodoCollapsed] = useState(false);
   const [questions, setQuestions] = useState<Record<string, PendingAgentQuestion>>({});
   const setPendingQuestion = (question: PendingAgentQuestion | null, id = activeSessionIdRef.current) => {
