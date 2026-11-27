@@ -405,6 +405,13 @@ export type AgentChatEvent = { turn_id?: string | null } & (
       token: string;
     }
   | {
+      type: "harness_progress";
+      session_id: string;
+      phase: string;
+      inferences: number;
+      inference_limit: number;
+    }
+  | {
       type: "todo_updated";
       session_id: string;
       items: AgentTodoItem[];
