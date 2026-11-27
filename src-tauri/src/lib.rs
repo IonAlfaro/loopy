@@ -37,8 +37,9 @@ use mcp::{
     McpServerConfig, McpToolInfo, SavedMcpServer,
 };
 use models::{
-    download_hf_model as do_download_hf_model, list_hf_gguf_files as do_list_hf_gguf_files,
-    search_hf_models as do_search_hf_models, HfGgufFile, HfModelRepo,
+    download_hf_model_cancellable as do_download_hf_model_cancellable,
+    list_hf_gguf_files as do_list_hf_gguf_files, search_hf_models as do_search_hf_models,
+    HfGgufFile, HfModelRepo, ModelDownloadEvent, ModelDownloadManager,
 };
 use skills::{discover_skills, SkillSummary};
 use runtime::{
@@ -187,13 +188,37 @@ async fn list_hf_gguf_files(repo_id: String) -> Result<Vec<HfGgufFile>, String> 
 #[tauri::command]
 async fn download_hf_model(
     app: AppHandle,
+    downloads: State<'_, ModelDownloadManager>,
     repo_id: String,
     filename: String,
 ) -> Result<String, String> {
-    do_download_hf_model(&repo_id, &filename, move |progress| {
-        let _ = app.emit("loors://model-download", progress);
+    let cancel = downloads.register(&repo_id, &filename)?;
+    let app_for_cb = app.clone();
+    let res = do_download_hf_model_cancellable(&repo_id, &filename, cancel, move |progress| {
+        if let Some(mgr) = app_for_cb.try_state::<ModelDownloadManager>() {
+            mgr.update(&progress);
+        }
+        let _ = app_for_cb.emit("loors://model-download", progress);
     })
-    .await
+    .await;
+    downloads.finish(&repo_id, &filename);
+    res
+}
+
+#[tauri::command]
+fn cancel_model_download(
+    downloads: State<'_, ModelDownloadManager>,
+    repo_id: String,
+    filename: String,
+) -> bool {
+    downloads.cancel(&repo_id, &filename)
+}
+
+#[tauri::command]
+fn list_active_model_downloads(
+    downloads: State<'_, ModelDownloadManager>,
+) -> Vec<ModelDownloadEvent> {
+    downloads.list_active()
 }
 
 #[tauri::command]
@@ -1112,6 +1137,7 @@ pub fn run() {
         .manage(AgentChatState::default())
         .manage(ArchitectState::default())
         .manage(TriggerManager::default())
+        .manage(ModelDownloadManager::default())
         .setup(|app| {
             let handle = app.handle().clone();
             let handle_cast = app.handle().clone();
@@ -1140,6 +1166,8 @@ pub fn run() {
             search_hf_models,
             list_hf_gguf_files,
             download_hf_model,
+            cancel_model_download,
+            list_active_model_downloads,
             list_saved_workflows,
             save_workflow_to_library,
             load_workflow_from_library,

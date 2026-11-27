@@ -17,11 +17,14 @@ import {
   type LoorsFlowNode,
   type LoorsNodeKind,
   type LoorsWorkflowFile,
+  type ModelDownloadEvent,
+  type ModelDownloadItem,
   type ModelLoadProgressEvent,
   type RunLogEntry,
   type RunStatus,
   type RuntimeBackendKind,
 } from "../types/graph";
+import { invoke } from "../lib/bridge";
 import { HARNESS_TEMPLATES } from "../templates/harnesses";
 
 const INITIAL_NODES: LoorsFlowNode[] = [
@@ -207,6 +210,8 @@ interface GraphStoreState {
   loadedModelName: string | null;
   loadedContextSize: number | null;
   modelLoadProgress: ModelLoadProgressEvent | null;
+  modelDownloads: Record<string, ModelDownloadItem>;
+  downloadsDockOpen: boolean;
   logs: RunLogEntry[];
   consoleOpen: boolean;
   pendingGate: HumanGatePrompt | null;
@@ -229,6 +234,12 @@ interface GraphStoreState {
   setRightPanelOpen: (open: boolean) => void;
   setActiveModelPath: (modelPath: string) => void;
   setModelLoadProgress: (ev: ModelLoadProgressEvent | null) => void;
+  setDownloadsDockOpen: (open: boolean) => void;
+  upsertModelDownload: (ev: ModelDownloadEvent) => void;
+  startModelDownload: (repoId: string, filename: string, totalBytesHint?: number | null) => Promise<string | null>;
+  cancelModelDownload: (repoId: string, filename: string) => Promise<void>;
+  dismissModelDownload: (key: string) => void;
+  clearFinishedDownloads: () => void;
   setRightPanelTab: (tab: "inspector" | "architect") => void;
   setDimResourceEdges: (dim: boolean) => void;
   openTuningModal: (modelPath: string | null) => void;
@@ -490,6 +501,8 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   loadedModelName: null,
   loadedContextSize: null,
   modelLoadProgress: null,
+  modelDownloads: {},
+  downloadsDockOpen: false,
   logs: [],
   consoleOpen: false,
   pendingGate: null,
@@ -708,6 +721,138 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   setLeftPanelOpen: (leftPanelOpen) => set({ leftPanelOpen }),
   setRightPanelOpen: (rightPanelOpen) => set({ rightPanelOpen }),
   setModelLoadProgress: (modelLoadProgress) => set({ modelLoadProgress }),
+  setDownloadsDockOpen: (downloadsDockOpen) => set({ downloadsDockOpen }),
+  upsertModelDownload: (ev) => {
+    const key = `${ev.repo_id}::${ev.filename}`;
+    set((s) => {
+      const prev = s.modelDownloads[key];
+      return {
+        modelDownloads: {
+          ...s.modelDownloads,
+          [key]: {
+            ...ev,
+            total_bytes: ev.total_bytes ?? prev?.total_bytes ?? null,
+            saved_path: ev.saved_path ?? prev?.saved_path ?? null,
+            key,
+            updatedAt: Date.now(),
+          },
+        },
+      };
+    });
+  },
+  startModelDownload: async (repoId, filename, totalBytesHint = null) => {
+    const key = `${repoId}::${filename}`;
+    const existing = get().modelDownloads[key];
+    if (existing && (existing.stage === "starting" || existing.stage === "downloading")) {
+      return null;
+    }
+    set((s) => ({
+      downloadsDockOpen: true,
+      modelDownloads: {
+        ...s.modelDownloads,
+        [key]: {
+          key,
+          repo_id: repoId,
+          filename,
+          downloaded_bytes: 0,
+          total_bytes: totalBytesHint ?? null,
+          percent: 0,
+          speed_bps: null,
+          saved_path: null,
+          stage: "starting",
+          message: `Iniciando descarga: ${filename}...`,
+          updatedAt: Date.now(),
+        },
+      },
+    }));
+    try {
+      const savedPath = await invoke<string>("download_hf_model", {
+        repoId,
+        filename,
+      });
+      set((s) => {
+        const cur = s.modelDownloads[key];
+        return {
+          modelDownloads: {
+            ...s.modelDownloads,
+            [key]: {
+              ...(cur ?? {
+                key,
+                repo_id: repoId,
+                filename,
+                downloaded_bytes: totalBytesHint ?? 0,
+                total_bytes: totalBytesHint ?? null,
+              }),
+              percent: 100,
+              speed_bps: null,
+              saved_path: savedPath,
+              stage: "done",
+              message: `Descargado: ${filename}`,
+              updatedAt: Date.now(),
+            },
+          },
+        };
+      });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("loors:models-changed"));
+      }
+      if (!get().activeModelPath) {
+        get().setActiveModelPath(savedPath);
+      }
+      return savedPath;
+    } catch (err) {
+      const msg = typeof err === "string" ? err : String(err);
+      const isCancelled = msg.toLowerCase().includes("cancel");
+      set((s) => {
+        const cur = s.modelDownloads[key];
+        return {
+          modelDownloads: {
+            ...s.modelDownloads,
+            [key]: {
+              ...(cur ?? {
+                key,
+                repo_id: repoId,
+                filename,
+                downloaded_bytes: 0,
+                total_bytes: totalBytesHint ?? null,
+                percent: null,
+              }),
+              speed_bps: null,
+              stage: isCancelled ? "cancelled" : "error",
+              message: msg,
+              updatedAt: Date.now(),
+            },
+          },
+        };
+      });
+      return null;
+    }
+  },
+  cancelModelDownload: async (repoId, filename) => {
+    try {
+      await invoke<boolean>("cancel_model_download", { repoId, filename });
+    } catch {
+      // ignore
+    }
+  },
+  dismissModelDownload: (key) => {
+    set((s) => {
+      const next = { ...s.modelDownloads };
+      delete next[key];
+      return { modelDownloads: next };
+    });
+  },
+  clearFinishedDownloads: () => {
+    set((s) => {
+      const next: Record<string, ModelDownloadItem> = {};
+      for (const [k, v] of Object.entries(s.modelDownloads)) {
+        if (v.stage === "starting" || v.stage === "downloading") {
+          next[k] = v;
+        }
+      }
+      return { modelDownloads: next };
+    });
+  },
   setActiveModelPath: (modelPath) => {
     if (typeof window !== "undefined") {
       window.localStorage.setItem("loors_active_model_path", modelPath);

@@ -23,7 +23,6 @@ import {
   X,
 } from "lucide-react";
 import { invoke } from "../lib/bridge";
-import { listen } from "../lib/bridge";
 import { useGraphStore } from "../store/useGraphStore";
 import { useI18n } from "../i18n";
 import {
@@ -44,16 +43,6 @@ interface HfGgufFile {
   filename: string;
   size_bytes: number;
   download_url: string;
-}
-
-interface ModelDownloadEvent {
-  repo_id: string;
-  filename: string;
-  downloaded_bytes: number;
-  total_bytes: number | null;
-  percent: number | null;
-  stage: string;
-  message: string;
 }
 
 interface HardwareSnapshot {
@@ -246,6 +235,9 @@ export function ModelsModal({
   const activeModelPath = useGraphStore((s) => s.activeModelPath);
   const setActiveModelPath = useGraphStore((s) => s.setActiveModelPath);
   const openTuningModal = useGraphStore((s) => s.openTuningModal);
+  const activeDownloads = useGraphStore((s) => s.modelDownloads);
+  const startModelDownload = useGraphStore((s) => s.startModelDownload);
+  const cancelModelDownload = useGraphStore((s) => s.cancelModelDownload);
 
   const [hubTab, setHubTab] = useState<"local" | "discover" | "cloud">(
     initialTab ?? "local"
@@ -273,9 +265,6 @@ export function ModelsModal({
   const [quantFilter, setQuantFilter] = useState("");
   const [searching, setSearching] = useState(false);
   const [loadingFiles, setLoadingFiles] = useState(false);
-  const [activeDownloads, setActiveDownloads] = useState<
-    Record<string, ModelDownloadEvent>
-  >({});
   const [error, setError] = useState<string | null>(null);
 
   const graphModelPath = String(
@@ -366,29 +355,11 @@ export function ModelsModal({
       .then(setHardware)
       .catch(() => setHardware(null));
 
-    let cancelled = false;
-    let unlisten: (() => void) | undefined;
-    listen<ModelDownloadEvent>("loors://model-download", (ev) => {
-      if (cancelled) return;
-      const p = ev.payload;
-      const key = `${p.repo_id}::${p.filename}`;
-      setActiveDownloads((prev) => ({
-        ...prev,
-        [key]: p,
-      }));
-    })
-      .then((fn) => {
-        unlisten = fn;
-      })
-      .catch(() => {});
-
     const onModelsChanged = () => refreshLocal();
     window.addEventListener("loors:models-changed", onModelsChanged);
 
     return () => {
-      cancelled = true;
       window.removeEventListener("loors:models-changed", onModelsChanged);
-      if (unlisten) unlisten();
     };
   }, [open, initialTab, refreshLocal, refreshCloudProviders]);
 
@@ -595,45 +566,18 @@ export function ModelsModal({
     }
   };
 
-  const handleDownload = async (repoId: string, filename: string) => {
-    const key = `${repoId}::${filename}`;
+  const handleDownload = (repoId: string, filename: string, sizeBytes?: number) => {
     setError(null);
-    setActiveDownloads((prev) => ({
-      ...prev,
-      [key]: {
-        repo_id: repoId,
-        filename,
-        downloaded_bytes: 0,
-        total_bytes: null,
-        percent: 0,
-        stage: "starting",
-        message: `Starting download: ${filename}...`,
-      },
-    }));
-    try {
-      const savedPath = await invoke<string>("download_hf_model", {
-        repoId,
-        filename,
-      });
-      refreshLocal();
-      if (!effectiveActivePath) {
-        selectModel(savedPath);
-      } else {
-        onNotice?.(`Downloaded: ${filename}`);
+    void startModelDownload(repoId, filename, sizeBytes ?? null).then((savedPath) => {
+      if (savedPath) {
+        refreshLocal();
+        onNotice?.(
+          locale === "es"
+            ? `Modelo descargado: ${filename}`
+            : `Downloaded: ${filename}`
+        );
       }
-    } catch (err) {
-      setError(
-        typeof err === "string"
-          ? `${filename}: ${err}`
-          : `Error downloading ${filename}.`
-      );
-    } finally {
-      setActiveDownloads((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-    }
+    });
   };
 
   const findLocalMatch = (filename: string): LocalModelFile | undefined => {
@@ -1470,8 +1414,16 @@ export function ModelsModal({
                         const fit = getHardwareFit(meta.sizeGb, budgetGb, locale);
                         const localMatch = findLocalMatch(f.filename);
                         const dlKey = `${selectedRepo}::${f.filename}`;
-                        const isThisDownloading = Boolean(activeDownloads[dlKey]);
-                        const thisPct = activeDownloads[dlKey]?.percent;
+                        const dlItem = activeDownloads[dlKey];
+                        const isThisDownloading =
+                          dlItem?.stage === "starting" || dlItem?.stage === "downloading";
+                        const thisPct = dlItem?.percent;
+                        const thisSpeed =
+                          dlItem?.speed_bps && dlItem.speed_bps > 0
+                            ? dlItem.speed_bps >= 1024 * 1024
+                              ? `${(dlItem.speed_bps / (1024 * 1024)).toFixed(1)} MB/s`
+                              : `${Math.round(dlItem.speed_bps / 1024)} KB/s`
+                            : null;
                         return (
                           <div key={f.filename} className="quant-row">
                             <div className="quant-row-main">
@@ -1493,6 +1445,22 @@ export function ModelsModal({
                                 >
                                   {f.filename}
                                 </div>
+                                {isThisDownloading && (
+                                  <div className="quant-inline-dl">
+                                    <div className="dl-progress-track">
+                                      <div
+                                        className="dl-progress-fill"
+                                        style={{
+                                          width: `${Math.max(2, Math.min(100, thisPct ?? 0))}%`,
+                                        }}
+                                      />
+                                    </div>
+                                    <span className="tabular-nums">
+                                      {thisPct != null ? `${thisPct.toFixed(1)}%` : "…"}
+                                      {thisSpeed ? ` · ${thisSpeed}` : ""}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             </div>
 
@@ -1524,22 +1492,31 @@ export function ModelsModal({
                                         : "Downloaded · Use"}
                                   </span>
                                 </button>
+                              ) : isThisDownloading ? (
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  title={locale === "es" ? "Cancelar descarga" : "Cancel download"}
+                                  onClick={() =>
+                                    void cancelModelDownload(selectedRepo, f.filename)
+                                  }
+                                >
+                                  <X size={13} />
+                                  <span>
+                                    {locale === "es" ? "Cancelar" : "Cancel"}
+                                  </span>
+                                </button>
                               ) : (
                                 <button
                                   type="button"
                                   className="btn-primary"
-                                  disabled={isThisDownloading}
                                   onClick={() =>
-                                    void handleDownload(selectedRepo, f.filename)
+                                    handleDownload(selectedRepo, f.filename, f.size_bytes)
                                   }
                                 >
                                   <Download size={13} />
                                   <span>
-                                    {isThisDownloading
-                                      ? `${thisPct != null ? `${Math.round(thisPct)}%` : "..."}`
-                                      : locale === "es"
-                                        ? "Descargar"
-                                        : "Download"}
+                                    {locale === "es" ? "Descargar" : "Download"}
                                   </span>
                                 </button>
                               )}
@@ -1551,26 +1528,6 @@ export function ModelsModal({
                   </div>
                 </div>
               </div>
-
-              {Object.keys(activeDownloads).length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {Object.entries(activeDownloads).map(([key, dl]) => (
-                    <div key={key} className="download-box">
-                      <div className="download-msg">{dl.message}</div>
-                      {dl.percent !== null && (
-                        <div className="progress-track">
-                          <div
-                            className="progress-fill"
-                            style={{
-                              width: `${Math.min(100, Math.max(0, dl.percent))}%`,
-                            }}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           )}
 

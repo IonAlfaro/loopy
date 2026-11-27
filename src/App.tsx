@@ -43,6 +43,7 @@ import { WorkflowIoModal } from "./components/WorkflowIoModal";
 import { SettingsModal, type SettingsTab } from "./components/SettingsModal";
 import { type UpdateCheckResult } from "./components/UpdateModal";
 import { ArchitectChat } from "./components/ArchitectChat";
+import { DownloadsDock } from "./components/DownloadsDock";
 import { AgentWorkspaceView } from "./components/AgentWorkspaceView";
 import { ModelTuningModal } from "./components/ModelTuningModal";
 import { useGraphStore } from "./store/useGraphStore";
@@ -105,6 +106,7 @@ function LoorsStudioInner() {
   const loadedContextSize = useGraphStore((s) => s.loadedContextSize);
   const modelLoadProgress = useGraphStore((s) => s.modelLoadProgress);
   const setModelLoadProgress = useGraphStore((s) => s.setModelLoadProgress);
+  const upsertModelDownload = useGraphStore((s) => s.upsertModelDownload);
   const prepareRun = useGraphStore((s) => s.prepareRun);
   const applyEngineEvent = useGraphStore((s) => s.applyEngineEvent);
   const newWorkflow = useGraphStore((s) => s.newWorkflow);
@@ -283,6 +285,40 @@ function LoorsStudioInner() {
       })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    invoke<import("./types/graph").ModelDownloadEvent[]>("list_active_model_downloads")
+      .then((list) => {
+        if (cancelled || !Array.isArray(list)) return;
+        for (const ev of list) {
+          upsertModelDownload(ev);
+        }
+      })
+      .catch(() => {});
+
+    listen<import("./types/graph").ModelDownloadEvent>("loors://model-download", (ev) => {
+      if (cancelled) return;
+      upsertModelDownload(ev.payload);
+      if (ev.payload.stage === "done") {
+        window.dispatchEvent(new CustomEvent("loors:models-changed"));
+      }
+    })
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, [upsertModelDownload]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1244,6 +1280,7 @@ function LoorsStudioInner() {
       />
       <ModelTuningModal />
       <HumanGateModal />
+      <DownloadsDock onNotice={(msg) => setBanner(msg)} />
       {webAuthRequired && (
         <WebAuthGate
           onAuthenticated={() => {

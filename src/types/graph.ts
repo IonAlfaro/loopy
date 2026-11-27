@@ -121,6 +121,23 @@ export interface LocalModelFile {
   size_mb: number;
 }
 
+export interface ModelDownloadEvent {
+  repo_id: string;
+  filename: string;
+  downloaded_bytes: number;
+  total_bytes: number | null;
+  percent: number | null;
+  speed_bps?: number | null;
+  saved_path?: string | null;
+  stage: "starting" | "downloading" | "done" | "error" | "cancelled" | string;
+  message: string;
+}
+
+export interface ModelDownloadItem extends ModelDownloadEvent {
+  key: string;
+  updatedAt: number;
+}
+
 export interface SkillSummary {
   name: string;
   description: string;
