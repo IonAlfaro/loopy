@@ -240,6 +240,13 @@ export function AgentWorkspaceView() {
   }));
 
   const [input, setInput] = useState("");
+  const [workMode, setWorkMode] = useState<"chat" | "plan" | "agent">("agent");
+  const composerPrompt = () => {
+    const body = input.trim();
+    if (/^\/(chat|plan|agent|resume)(\s|$)/.test(body)) return body;
+    if (!body && pendingAttachments.length === 0) return "";
+    return workMode === "agent" ? body : `/${workMode} ${body}`;
+  };
   const runningTurns = useRef(new Map<string, AgentSession>());
   const discardBufferedTokens = useRef<(id: string) => void>(() => {});
   const [runningSessionIds, setRunningSessionIds] = useState<string[]>([]);
@@ -2346,7 +2353,7 @@ export function AgentWorkspaceView() {
               />
               <AgentComposerAttachments pendingAttachments={pendingAttachments} pinnedFiles={session.pinnedFiles} stagingFiles={!!stagingFiles} locale={locale} onRemove={att => setPendingAttachments(prev => prev.filter(x => x !== att))} onUnpin={rel => void togglePinFile(rel)} />
 
-              <AgentComposerInput value={input} placeholder={isCurrentRunning ? t("agent.composerQueuePlaceholder") : t("agent.composerPlaceholder")} label={t("agent.composerPlaceholder")} onChange={setInput} onFiles={(files) => void stageExternalFiles(files)} onSend={() => void sendTurn(input)} />
+              <AgentComposerInput value={input} placeholder={isCurrentRunning ? t("agent.composerQueuePlaceholder") : t("agent.composerPlaceholder")} label={t("agent.composerPlaceholder")} onChange={setInput} onFiles={(files) => void stageExternalFiles(files)} onSend={() => void sendTurn(composerPrompt())} />
 
               <div className="composer-bar">
                 <div className="composer-left">
@@ -2510,6 +2517,21 @@ export function AgentWorkspaceView() {
                     )}
                   </div>
 
+                  <select
+                    className="composer-env-pill"
+                    aria-label={locale === "es" ? "Modo de trabajo" : "Work mode"}
+                    title={locale === "es" ? "Modo de trabajo del agente" : "Agent work mode"}
+                    value={workMode}
+                    onChange={(event) => {
+                      const value = event.currentTarget.value;
+                      if (value === "chat" || value === "plan" || value === "agent") setWorkMode(value);
+                    }}
+                  >
+                    <option value="chat">Chat</option>
+                    <option value="plan">Plan</option>
+                    <option value="agent">Agent</option>
+                  </select>
+
                   <ReasoningEffortSelect
                     value={session.reasoningEffort ?? "medium"}
                     modelPath={session.modelPath}
@@ -2520,7 +2542,7 @@ export function AgentWorkspaceView() {
                 </div>
 
                 <div className="composer-right">
-                  <AgentComposerActions running={isCurrentRunning} hasContent={Boolean(input.trim() || pendingAttachments.length)} hasModel={Boolean(session.modelPath)} locale={locale} onStop={() => void handleStop()} onSend={() => void sendTurn(input)} />
+                  <AgentComposerActions running={isCurrentRunning} hasContent={Boolean(input.trim() || pendingAttachments.length)} hasModel={Boolean(session.modelPath)} locale={locale} onStop={() => void handleStop()} onSend={() => void sendTurn(composerPrompt())} />
                 </div>
               </div>
             </div>
