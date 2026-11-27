@@ -1,4 +1,3 @@
-import mermaid from "mermaid";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
@@ -637,8 +636,13 @@ function MermaidDiagram({ source }: { source: string }) {
   useEffect(() => {
     let active = true;
     const timer = setTimeout(() => {
-      mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral", suppressErrorRendering: true });
-      void mermaid.render("loors-diagram-" + (++diagramSequence), source).then(({ svg }) => {
+      void import("mermaid").then(({ default: mermaid }) => {
+        if (!active) return null;
+        mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral", suppressErrorRendering: true });
+        return mermaid.render("loors-diagram-" + (++diagramSequence), source);
+      }).then((result) => {
+        if (!result) return;
+        const { svg } = result;
         if (!active || !ref.current) return;
         // Render in an image rather than injecting executable markup into the app.
         const img = document.createElement("img");
