@@ -2553,7 +2553,7 @@ where
                 serde_json::to_string(&task).unwrap_or_default()
             );
             let report = run_subagent_loop(workspace, model_path, llama, port, "verifier", &review_prompt, state.budget.verifier_steps, rag_index, cancel).await;
-            if cancel.load(Ordering::SeqCst) || report.lines().next().map(str::trim) != Some("PASS") {
+            if cancel.load(Ordering::SeqCst) || !verifier_passed(&report) {
                 record.status = "error".into();
                 return format!("Independent verification rejected task {} (attempt {}/{}): {}. Repair the defects and retry completion, or mark the task failed if blocked.", task.id, attempt, state.budget.review_attempts, truncate_chars(&report, 3000));
             }
@@ -2713,6 +2713,23 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+fn verifier_passed(report: &str) -> bool {
+    let mut lines = report.lines();
+    lines.next() == Some("[Subagent: verifier]") && lines.next().map(str::trim) == Some("PASS")
+}
+
+#[cfg(test)]
+mod verifier_report_tests {
+    use super::verifier_passed;
+    #[test]
+    fn requires_explicit_verifier_verdict() {
+        assert!(verifier_passed("[Subagent: verifier]\nPASS\nEvidence"));
+        assert!(!verifier_passed("[Subagent: verifier]\nFAIL\nPASS"));
+        assert!(!verifier_passed("[Subagent: verifier] Cancelled."));
+        assert!(!verifier_passed("PASS"));
+    }
+}
+
 async fn run_subagent_loop(
     workspace: &str,
     model_path: &str,
@@ -2798,6 +2815,9 @@ async fn run_subagent_loop(
             crate::inference::cloud::chat_stream_cloud(model_path, req, Some(cancel), |_, _| {}).await
         };
 
+        if cancel.load(Ordering::SeqCst) {
+            return format!("[Subagent: {role}] Cancelled.");
+        }
         let resp = match res {
             Ok(r) => r,
             Err(e) => return format!("[Subagent: {role}] Error: {e}"),
@@ -2808,6 +2828,9 @@ async fn run_subagent_loop(
             tcs = parse_inline_tool_calls(&resp.content);
         }
         if tcs.is_empty() {
+            if resp.finish_reason.as_deref() == Some("length") {
+                return format!("[Subagent: {role}] Truncated response.");
+            }
             final_reply = resp.content;
             break;
         }
@@ -2821,6 +2844,20 @@ async fn run_subagent_loop(
         });
 
         for tc in tcs {
+            if cancel.load(Ordering::SeqCst) {
+                return format!("[Subagent: {role}] Cancelled.");
+            }
+            if !READONLY_TOOLS.contains(&tc.function.name.as_str())
+                && !matches!(tc.function.name.as_str(), "search_knowledge" | "knowledge_tree") {
+                messages.push(ChatMessage {
+                    role: "tool".into(),
+                    content: Some("Denied: subagent tools are read-only.".into()),
+                    tool_calls: None,
+                    tool_call_id: Some(tc.id),
+                    image_paths: Vec::new(),
+                });
+                continue;
+            }
             let parsed = serde_json::from_str::<Value>(&tc.function.arguments).unwrap_or_else(|_| json!({}));
             let mut dummy = AgentToolCallRecord {
                 id: tc.id.clone(),
