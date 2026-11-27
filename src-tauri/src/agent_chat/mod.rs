@@ -59,6 +59,8 @@ pub struct AgentToolCallRecord {
     pub output_preview: String,
     pub duration_ms: u64,
     #[serde(default)]
+    pub task_id: Option<String>,
+    #[serde(default)]
     pub file_path: Option<String>,
     #[serde(default)]
     pub previous_content: Option<String>,
@@ -1592,6 +1594,11 @@ where
 
         for tc in tool_calls {
             let call_id = tc.id.clone();
+            let active_task_id = state.execution_plan.lock().ok().and_then(|slot| {
+                slot.as_ref().and_then(|plan| plan.tasks.iter()
+                    .find(|task| task.status == PlanTaskStatus::InProgress)
+                    .map(|task| task.id.clone()))
+            });
             let mut record = AgentToolCallRecord {
                 id: call_id.clone(),
                 name: tc.function.name.clone(),
@@ -1599,6 +1606,7 @@ where
                 status: "running".to_string(),
                 output_preview: String::new(),
                 duration_ms: 0,
+                task_id: active_task_id.clone(),
                 file_path: None,
                 previous_content: None,
                 file_existed: false,
@@ -1636,8 +1644,16 @@ where
                     );
                 }
                 Ok(parsed_args) => {
-                    // Strictly block writes in ReadOnly even if hallucinated
-                    if session.permission_mode == PermissionMode::ReadOnly
+                    // Once a plan exists, side-effecting tools require an active task.
+                    let plan_requires_task = state.execution_plan.lock()
+                        .map(|slot| slot.is_some()).unwrap_or(true);
+                    if plan_requires_task && active_task_id.is_none()
+                        && tool_requires_permission(&tc.function.name)
+                    {
+                        denied = true;
+                        record.status = "denied".into();
+                        tool_output = "Start a ready task with set_execution_plan before using this tool.".into();
+                    } else if session.permission_mode == PermissionMode::ReadOnly
                         && tool_requires_permission(&tc.function.name)
                     {
                         denied = true;
@@ -2393,6 +2409,7 @@ async fn run_subagent_loop(
                 status: "running".into(),
                 output_preview: String::new(),
                 duration_ms: 0,
+                task_id: None,
                 file_path: None,
                 previous_content: None,
                 file_existed: false,
@@ -2828,6 +2845,7 @@ mod e2e_new_tools_tests {
             status: "running".into(),
             output_preview: String::new(),
             duration_ms: 0,
+                task_id: None,
             file_path: None,
             previous_content: None,
             file_existed: false,
