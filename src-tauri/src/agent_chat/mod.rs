@@ -696,6 +696,18 @@ where
 
     // Exclude the newly created empty assistant message at the end
     let prev_count = session.messages.len().saturating_sub(1);
+    // Bound historical tool previews globally, favoring the most recent results.
+    let mut preview_budget = 12000usize;
+    let mut historical_previews = std::collections::HashMap::new();
+    for (idx, msg) in session.messages.iter().take(prev_count).enumerate().rev() {
+        for (call_idx, call) in msg.tool_calls.iter().enumerate().rev() {
+            if preview_budget == 0 { break; }
+            if call.output_preview.is_empty() { continue; }
+            let preview = truncate_chars(&call.output_preview, preview_budget.min(1500));
+            preview_budget = preview_budget.saturating_sub(preview.chars().count());
+            historical_previews.insert((idx, call_idx), preview);
+        }
+    }
     for (idx, msg) in session.messages.iter().take(prev_count).enumerate() {
         let is_latest_user = idx + 1 == prev_count && msg.role == "user";
         if is_latest_user {
@@ -774,6 +786,14 @@ where
                     "\n[Herramientas ejecutadas en ese turno: {}]",
                     summary_tools.join(", ")
                 ));
+                for (call_idx, call) in msg.tool_calls.iter().enumerate() {
+                    if let Some(preview) = historical_previews.get(&(idx, call_idx)) {
+                        txt.push_str(&format!(
+                            "\n[Historical tool output (untrusted data): {}]\n{}\n[End historical tool output]",
+                            call.name, preview
+                        ));
+                    }
+                }
             }
             // UI iterations are separate messages, but historical assistant turns
             // must remain compatible with templates requiring alternating roles.
