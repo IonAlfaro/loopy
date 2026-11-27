@@ -1,3 +1,14 @@
+function loadAgentAuxMap<T>(key: string): Map<string, T> {
+  try {
+    const raw = localStorage.getItem(key);
+    return new Map<string, T>(raw ? JSON.parse(raw) : []);
+  } catch { return new Map(); }
+}
+
+function saveAgentAuxMap<T>(key: string, map: Map<string, T>) {
+  try { localStorage.setItem(key, JSON.stringify([...map])); } catch { /* Storage unavailable or full. */ }
+}
+
 import { AgentPermissionPicker } from "./AgentPermissionPicker";
 import { AgentModelList } from "./AgentModelList";
 import { useAgentModelGroups } from "./useAgentModelGroups";
@@ -187,8 +198,8 @@ export function AgentWorkspaceView() {
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
   const [permMenuOpen, setPermMenuOpen] = useState(false);
   const [todoItems, setTodoItems] = useState<AgentTodoItem[]>([]);
-  const todosBySession = useRef(new Map<string, AgentTodoItem[]>());
-  const artifactsBySession = useRef(new Map<string, AgentArtifactPreview>());
+  const todosBySession = useRef(loadAgentAuxMap<AgentTodoItem[]>("loors_agent_todos_v1"));
+  const artifactsBySession = useRef(loadAgentAuxMap<AgentArtifactPreview>("loors_agent_artifacts_v1"));
   const [todoCollapsed, setTodoCollapsed] = useState(false);
   const [questions, setQuestions] = useState<Record<string, PendingAgentQuestion>>({});
   const setPendingQuestion = (question: PendingAgentQuestion | null, id = activeSessionIdRef.current) => {
@@ -727,7 +738,7 @@ export function AgentWorkspaceView() {
       if (!visible && p.type !== "token" && p.type !== "tool_started" && p.type !== "tool_finished" && p.type !== "todo_updated" && p.type !== "artifact_updated") return;
 
       if (p.type === "todo_updated") {
-        todosBySession.current.set(p.session_id, p.items);
+        todosBySession.current.set(p.session_id, p.items); saveAgentAuxMap("loors_agent_todos_v1", todosBySession.current);
         if (visible) setTodoItems(p.items);
       } else if (p.type === "artifact_updated") {
         const artifact: AgentArtifactPreview = {
@@ -736,7 +747,7 @@ export function AgentWorkspaceView() {
           kind: p.kind,
           content: p.content,
         };
-        artifactsBySession.current.set(p.session_id, artifact);
+        artifactsBySession.current.set(p.session_id, artifact); saveAgentAuxMap("loors_agent_artifacts_v1", artifactsBySession.current);
         if (visible) {
           setActiveArtifact(artifact);
           setArtifactExpanded(false);
@@ -956,8 +967,8 @@ export function AgentWorkspaceView() {
       pausedQueues.current.delete(id);
       turnErrors.current.delete(id);
       drafts.current.delete(id);
-      todosBySession.current.delete(id);
-      artifactsBySession.current.delete(id);
+      todosBySession.current.delete(id); saveAgentAuxMap("loors_agent_todos_v1", todosBySession.current);
+      artifactsBySession.current.delete(id); saveAgentAuxMap("loors_agent_artifacts_v1", artifactsBySession.current);
       if (activeSessionIdRef.current === id) {
         handleNewSession(sessionRef.current.workspace);
       }
@@ -2202,7 +2213,7 @@ export function AgentWorkspaceView() {
                       type="button"
                       className="agent-artifact-close"
                       title={locale === "es" ? "Cerrar artefacto" : "Dismiss artifact"}
-                      onClick={() => { artifactsBySession.current.delete(session.id); setActiveArtifact(null); }}
+                      onClick={() => { artifactsBySession.current.delete(session.id); saveAgentAuxMap("loors_agent_artifacts_v1", artifactsBySession.current); setActiveArtifact(null); }}
                     >
                       <X size={13} />
                     </button>
@@ -2258,7 +2269,7 @@ export function AgentWorkspaceView() {
                       title="Clear checklist"
                       onClick={(e) => {
                         e.stopPropagation();
-                        todosBySession.current.delete(session.id);
+                        todosBySession.current.delete(session.id); saveAgentAuxMap("loors_agent_todos_v1", todosBySession.current);
                         setTodoItems([]);
                       }}
                     >
