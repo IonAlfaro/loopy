@@ -1,3 +1,4 @@
+import { AgentComposerActions } from "./AgentComposerActions";
 import { AgentComposerAttachments } from "./AgentComposerAttachments";
 import { AgentComposerInput } from "./AgentComposerInput";
 import { AgentHistory } from "./AgentHistory";
@@ -5,9 +6,7 @@ import { AgentDiff } from "./AgentDiff";
 import { PanelResizer } from "./PanelResizer";
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUp,
   ArrowDown,
-  Bot,
   Boxes,
   Check,
   ChevronDown,
@@ -33,11 +32,9 @@ import {
   PinOff,
   Plus,
   RefreshCw,
-  RotateCcw,
   Search,
   Settings,
   Shield,
-  Square,
   Trash2,
   X,
   Zap,
@@ -1161,6 +1158,7 @@ export function AgentWorkspaceView() {
 
     const curSession = queuedSession ?? sessionRef.current;
     const id = curSession.id;
+    if (!curSession.modelPath) return;
     if (runningTurns.current.has(id)) {
       setMessageQueue((prev) => [
         ...prev,
@@ -3007,34 +3005,7 @@ export function AgentWorkspaceView() {
                 </div>
 
                 <div className="composer-right">
-                  <div className="composer-action-group">
-                    {isCurrentRunning && (
-                      <button
-                        type="button"
-                        className="composer-send-btn is-stop"
-                        title="Detener respuesta"
-                        onClick={handleStop}
-                      >
-                        <Square size={12} fill="currentColor" />
-                      </button>
-                    )}
-                    {(!isCurrentRunning ||
-                      input.trim().length > 0 ||
-                      pendingAttachments.length > 0) && (
-                      <button
-                        type="button"
-                        className="composer-send-btn"
-                        title={isCurrentRunning ? "Encolar mensaje" : "Enviar"}
-                        disabled={
-                          (!input.trim() && pendingAttachments.length === 0) ||
-                          !session.modelPath
-                        }
-                        onClick={() => void sendTurn(input)}
-                      >
-                        <ArrowUp size={16} strokeWidth={2.3} />
-                      </button>
-                    )}
-                  </div>
+                  <AgentComposerActions running={isCurrentRunning} hasContent={Boolean(input.trim() || pendingAttachments.length)} hasModel={Boolean(session.modelPath)} locale={locale} onStop={() => void handleStop()} onSend={() => void sendTurn(input)} />
                 </div>
               </div>
             </div>
