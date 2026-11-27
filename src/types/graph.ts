@@ -353,6 +353,7 @@ export interface AgentSession {
   pinned?: boolean;
   allowedSessionTools: string[];
   messages: AgentChatMessage[];
+  executionCheckpoint?: unknown;
   updatedAt: number;
 }
 
