@@ -635,6 +635,8 @@ function MermaidDiagram({ source }: { source: string }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let active = true;
+    ref.current?.replaceChildren();
+    setFailed(false);
     const timer = setTimeout(() => {
       void import("mermaid").then(({ default: mermaid }) => {
         if (!active) return null;
@@ -651,7 +653,7 @@ function MermaidDiagram({ source }: { source: string }) {
         img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
         ref.current.replaceChildren(img);
         setFailed(false);
-      }).catch(() => { if (active) setFailed(true); });
+      }).catch(() => { if (active) { ref.current?.replaceChildren(); setFailed(true); } });
     }, 350);
     return () => { active = false; clearTimeout(timer); };
   }, [source]);
