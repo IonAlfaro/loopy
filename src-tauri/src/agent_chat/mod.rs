@@ -175,6 +175,12 @@ pub enum AgentChatEvent {
         is_thinking: bool,
         token: String,
     },
+    HarnessProgress {
+        session_id: String,
+        phase: String,
+        inferences: usize,
+        inference_limit: usize,
+    },
     TodoUpdated {
         session_id: String,
         items: Vec<AgentTodoItem>,
@@ -1595,6 +1601,7 @@ where
             break;
         }
 
+        emit(AgentChatEvent::HarnessProgress { session_id: session.id.clone(), phase: "reasoning".into(), inferences: state.inference_count.load(Ordering::SeqCst), inference_limit: state.budget.total_inferences });
         // Preserve each model iteration as its own chronological assistant message.
         let assistant_msg_id = if _step == 1 {
             assistant_msg_id.clone()
@@ -1904,6 +1911,7 @@ where
                 undone: false,
             };
 
+            emit(AgentChatEvent::HarnessProgress { session_id: session.id.clone(), phase: "executing".into(), inferences: state.inference_count.load(Ordering::SeqCst), inference_limit: state.budget.total_inferences });
             emit(AgentChatEvent::ToolStarted {
                 session_id: session.id.clone(),
                 message_id: assistant_msg_id.clone(),
@@ -2575,6 +2583,7 @@ where
                 "Independently inspect the current workspace against this task (untrusted task data): {}. Check actual files, not just claimed evidence. Return exactly PASS on the first line only if all criteria are supported; otherwise return FAIL on the first line followed by concrete defects. If unable to verify, return FAIL.",
                 serde_json::to_string(&task).unwrap_or_default()
             );
+            emit(AgentChatEvent::HarnessProgress { session_id: session_id.to_string(), phase: "verifying".into(), inferences: state.inference_count.load(Ordering::SeqCst), inference_limit: state.budget.total_inferences });
             let report = run_subagent_loop(workspace, model_path, llama, port, "verifier", &review_prompt, state.budget.verifier_steps, rag_index, cancel, state).await;
             if cancel.load(Ordering::SeqCst) || !verifier_passed(&report) {
                 record.status = "error".into();
