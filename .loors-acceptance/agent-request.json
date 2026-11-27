@@ -1,0 +1,13 @@
+{
+    "backend":  "vulkan",
+    "overrideCtx":  16384,
+    "session":  {
+                    "id":  "0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b",
+                    "useRag":  false,
+                    "workspace":  "C:\\Users\\ional\\Documents\\GitHub\\loopy\\.loors-acceptance\\agent-worktree",
+                    "modelPath":  "C:\\Users\\ional\\AppData\\Local\\loors\\models\\Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf",
+                    "title":  "Acceptance Qwen 3.6 A3B",
+                    "permissionMode":  "ask"
+                },
+    "userPrompt":  "Fix the failing test by editing sum.cjs only. Before editing, run node test.cjs to reproduce the failure. After editing, run node test.cjs and summarize the result. Stay in the assigned workspace."
+}

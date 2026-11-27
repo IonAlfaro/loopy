@@ -1,0 +1,16 @@
+{"type":"run_started","run_id":"run-1795792205334","workflow_name":"Verify sum"}
+{"type":"node_status","run_id":"run-1795792205334","node_id":"input","status":"running","iteration":1,"message":null}
+{"type":"node_log","run_id":"run-1795792205334","node_id":"input","node_title":"Input","iteration":1,"stream":"system","text":"Workspace: C:\\Users\\ional\\AppData\\Local\\loors\\worktrees\\39261b5f59e938ba19cfb5e0d2572a07 | Prompt: "}
+{"type":"node_status","run_id":"run-1795792205334","node_id":"input","status":"success","iteration":1,"message":"0ms"}
+{"type":"node_status","run_id":"run-1795792205334","node_id":"test","status":"running","iteration":1,"message":null}
+{"type":"node_log","run_id":"run-1795792205334","node_id":"test","node_title":"Test","iteration":1,"stream":"system","text":"Ejecutando en 'C:\\Users\\ional\\AppData\\Local\\loors\\worktrees\\39261b5f59e938ba19cfb5e0d2572a07': $ node test.cjs"}
+{"type":"node_log","run_id":"run-1795792205334","node_id":"test","node_title":"Test","iteration":1,"stream":"stdout","text":"{\"passed\":true}"}
+{"type":"node_log","run_id":"run-1795792205334","node_id":"test","node_title":"Test","iteration":1,"stream":"system","text":"Comando finalizado con exit_code = 0"}
+{"type":"node_status","run_id":"run-1795792205334","node_id":"test","status":"success","iteration":1,"message":"220ms"}
+{"type":"node_status","run_id":"run-1795792205334","node_id":"gate","status":"running","iteration":1,"message":null}
+{"type":"node_log","run_id":"run-1795792205334","node_id":"gate","node_title":"Check success","iteration":1,"stream":"system","text":"JSON valid (15 chars)."}
+{"type":"node_status","run_id":"run-1795792205334","node_id":"gate","status":"success","iteration":1,"message":"0ms"}
+{"type":"node_status","run_id":"run-1795792205334","node_id":"done","status":"running","iteration":1,"message":null}
+{"type":"node_log","run_id":"run-1795792205334","node_id":"done","node_title":"Done","iteration":1,"stream":"system","text":"Completado tras 1 iteración(es) (exit_code=Some(0))."}
+{"type":"node_status","run_id":"run-1795792205334","node_id":"done","status":"success","iteration":1,"message":"Completado tras 1 iteración(es) (exit_code=Some(0))."}
+{"type":"run_finished","run_id":"run-1795792205334","outcome":"completed","total_iterations":1,"summary":"Completado tras 1 iteración(es) (exit_code=Some(0))."}

@@ -1,4 +1,5 @@
-﻿import { useEffect, useState } from "react";
+﻿import { ModalBackdrop } from "./ModalBackdrop";
+import { useEffect, useState } from "react";
 import { CheckCircle2, Cpu, Download, Trash2, X } from "lucide-react";
 import { invoke } from "../lib/bridge";
 import { listen } from "../lib/bridge";
@@ -345,7 +346,7 @@ export function RuntimeModal({ open, embedded = false, onClose }: RuntimeModalPr
   if (embedded) return innerBody;
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <ModalBackdrop label={t("runtime.title")} onClose={onClose}>
       <div className="modal-card" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-title">
@@ -358,6 +359,6 @@ export function RuntimeModal({ open, embedded = false, onClose }: RuntimeModalPr
         </div>
         {innerBody}
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

@@ -1,0 +1,183 @@
+.agent-diff {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  min-width: 0;
+}
+
+.agent-diff--preview {
+  padding: 0;
+}
+
+.agent-diff-overview {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  background: var(--panel);
+  font-size: 12px;
+  padding: 6px 0;
+}
+
+.agent-diff-actions {
+  display: flex;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+
+.agent-diff-file {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.agent-diff-file-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 10px;
+  list-style: none;
+  cursor: pointer;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--text) 4%, var(--panel));
+}
+
+.agent-diff-file-head::-webkit-details-marker {
+  display: none;
+}
+
+.agent-diff-file-head:hover {
+  background: color-mix(in srgb, var(--text) 8%, var(--panel));
+}
+
+.agent-diff-file-head:focus-visible,
+.agent-diff-code:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+
+.agent-diff-file-head > svg {
+  flex: none;
+}
+
+.agent-diff-file[open] > summary:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+}
+
+.agent-diff-file[open] .agent-diff-chevron {
+  transform: rotate(90deg);
+}
+
+.agent-diff-path {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  min-width: 0;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.agent-diff-path > span,
+.agent-diff-path > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-diff-path > strong {
+  flex-shrink: 0;
+  max-width: 100%;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.agent-diff-stats {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  font: 11px ui-monospace, Consolas, monospace;
+}
+
+.agent-diff-stats > :first-child,
+.agent-diff-row--add .agent-diff-marker {
+  color: #75d6a0;
+}
+
+.agent-diff-stats > :last-child,
+.agent-diff-row--remove .agent-diff-marker {
+  color: #f59aa3;
+}
+
+.agent-diff-code {
+  overflow: auto;
+  max-height: 65vh;
+  background: color-mix(in srgb, #000 16%, var(--panel));
+  color: var(--text);
+  font: 11.5px / 1.65 ui-monospace, Consolas, monospace;
+  tab-size: 4;
+}
+
+.agent-diff--preview .agent-diff-code {
+  max-height: 260px;
+}
+
+.agent-diff-lines {
+  min-width: 100%;
+  width: max-content;
+}
+
+.agent-diff-row {
+  display: grid;
+  grid-template-columns: 2ch auto;
+  padding-right: 12px;
+  min-height: 1.65em;
+}
+
+.agent-diff-code--numbered .agent-diff-row {
+  grid-template-columns: 6ch 6ch 2ch auto;
+}
+
+.agent-diff-row code {
+  font: inherit;
+  white-space: pre;
+}
+
+.agent-diff-number,
+.agent-diff-marker {
+  user-select: none;
+  text-align: right;
+  padding-right: 0.5ch;
+}
+
+.agent-diff-marker {
+  text-align: center;
+}
+
+.agent-diff-number {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-diff-row--add {
+  background: rgba(48, 174, 104, 0.14);
+}
+
+.agent-diff-row--remove {
+  background: rgba(227, 81, 99, 0.15);
+}
+
+.agent-diff-row--hunk {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.agent-diff-message {
+  grid-column: 1 / -1;
+  padding: 2px 10px;
+  color: var(--muted);
+}

@@ -3,6 +3,7 @@ import {
   type LoorsFlowEdge,
   type LoorsFlowNode,
 } from "../types/graph";
+import { developmentTeam } from "./developmentTeam";
 
 export interface HarnessTemplate {
   id: string;
@@ -13,6 +14,7 @@ export interface HarnessTemplate {
 }
 
 export const HARNESS_TEMPLATES: HarnessTemplate[] = [
+  developmentTeam,
   {
     id: "swarm-engineering-team",
     name: "swarm-engineering-team",
@@ -169,7 +171,6 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
         animated: true,
         style: { stroke: "#22c55e", strokeWidth: 2 },
       },
-      { id: "swe-8", source: "sw-loop", sourceHandle: "exhausted", target: "sw-out", targetHandle: "exec" },
     ],
   },
   {
@@ -438,7 +439,6 @@ export const HARNESS_TEMPLATES: HarnessTemplate[] = [
       { id: "ept-pass", source: "pt-judge", sourceHandle: "pass", target: "pt-mem", targetHandle: "exec", style: { stroke: "#22c55e" }, label: "pass" },
       { id: "ept-fail", source: "pt-judge", sourceHandle: "fail", target: "pt-task-guard", targetHandle: "exec", style: { stroke: "#ef4444" }, label: "fail" },
       { id: "ept-retry", source: "pt-task-guard", sourceHandle: "retry", target: "pt-eng", targetHandle: "feedback", animated: true, style: { stroke: "#f59e0b", strokeWidth: 2 }, label: "fix & retry" },
-      { id: "ept-max", source: "pt-task-guard", sourceHandle: "max_hit", target: "pt-mem", targetHandle: "exec", style: { stroke: "#94a3b8", strokeDasharray: "4 4" }, label: "max retries" },
       { id: "ept-next", source: "pt-mem", sourceHandle: "exec", target: "pt-each", targetHandle: "exec", animated: true, style: { stroke: "#8b5cf6", strokeWidth: 2 }, label: "next task" },
       { id: "ept-qa-out", source: "pt-qa", sourceHandle: "exec", target: "pt-out", targetHandle: "exec", style: { stroke: "#22c55e" } },
     ],

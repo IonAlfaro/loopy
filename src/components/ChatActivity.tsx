@@ -1,3 +1,4 @@
+import { AgentDiff } from "./AgentDiff";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { detectModelReasoningCaps } from "../types/graph";
 import { useI18n } from "../i18n";
@@ -144,24 +145,216 @@ function getToolPresentation(
   }
 }
 
-function DiffLinesBlock({ diff }: { diff: string }) {
+type ToolCategory = "read" | "write" | "search" | "exec" | "web" | "analyze" | "other";
+
+function toolCategory(name: string): ToolCategory {
+  switch (name) {
+    case "read_file":
+    case "read_skill":
+    case "list_files":
+    case "find_files":
+    case "workspace_tree":
+    case "knowledge_tree":
+      return "read";
+    case "edit_file":
+    case "write_file":
+    case "delete_file":
+    case "apply_patch":
+      return "write";
+    case "grep_search":
+    case "code_symbols":
+    case "search_knowledge":
+      return "search";
+    case "run_cmd":
+    case "run_bg_cmd":
+    case "docker_exec":
+    case "differential_test":
+    case "debug_crash":
+      return "exec";
+    case "web_search":
+    case "fetch_url":
+    case "browser_action":
+      return "web";
+    case "binary_inspect":
+    case "sql_query":
+      return "analyze";
+    default:
+      return "other";
+  }
+}
+
+const CATEGORY_LABELS_ES: Record<ToolCategory, { one: string; many: string }> = {
+  read: { one: "lectura", many: "lecturas" },
+  write: { one: "edición", many: "ediciones" },
+  search: { one: "búsqueda", many: "búsquedas" },
+  exec: { one: "comando", many: "comandos" },
+  web: { one: "consulta web", many: "consultas web" },
+  analyze: { one: "análisis", many: "análisis" },
+  other: { one: "acción", many: "acciones" },
+};
+
+const CATEGORY_LABELS_EN: Record<ToolCategory, { one: string; many: string }> = {
+  read: { one: "read", many: "reads" },
+  write: { one: "edit", many: "edits" },
+  search: { one: "search", many: "searches" },
+  exec: { one: "command", many: "commands" },
+  web: { one: "web lookup", many: "web lookups" },
+  analyze: { one: "analysis", many: "analyses" },
+  other: { one: "action", many: "actions" },
+};
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
+  const mins = Math.floor(ms / 60_000);
+  const secs = Math.round((ms % 60_000) / 1000);
+  return `${mins}m ${String(secs).padStart(2, "0")}s`;
+}
+
+function summarizeToolGroup(
+  calls: ActivityToolItem[],
+  labels: Record<ToolCategory, { one: string; many: string }>
+): string {
+  const order: ToolCategory[] = ["read", "search", "write", "exec", "web", "analyze", "other"];
+  const counts = new Map<ToolCategory, number>();
+  for (const call of calls) {
+    const cat = toolCategory(call.name);
+    counts.set(cat, (counts.get(cat) ?? 0) + 1);
+  }
+  const parts: string[] = [];
+  for (const cat of order) {
+    const n = counts.get(cat);
+    if (!n) continue;
+    const label = n === 1 ? labels[cat].one : labels[cat].many;
+    parts.push(`${n} ${label}`);
+  }
+  return parts.slice(0, 4).join(" · ");
+}
+
+/** Number of tool rows kept visible when a group is collapsed. */
+const GROUP_VISIBLE_TAIL = 3;
+
+export function ToolCallGroup({
+  calls,
+  expandedTools,
+  onToggleTool,
+  extras,
+}: {
+  calls: ActivityToolItem[];
+  expandedTools: Record<string, boolean>;
+  onToggleTool: (id: string, next: boolean) => void;
+  extras?: (call: ActivityToolItem) => { shotB64?: string; onUndo?: () => void };
+}) {
+  const { locale } = useI18n();
+  const [groupOpen, setGroupOpen] = useState(false);
+
+  if (calls.length === 0) return null;
+
+  const isEs = locale === "es";
+  const labels = isEs ? CATEGORY_LABELS_ES : CATEGORY_LABELS_EN;
+  const running = calls.filter((c) => c.status === "running").length;
+  const failed = calls.filter((c) => c.status === "error" || c.status === "rejected").length;
+  const totalMs = calls.reduce((acc, c) => acc + (c.durationMs ?? 0), 0);
+  const hasOverflow = calls.length > GROUP_VISIBLE_TAIL;
+  const hiddenCount = hasOverflow ? calls.length - GROUP_VISIBLE_TAIL : 0;
+  const visible = groupOpen || !hasOverflow ? calls : calls.slice(-GROUP_VISIBLE_TAIL);
+
+  const renderRow = (call: ActivityToolItem) => {
+    const isOpen = expandedTools[call.id] ?? Boolean(call.diffPreview);
+    const extra = extras?.(call);
+    return (
+      <ToolActivityRow
+        key={call.id}
+        call={call}
+        open={isOpen}
+        shotB64={extra?.shotB64}
+        onUndo={extra?.onUndo}
+        onToggle={() => onToggleTool(call.id, !isOpen)}
+      />
+    );
+  };
+
+  if (!hasOverflow) {
+    return <div className="codex-tool-list">{calls.map(renderRow)}</div>;
+  }
+
   return (
-    <pre className="diff-code-box">
-      {diff.split("\n").map((line, i) => {
-        const cls = line.startsWith("+ ")
-          ? "diff-add"
-          : line.startsWith("- ")
-            ? "diff-del"
-            : line.startsWith("---") || line.startsWith("+++")
-              ? "diff-hdr"
-              : "diff-ctx";
-        return (
-          <div key={i} className={cls}>
-            {line}
-          </div>
-        );
-      })}
-    </pre>
+    <div className={`codex-tool-group ${groupOpen ? "is-open" : ""}`}>
+      <button
+        type="button"
+        className="codex-tool-group-head"
+        onClick={() => setGroupOpen((v) => !v)}
+        title={
+          groupOpen
+            ? isEs
+              ? "Contraer actividad"
+              : "Collapse activity"
+            : isEs
+              ? "Expandir toda la actividad"
+              : "Expand all activity"
+        }
+      >
+        <span className="codex-tool-group-chev">
+          {groupOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </span>
+        {running > 0 ? (
+          <RefreshCw size={11} className="spin" />
+        ) : failed > 0 ? (
+          <AlertCircle size={11} />
+        ) : (
+          <Check size={11} />
+        )}
+        <span className="codex-tool-group-title">
+          {running > 0 ? (isEs ? "Trabajando" : "Working") : isEs ? "Actividad" : "Activity"}
+        </span>
+        <span className="codex-tool-group-summary truncate-text">
+          {summarizeToolGroup(calls, labels)}
+        </span>
+        <span className="codex-tool-group-meta">
+          {failed > 0 && (
+            <em className="codex-tool-group-fail">
+              {failed} {failed === 1 ? (isEs ? "fallo" : "failure") : isEs ? "fallos" : "failures"}
+            </em>
+          )}
+          {totalMs > 0 && <span className="tabular-nums">{formatDuration(totalMs)}</span>}
+          <em className="codex-tool-group-count">{calls.length}</em>
+        </span>
+      </button>
+
+      {!groupOpen && hiddenCount > 0 && (
+        <button
+          type="button"
+          className="codex-tool-group-more"
+          onClick={() => setGroupOpen(true)}
+        >
+          +{hiddenCount}{" "}
+          {hiddenCount === 1
+            ? isEs
+              ? "acción anterior"
+              : "earlier action"
+            : isEs
+              ? "acciones anteriores"
+              : "earlier actions"}
+        </button>
+      )}
+
+      <div className="codex-tool-list codex-tool-list--grouped">{visible.map(renderRow)}</div>
+
+      {groupOpen && hiddenCount > 0 && (
+        <button
+          type="button"
+          className="codex-tool-group-more is-collapse"
+          onClick={() => setGroupOpen(false)}
+        >
+          <ChevronUp size={11} />
+          <span>
+            {isEs
+              ? `Contraer a las ${GROUP_VISIBLE_TAIL} últimas`
+              : `Collapse to last ${GROUP_VISIBLE_TAIL}`}
+          </span>
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -239,6 +432,7 @@ export function ToolActivityRow({
   shotB64?: string;
   onUndo?: () => void;
 }) {
+  const { locale } = useI18n();
   const isRunning = call.status === "running";
   const isError = call.status === "error" || call.status === "rejected";
   const pres = getToolPresentation(call.name, isRunning);
@@ -306,7 +500,7 @@ export function ToolActivityRow({
 
       {open && hasBody && (
         <div className="codex-tool-body">
-          {call.diffPreview && <DiffLinesBlock diff={call.diffPreview} />}
+          {call.diffPreview && <AgentDiff diff={call.diffPreview} locale={locale} preview />}
           {shotB64 && (
             <div className="shot-preview-box">
               <img

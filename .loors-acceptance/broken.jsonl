@@ -1,0 +1,37 @@
+﻿{"type":"run_started","run_id":"run-1795790762637","workflow_name":"Verify sum"}
+{"type":"node_status","run_id":"run-1795790762637","node_id":"input","status":"running","iteration":1,"message":null}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"input","node_title":"Input","iteration":1,"stream":"system","text":"Workspace: C:\\Users\\ional\\Documents\\GitHub\\loopy\\.loors-acceptance\\repo | Prompt: "}
+{"type":"node_status","run_id":"run-1795790762637","node_id":"input","status":"success","iteration":1,"message":"0ms"}
+{"type":"node_status","run_id":"run-1795790762637","node_id":"test","status":"running","iteration":1,"message":null}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"system","text":"Ejecutando en 'C:\\Users\\ional\\Documents\\GitHub\\loopy\\.loors-acceptance\\repo': $ node test.cjs"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"node:internal/assert/utils:146"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"  throw error;"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"  ^"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":""}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":""}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"-1 !== 5"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":""}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"    at Object.<anonymous> (C:\\Users\\ional\\Documents\\GitHub\\loopy\\.loors-acceptance\\repo\\test.cjs:1:54)"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"    at Module._compile (node:internal/modules/cjs/loader:1968:14)"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"    at Object..js (node:internal/modules/cjs/loader:2108:10)"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"    at Module.load (node:internal/modules/cjs/loader:1690:32)"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"    at Module._load (node:internal/modules/cjs/loader:1480:12)"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"    at wrapModuleLoad (node:internal/modules/cjs/loader:261:19)"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"    at node:internal/main/run_main_module:33:47 {"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"  generatedMessage: true,"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"  code: 'ERR_ASSERTION',"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"  actual: -1,"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"  expected: 5,"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"  operator: 'strictEqual',"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"  diff: 'simple'"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"}"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":""}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"stderr","text":"Node.js v26.13.1"}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"test","node_title":"Test","iteration":1,"stream":"system","text":"Comando finalizado con exit_code = 1"}
+{"type":"node_status","run_id":"run-1795790762637","node_id":"test","status":"success","iteration":1,"message":"217ms"}
+{"type":"node_status","run_id":"run-1795790762637","node_id":"gate","status":"running","iteration":1,"message":null}
+{"type":"node_log","run_id":"run-1795790762637","node_id":"gate","node_title":"Check success","iteration":1,"stream":"stderr","text":"JSON invalid: Empty output — expected valid JSON."}
+{"type":"node_status","run_id":"run-1795790762637","node_id":"gate","status":"error","iteration":1,"message":"Empty output — expected valid JSON."}
+{"type":"run_finished","run_id":"run-1795790762637","outcome":"failed","total_iterations":1,"summary":"Empty output — expected valid JSON."}

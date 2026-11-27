@@ -1,4 +1,5 @@
-﻿import { useCallback, useEffect, useState } from "react";
+﻿import { ModalBackdrop } from "./ModalBackdrop";
+import { useCallback, useEffect, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -290,7 +291,7 @@ export function UpdateModal({
   if (embedded) return innerBody;
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <ModalBackdrop label={t("updates.title")} onClose={onClose}>
       <div
         className="modal-card"
         style={{ maxWidth: 520 }}
@@ -312,6 +313,6 @@ export function UpdateModal({
         </div>
         {innerBody}
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

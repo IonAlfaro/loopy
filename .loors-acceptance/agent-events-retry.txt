@@ -1,0 +1,30 @@
+: connected
+
+: ping
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Starting llama-server for Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.ggufÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":10,"stage":"starting"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (19%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":19,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (25%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":25,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (28%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":28,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (30%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":30,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (33%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":33,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (35%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":35,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (38%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":38,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (68%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":68,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (82%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":82,"stage":"loading"}}
+
+: ping
+
+: ping
+
+: ping
+

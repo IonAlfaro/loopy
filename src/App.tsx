@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { PanelResizer } from "./components/PanelResizer";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   Controls,
@@ -6,7 +7,9 @@ import {
   Panel,
   ReactFlow,
   ReactFlowProvider,
+  useNodesInitialized,
   useReactFlow,
+  type Viewport,
   type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -18,6 +21,8 @@ import {
   EyeOff,
   FolderOpen,
   LayoutGrid,
+  Maximize2,
+  Minimize2,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
@@ -34,10 +39,12 @@ import {
   Workflow,
   X,
 } from "lucide-react";
+import { arePortsCompatible } from "./components/nodePorts";
 import { LoorsNode } from "./components/nodes/LoorsNode";
 import { Sidebar } from "./components/Sidebar";
 import { Inspector } from "./components/Inspector";
 import { ConsolePanel } from "./components/ConsolePanel";
+import { ModalBackdrop } from "./components/ModalBackdrop";
 import { HumanGateModal } from "./components/HumanGateModal";
 import { WorkflowIoModal } from "./components/WorkflowIoModal";
 import { SettingsModal, type SettingsTab } from "./components/SettingsModal";
@@ -67,7 +74,10 @@ const nodeTypes: NodeTypes = {
 
 function LoorsStudioInner() {
   const { locale, t } = useI18n();
-  const { screenToFlowPosition, fitView } = useReactFlow();
+  const { screenToFlowPosition, fitView, setViewport } = useReactFlow();
+  const nodesInitialized = useNodesInitialized();
+  const canvasRef = useRef<HTMLElement>(null);
+  const harnessViewports = useRef(new Map<string, Viewport>());
   const appMode = useGraphStore((s) => s.appMode);
   const setAppMode = useGraphStore((s) => s.setAppMode);
   const rightPanelTab = useGraphStore((s) => s.rightPanelTab);
@@ -95,7 +105,6 @@ function LoorsStudioInner() {
   const savedLibraryName = useGraphStore((s) => s.savedLibraryName);
   const dirty = useGraphStore((s) => s.dirty);
   const autoSaveHarnesses = useGraphStore((s) => s.autoSaveHarnesses);
-  const markSaved = useGraphStore((s) => s.markSaved);
   const pendingGate = useGraphStore((s) => s.pendingGate);
   const setSelectedNodeId = useGraphStore((s) => s.setSelectedNodeId);
   const exportWorkflow = useGraphStore((s) => s.exportWorkflow);
@@ -136,6 +145,9 @@ function LoorsStudioInner() {
   const setRightPanelOpen = useGraphStore((s) => s.setRightPanelOpen);
   const sidebarCollapsed = !leftPanelOpen;
   const rightPanelCollapsed = !rightPanelOpen;
+  const [wideInspector, setWideInspector] = useState(false);
+  const inspectorExpanded = wideInspector && rightPanelOpen && rightPanelTab === "inspector";
+  const paletteHidden = sidebarCollapsed || inspectorExpanded;
   const [harnessLeftWidth, setHarnessLeftWidth] = useState<number>(() => {
     const saved = Number(localStorage.getItem("loors_harness_left_w"));
     return Number.isFinite(saved) && saved >= 190 && saved <= 440 ? saved : 256;
@@ -145,32 +157,12 @@ function LoorsStudioInner() {
     return Number.isFinite(saved) && saved >= 280 && saved <= 640 ? saved : 360;
   });
 
-  const startHarnessResize = (side: "left" | "right", startX: number) => {
-    const initial = side === "left" ? harnessLeftWidth : harnessRightWidth;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    const onMove = (ev: MouseEvent) => {
-      const dx = ev.clientX - startX;
-      if (side === "left") {
-        const next = Math.min(440, Math.max(190, initial + dx));
-        setHarnessLeftWidth(next);
-        localStorage.setItem("loors_harness_left_w", String(next));
-      } else {
-        const next = Math.min(640, Math.max(280, initial - dx));
-        setHarnessRightWidth(next);
-        localStorage.setItem("loors_harness_right_w", String(next));
-      }
-    };
-    const onUp = () => {
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
   const [banner, setBanner] = useState<string | null>(null);
+  const [pendingHarnessClose, setPendingHarnessClose] = useState<string | null>(null);
+  const [closeError, setCloseError] = useState<string | null>(null);
+  const [closingHarnessId, setClosingHarnessId] = useState<string | null>(null);
+  const closeInProgress = useRef(false);
+  const saveQueue = useRef(Promise.resolve());
   const [runtimeSnap, setRuntimeSnap] = useState<RuntimeStatusSnapshot | null>(null);
   const [triggerArmed, setTriggerArmed] = useState(false);
   const [quickAdd, setQuickAdd] = useState<{
@@ -219,6 +211,7 @@ function LoorsStudioInner() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (document.querySelector("dialog.loors-dialog[open]")) return;
       if ((e.ctrlKey || e.metaKey) && e.key === "1") {
         e.preventDefault();
         setAppMode("agent");
@@ -265,15 +258,6 @@ function LoorsStudioInner() {
       window.removeEventListener("loors:run-workflow", onRunWorkflow);
     };
   });
-
-  // Re-fit canvas cleanly whenever Harness Studio becomes visible or its viewport resizes
-  useEffect(() => {
-    if (appMode !== "harness") return;
-    const t = window.setTimeout(() => {
-      fitView({ padding: 0.18, duration: 220 });
-    }, 140);
-    return () => window.clearTimeout(t);
-  }, [appMode, consoleOpen, sidebarCollapsed, rightPanelCollapsed, fitView]);
 
   // Silent background check for app updates on startup
   useEffect(() => {
@@ -376,36 +360,40 @@ function LoorsStudioInner() {
   }, [setModelLoadProgress]);
 
   const displayEdges = useMemo(() => {
-    if (!dimResourceEdges) return edges;
-    const kindById = new Map(nodes.map((n) => [n.id, n.data.kind]));
+    const kindById = new Map(nodes.map((node) => [node.id, node.data.kind]));
     return edges.map((edge) => {
-      const srcKind = kindById.get(edge.source);
-      const isResourceWire =
-        Boolean(srcKind && isResourceKind(srcKind)) &&
-        edge.sourceHandle !== "exec";
-      if (!isResourceWire) return edge;
-      const connectedToSelected =
-        selectedNodeId != null &&
-        (edge.source === selectedNodeId || edge.target === selectedNodeId);
+      const sourceKind = kindById.get(edge.source);
+      const dimmed = dimResourceEdges && sourceKind && isResourceKind(sourceKind)
+        && edge.sourceHandle !== "exec";
+      const connected = edge.source === selectedNodeId || edge.target === selectedNodeId;
+      if (!dimmed && !connected) return edge;
       return {
         ...edge,
+        className: connected
+          ? [edge.className, "is-connected-to-selection"].filter(Boolean).join(" ")
+          : edge.className,
         style: {
-          ...(edge.style ?? {}),
-          opacity: connectedToSelected ? 1 : 0.22,
-          strokeWidth: connectedToSelected ? 2.2 : 1.3,
+          ...edge.style,
+          opacity: connected ? 1 : 0.5,
+          strokeWidth: connected ? 2.6 : edge.style?.strokeWidth ?? 1.7,
         },
       };
     });
   }, [edges, nodes, dimResourceEdges, selectedNodeId]);
 
-  // Auto-center the React Flow canvas whenever switching to Harnesses mode
   useEffect(() => {
-    if (appMode !== "harness") return;
-    const id = window.setTimeout(() => {
-      fitView({ padding: 0.18, duration: 200 });
-    }, 60);
-    return () => window.clearTimeout(id);
-  }, [appMode, fitView]);
+    const canvas = canvasRef.current;
+    if (appMode !== "harness" || !nodesInitialized || !canvas) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry.contentRect.width || !entry.contentRect.height) return;
+      observer.disconnect();
+      const savedViewport = harnessViewports.current.get(activeHarnessTabId);
+      if (savedViewport) void setViewport(savedViewport);
+      else void fitView({ padding: 0.18 });
+    });
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [appMode, activeHarnessTabId, nodesInitialized, fitView, setViewport]);
 
   const handleRun = async (startNodeId?: string) => {
     setBanner(null);
@@ -453,6 +441,7 @@ function LoorsStudioInner() {
       setBanner(`${issues[0].title}: ${issues[0].message}`);
       if (issues[0].nodeId) setSelectedNodeId(issues[0].nodeId);
       else setSelectedNodeId(null);
+      setRightPanelOpen(true);
       setRightPanelTab("inspector");
       return;
     }
@@ -526,8 +515,9 @@ function LoorsStudioInner() {
       await invoke("stop_webhook_trigger");
       await invoke("stop_telegram_trigger");
       setTriggerArmed(false);
+      return true;
     } catch {
-      // ignore if outside Tauri
+      return false;
     }
   };
 
@@ -588,30 +578,109 @@ function LoorsStudioInner() {
 
   const [justSaved, setJustSaved] = useState(false);
 
-  const handleSaveWorkflow = async (silent = false) => {
-    try {
-      const data = exportWorkflow();
-      const targetName = (data.name || savedLibraryName || "harness").trim();
-      await invoke<string>("save_workflow_to_library", {
-        name: targetName,
-        content: JSON.stringify(data, null, 2),
+  const getHarnessSnapshot = (tabId: string) => {
+    const state = useGraphStore.getState();
+    return tabId === state.activeHarnessTabId
+      ? state
+      : state.harnessTabs.find((tab) => tab.id === tabId);
+  };
+
+  const saveHarness = (tabId: string) => {
+    const save = saveQueue.current.then(async () => {
+      const snapshot = getHarnessSnapshot(tabId);
+      if (!snapshot) return false;
+      const name = snapshot.workflowName.trim() || snapshot.savedLibraryName || "harness";
+      const path = await invoke<string>("save_workflow_to_library", {
+        name,
+        content: JSON.stringify({
+          schemaVersion: 1,
+          name,
+          exportedAt: new Date().toISOString(),
+          nodes: snapshot.nodes,
+          edges: snapshot.edges,
+        }, null, 2),
       });
-      markSaved(targetName);
-      if (!silent) {
+      const current = getHarnessSnapshot(tabId);
+      if (!current) return false;
+      const unchanged = current.nodes === snapshot.nodes && current.edges === snapshot.edges
+        && current.workflowName === snapshot.workflowName;
+      if (!unchanged) return false;
+      const state = useGraphStore.getState();
+      if (state.activeHarnessTabId === tabId) {
+        state.markSaved(name);
+      } else {
+        useGraphStore.setState({
+          harnessTabs: state.harnessTabs.map((tab) =>
+            tab.id === tabId ? { ...tab, savedLibraryName: name, dirty: false } : tab
+          ),
+        });
+      }
+      return { name, path };
+    });
+    saveQueue.current = save.then(() => {}, () => {});
+    return save;
+  };
+
+  const saveFailure = (error: unknown) =>
+    typeof error === "string" ? error : error instanceof Error ? error.message
+      : locale === "es" ? "No se pudo guardar el arnés." : "Could not save the harness.";
+
+  const handleSaveWorkflow = async (silent = false) => {
+    const tabId = activeHarnessTabId;
+    try {
+      const saved = await saveHarness(tabId);
+      if (saved && !silent) {
+        const { name } = saved;
         setJustSaved(true);
         window.setTimeout(() => setJustSaved(false), 1600);
-        setBanner(locale === "es" ? `Guardado: ${targetName}` : `Saved: ${targetName}`);
+        setBanner(locale === "es" ? `Guardado: ${name}` : `Saved: ${name}`);
       }
-    } catch (err) {
-      if (!silent) {
-        setBanner(
-          typeof err === "string"
-            ? err
-            : locale === "es"
-              ? "No se pudo guardar el arnés."
-              : "Could not save harness."
-        );
+    } catch (error) {
+      setBanner(saveFailure(error));
+    }
+  };
+
+  const dismissHarnessClose = () => {
+    setPendingHarnessClose(null);
+    setCloseError(null);
+  };
+
+  const finishHarnessClose = async (tabId: string, save: boolean, discard = false) => {
+    if (closeInProgress.current) return;
+    closeInProgress.current = true;
+    setClosingHarnessId(tabId);
+    setCloseError(null);
+    try {
+      if (save && !(await saveHarness(tabId))) {
+        throw new Error(locale === "es"
+          ? "El arnés cambió mientras se guardaba. Vuelve a guardar antes de cerrar."
+          : "The harness changed during saving. Save again before closing.");
       }
+      if (getHarnessSnapshot(tabId)?.runStatus === "running" && !(await handleStop(tabId))) {
+        throw new Error(locale === "es" ? "No se pudo detener la ejecución." : "Could not stop the run.");
+      }
+      if (!discard && getHarnessSnapshot(tabId)?.dirty) {
+        throw new Error(locale === "es" ? "Hay cambios sin guardar." : "There are unsaved changes.");
+      }
+      closeHarnessTab(tabId);
+      harnessViewports.current.delete(tabId);
+      dismissHarnessClose();
+    } catch (error) {
+      setPendingHarnessClose(tabId);
+      setCloseError(saveFailure(error));
+    } finally {
+      closeInProgress.current = false;
+      setClosingHarnessId(null);
+    }
+  };
+
+  const requestHarnessClose = (tabId: string) => {
+    const tab = getHarnessSnapshot(tabId);
+    if (!tab || closeInProgress.current) return;
+    if (!tab.dirty || (autoSaveHarnesses && tab.savedLibraryName)) {
+      void finishHarnessClose(tabId, tab.dirty);
+    } else {
+      setPendingHarnessClose(tabId);
     }
   };
 
@@ -622,11 +691,12 @@ function LoorsStudioInner() {
       void handleSaveWorkflow(true);
     }, 1500);
     return () => window.clearTimeout(id);
-  }, [autoSaveHarnesses, dirty, savedLibraryName, nodes, edges, workflowName]);
+  }, [activeHarnessTabId, autoSaveHarnesses, dirty, savedLibraryName, nodes, edges, workflowName]);
 
   // Ctrl+S / Cmd+S shortcut in Harness mode
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (document.querySelector("dialog.loors-dialog[open]")) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && appMode === "harness") {
         e.preventDefault();
         void handleSaveWorkflow(false);
@@ -634,7 +704,7 @@ function LoorsStudioInner() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [appMode, workflowName, savedLibraryName, nodes, edges, locale]);
+  }, [activeHarnessTabId, appMode, locale]);
 
   const runningHarnessCount = harnessTabs.filter(
     (tab) => (tab.id === activeHarnessTabId ? runStatus : tab.runStatus) === "running"
@@ -690,7 +760,6 @@ function LoorsStudioInner() {
                 onClick={() => {
                   newWorkflow();
                   setRightPanelTab("inspector");
-                  setTimeout(() => fitView({ padding: 0.18, duration: 220 }), 50);
                 }}
               >
                 <Plus size={15} />
@@ -934,31 +1003,27 @@ function LoorsStudioInner() {
         style={{
           display: appMode === "harness" ? "grid" : "none",
           gridTemplateColumns: [
-            sidebarCollapsed ? null : `minmax(180px, ${harnessLeftWidth}px)`,
-            sidebarCollapsed ? null : "4px",
-            "minmax(320px, 1fr)",
+            paletteHidden ? null : `minmax(0, min(${harnessLeftWidth}px, 28vw))`,
+            paletteHidden ? null : "4px",
+            "minmax(0, 1fr)",
             rightPanelCollapsed ? null : "4px",
-            rightPanelCollapsed ? null : `minmax(240px, ${harnessRightWidth}px)`,
+            rightPanelCollapsed ? null : inspectorExpanded ? "min(680px, 62%)" : `minmax(0, min(${harnessRightWidth}px, 45vw))`,
           ]
             .filter(Boolean)
             .join(" "),
         }}
       >
-        <Sidebar collapsed={sidebarCollapsed} />
-        {!sidebarCollapsed && (
-          <div
-            className="panel-resizer"
-            role="separator"
-            aria-orientation="vertical"
-            title="Drag to resize (double-click to reset)"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              startHarnessResize("left", e.clientX);
-            }}
-            onDoubleClick={() => {
-              setHarnessLeftWidth(256);
-              localStorage.setItem("loors_harness_left_w", "256");
-            }}
+        <Sidebar collapsed={paletteHidden} />
+        {!paletteHidden && (
+          <PanelResizer
+            label={locale === "es" ? "Ajustar panel izquierdo" : "Resize left panel"}
+            side="left"
+            width={harnessLeftWidth}
+            min={190}
+            max={440}
+            defaultWidth={256}
+            storageKey="loors_harness_left_w"
+            onResize={setHarnessLeftWidth}
           />
         )}
 
@@ -980,7 +1045,6 @@ function LoorsStudioInner() {
                     onClick={() => {
                       if (!isActive) {
                         switchHarnessTab(tab.id);
-                        setTimeout(() => fitView({ padding: 0.18, duration: 180 }), 40);
                       }
                     }}
                   >
@@ -1004,29 +1068,11 @@ function LoorsStudioInner() {
                       <button
                         type="button"
                         className="harness-tab-close"
+                        disabled={closingHarnessId === tab.id}
                         title={locale === "es" ? "Cerrar pestaña" : "Close tab"}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (autoSaveHarnesses && tab.savedLibraryName && (isActive ? dirty : tab.dirty)) {
-                            const snapNodes = isActive ? nodes : tab.nodes;
-                            const snapEdges = isActive ? edges : tab.edges;
-                            const snapName = isActive ? workflowName : tab.workflowName;
-                            const payload = {
-                              schemaVersion: 1,
-                              name: snapName || tab.savedLibraryName,
-                              exportedAt: new Date().toISOString(),
-                              nodes: snapNodes,
-                              edges: snapEdges,
-                            };
-                            void invoke("save_workflow_to_library", {
-                              name: snapName || tab.savedLibraryName,
-                              content: JSON.stringify(payload, null, 2),
-                            }).catch(() => {});
-                          }
-                          if (status === "running") {
-                            void handleStop(tab.id);
-                          }
-                          closeHarnessTab(tab.id);
+                          requestHarnessClose(tab.id);
                         }}
                       >
                         <X size={11} />
@@ -1042,7 +1088,6 @@ function LoorsStudioInner() {
                 onClick={() => {
                   createHarnessTab();
                   setRightPanelTab("inspector");
-                  setTimeout(() => fitView({ padding: 0.18, duration: 180 }), 40);
                 }}
               >
                 <Plus size={13} />
@@ -1051,6 +1096,7 @@ function LoorsStudioInner() {
           </div>
 
           <main
+            ref={canvasRef}
             className="loors-canvas"
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleCanvasDrop}
@@ -1063,6 +1109,17 @@ function LoorsStudioInner() {
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
+              isValidConnection={(connection) =>
+                arePortsCompatible(connection.sourceHandle ?? null, connection.targetHandle ?? null)
+              }
+              onConnectEnd={(_, connection) => {
+                if (connection.isValid || !connection.fromHandle || !connection.toHandle) return;
+                if (!arePortsCompatible(connection.fromHandle.id, connection.toHandle.id)) {
+                  setBanner(locale === "es"
+                    ? "Los puertos de recursos deben ser del mismo tipo."
+                    : "Resource ports must have the same type.");
+                }
+              }}
               onNodeClick={(_, node) => {
                 setSelectedNodeId(node.id);
                 setRightPanelTab("inspector");
@@ -1073,7 +1130,11 @@ function LoorsStudioInner() {
                 setQuickAdd(null);
               }}
               deleteKeyCode={["Backspace", "Delete"]}
-              fitView
+              onMoveEnd={(_, viewport) => {
+                if (appMode === "harness" && canvasRef.current?.clientWidth) {
+                  harnessViewports.current.set(activeHarnessTabId, viewport);
+                }
+              }}
               minZoom={0.2}
               colorMode="dark"
             >
@@ -1173,26 +1234,23 @@ function LoorsStudioInner() {
         </div>
 
         {!rightPanelCollapsed && (
-          <div
-            className="panel-resizer"
-            role="separator"
-            aria-orientation="vertical"
-            title="Drag to resize (double-click to reset)"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              startHarnessResize("right", e.clientX);
-            }}
-            onDoubleClick={() => {
-              setHarnessRightWidth(360);
-              localStorage.setItem("loors_harness_right_w", "360");
-            }}
-          />
+          !inspectorExpanded ? <PanelResizer
+            label={locale === "es" ? "Ajustar panel derecho" : "Resize right panel"}
+            side="right"
+            width={harnessRightWidth}
+            min={280}
+            max={640}
+            defaultWidth={360}
+            storageKey="loors_harness_right_w"
+            onResize={setHarnessRightWidth}
+          /> : <div />
         )}
 
         <aside
-          className="loors-right-panel"
+          className={`loors-right-panel ${inspectorExpanded ? "is-wide-inspector" : ""}`}
           style={{ display: rightPanelCollapsed ? "none" : "flex" }}
         >
+          <div className="right-panel-heading">
           <div className="right-panel-tabs" role="tablist">
             <button
               type="button"
@@ -1216,11 +1274,29 @@ function LoorsStudioInner() {
             </button>
           </div>
 
+            {rightPanelTab === "inspector" && (
+              <button
+                type="button"
+                className="icon-btn inspector-width-toggle"
+                aria-pressed={inspectorExpanded}
+                aria-label={locale === "es" ? "Vista amplia del Inspector" : "Wide Inspector"}
+                title={locale === "es" ? "Vista amplia del Inspector" : "Wide Inspector"}
+                onClick={() => setWideInspector((wide) => !wide)}
+              >
+                {inspectorExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+              </button>
+            )}
+          </div>
+
           <div
             className="right-panel-pane"
             style={{ display: rightPanelTab === "inspector" ? "flex" : "none" }}
           >
-            <Inspector />
+            <Inspector onRun={() => void handleRun()} onShowConsole={() => setConsoleOpen(true)} onStartHarness={() => {
+              createHarnessTab();
+              const state = useGraphStore.getState();
+              state.setSelectedNodeId(state.nodes.find((node) => node.data.kind === "task_input")?.id ?? null);
+            }} />
           </div>
           <div
             className="right-panel-pane"
@@ -1283,9 +1359,39 @@ function LoorsStudioInner() {
       />
       <WorkflowIoModal
         open={ioOpen}
+        onSave={() => saveHarness(activeHarnessTabId)}
         onClose={() => setIoOpen(false)}
         onNotice={(msg) => setBanner(msg)}
       />
+      {pendingHarnessClose && (
+        <ModalBackdrop
+          label={locale === "es" ? "Cerrar arnés" : "Close harness"}
+          onClose={closingHarnessId ? undefined : dismissHarnessClose}
+        >
+          <div className="modal-card">
+            <div className="modal-header">
+              <strong>{locale === "es" ? "Cambios sin guardar" : "Unsaved changes"}</strong>
+            </div>
+            <div className="modal-body">
+              <p>{getHarnessSnapshot(pendingHarnessClose)?.workflowName}</p>
+              {closeError && <p role="alert">{closeError}</p>}
+            </div>
+            <div className="modal-footer harness-close-actions">
+              <button type="button" className="btn-secondary" disabled={!!closingHarnessId} onClick={dismissHarnessClose}>
+                {locale === "es" ? "Cancelar" : "Cancel"}
+              </button>
+              <button type="button" className="btn-secondary" disabled={!!closingHarnessId} onClick={() => void finishHarnessClose(pendingHarnessClose, false, true)}>
+                {locale === "es" ? "Descartar" : "Discard"}
+              </button>
+              <button type="button" className="btn-primary" disabled={!!closingHarnessId} onClick={() => void finishHarnessClose(pendingHarnessClose, true)}>
+                {closingHarnessId
+                  ? locale === "es" ? "Guardando…" : "Saving…"
+                  : locale === "es" ? "Guardar" : "Save"}
+              </button>
+            </div>
+          </div>
+        </ModalBackdrop>
+      )}
       <ModelTuningModal />
       <HumanGateModal />
       <DownloadsDock onNotice={(msg) => setBanner(msg)} />

@@ -1,4 +1,5 @@
-﻿import { useEffect, useState } from "react";
+﻿import { ModalBackdrop } from "./ModalBackdrop";
+import { useEffect, useState } from "react";
 import { Plus, Trash2, Wrench, X } from "lucide-react";
 import { invoke } from "../lib/bridge";
 import { useI18n } from "../i18n";
@@ -162,7 +163,7 @@ export function CustomNodeModal({
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <ModalBackdrop label={L("Custom node", "Nodo personalizado")} onClose={onClose}>
       <div className="modal-card modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-title">
@@ -393,6 +394,6 @@ export function CustomNodeModal({
           </div>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

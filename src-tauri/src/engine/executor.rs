@@ -612,6 +612,19 @@ async fn run_node(
             } else {
                 prompt.clone()
             };
+            if merged_prompt.trim().is_empty()
+                && node
+                    .data
+                    .config
+                    .get("requirePrompt")
+                    .and_then(|value| value.as_bool())
+                    == Some(true)
+            {
+                return NodeStepOutcome::Finish(
+                    RunOutcomeKind::Failed,
+                    "Introduce el encargo en el nodo de entrada.".to_string(),
+                );
+            }
             ctx.initial_prompt = merged_prompt.clone();
             ctx.current_prompt = merged_prompt;
             log(
@@ -980,19 +993,9 @@ async fn run_node(
                     let mut last_call_sig = String::new();
                     let mut repeat_call_count: u32 = 0;
 
-                    let compact_budget = {
-                        let prof = crate::inference::load_model_profile(&model_path);
-                        if prof.compact_at_tokens > 0 {
-                            let scaled = ((prof.compact_at_tokens as u64 * 4) / 3) as u32;
-                            if context_size > 0 {
-                                scaled.min(context_size)
-                            } else {
-                                scaled
-                            }
-                        } else {
-                            context_size
-                        }
-                    };
+                    let compact_budget =
+                        compaction_threshold(context_size, model_profile.compact_at_tokens);
+                    let tool_bytes = chat_tool_bytes(&tool_defs);
 
                     for step in 1..=max_steps {
                         if cancel.load(Ordering::SeqCst) {
@@ -1033,7 +1036,7 @@ async fn run_node(
                             format!("Agent {step_tag} (llama.cpp local)..."),
                         );
 
-                        if compact_agent_messages(&mut messages, compact_budget) {
+                        if compact_agent_messages(&mut messages, tool_bytes, compact_budget) {
                             log(
                                 iter,
                                 LogStreamKind::System,
@@ -1257,6 +1260,27 @@ async fn run_node(
                         let mut screenshot_to_attach: Option<String> = None;
 
                         for tc in effective_tool_calls {
+                            if !tool_defs.iter().any(|tool| {
+                                tool["function"]["name"].as_str() == Some(tc.function.name.as_str())
+                            }) {
+                                log(
+                                    iter,
+                                    LogStreamKind::Stderr,
+                                    format!("Herramienta deshabilitada: {}", tc.function.name),
+                                );
+                                messages.push(ChatMessage {
+                                    role: "tool".into(),
+                                    content: Some(format!(
+                                        "La herramienta '{}' no está habilitada para este nodo.",
+                                        tc.function.name
+                                    )),
+                                    tool_calls: None,
+                                    tool_call_id: Some(tc.id),
+                                    image_paths: Vec::new(),
+                                });
+                                continue;
+                            }
+
                             emit(EngineEvent::NodeStatus {
                                 run_id: run_id.to_string(),
                                 node_id: node.id.clone(),
@@ -1615,7 +1639,12 @@ async fn run_node(
                 if find_next_node(&graph.edges, &node.id, "exhausted").is_some() {
                     NodeStepOutcome::Continue("exhausted".to_string())
                 } else {
-                    NodeStepOutcome::Finish(RunOutcomeKind::Exhausted, msg)
+                    let summary = if ctx.last_judge_reason.is_empty() {
+                        msg
+                    } else {
+                        format!("{msg} Última evaluación: {}", ctx.last_judge_reason)
+                    };
+                    NodeStepOutcome::Finish(RunOutcomeKind::Exhausted, summary)
                 }
             }
         }
@@ -1626,6 +1655,52 @@ async fn run_node(
             let node_ws = effective_workspace(graph, node_map, node, ctx);
 
             match mode.as_str() {
+                "delivery_branch" => {
+                    let plan = validate_json_output(&ctx.last_agent_output, "object", &[])
+                        .and_then(|json| {
+                            serde_json::from_str::<super::delivery::DeliveryPlan>(&json)
+                                .map_err(|err| format!("Faltan datos para crear la rama: {err}"))
+                        });
+                    let plan = match plan {
+                        Ok(plan) => plan,
+                        Err(err) => return NodeStepOutcome::Finish(RunOutcomeKind::Failed, err),
+                    };
+                    let remote = config_str(node, "remote", "origin");
+                    match super::delivery::prepare(Path::new(&node_ws), plan, remote.trim()).await {
+                        Ok(delivery) => {
+                            ctx.workspace = delivery.workspace.to_string_lossy().into_owned();
+                            ctx.node_outputs.insert(
+                                node.id.clone(),
+                                serde_json::to_string(&delivery).expect("UTF-8 delivery workspace"),
+                            );
+                            log(
+                                iter,
+                                LogStreamKind::System,
+                                format!("Rama {} creada en {}", delivery.branch, ctx.workspace),
+                            );
+                        }
+                        Err(err) => return NodeStepOutcome::Finish(RunOutcomeKind::Failed, err),
+                    }
+                }
+                "delivery_publish" => {
+                    let branch_node = config_str(node, "branchNodeId", "");
+                    let delivery = ctx.node_outputs.get(&branch_node).and_then(|value| {
+                        serde_json::from_str::<super::delivery::DeliveryBranch>(value).ok()
+                    });
+                    let Some(delivery) = delivery else {
+                        return NodeStepOutcome::Finish(
+                            RunOutcomeKind::Failed,
+                            "Falta el worktree de la rama de entrega.".to_string(),
+                        );
+                    };
+                    match super::delivery::publish(&delivery).await {
+                        Ok(summary) => {
+                            log(iter, LogStreamKind::System, summary.clone());
+                            ctx.node_outputs.insert(node.id.clone(), summary);
+                        }
+                        Err(err) => return NodeStepOutcome::Finish(RunOutcomeKind::Failed, err),
+                    }
+                }
                 "rollback" => {
                     log(
                         iter,
@@ -1884,6 +1959,12 @@ async fn run_node(
 
             let connected_model = find_connected_model_node(graph, node_map, &node.id);
             let installed_runtime = find_installed_binary(backend.clone());
+            let strict_verdict = node
+                .data
+                .config
+                .get("strictVerdict")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
 
             let (passed, reason) = if let Some(model_node) = connected_model {
                 let model_path = config_str(model_node, "modelPath", "");
@@ -1965,6 +2046,8 @@ async fn run_node(
                                 Ok(resp) => {
                                     if resp.content.trim().is_empty() {
                                         (false, "El LLM Judge devolvió una respuesta vacía (solo thinking).".to_string())
+                                    } else if strict_verdict {
+                                        parse_judge_verdict(&resp.content, true)
                                     } else {
                                         parse_judge_json(&resp.content)
                                     }
@@ -1981,23 +2064,31 @@ async fn run_node(
                         Err(err) => (false, format!("Error cargando modelo en Judge: {err}")),
                     }
                 } else {
-                    let fallback_pass = ctx.last_exit_code == Some(0);
+                    let fallback_pass = !strict_verdict && ctx.last_exit_code == Some(0);
                     (
                         fallback_pass,
-                        format!(
-                            "Fallback heurístico (GGUF no encontrado): exit_code={:?}",
-                            ctx.last_exit_code
-                        ),
+                        if strict_verdict {
+                            "El juez requiere un modelo disponible para emitir un veredicto.".to_string()
+                        } else {
+                            format!(
+                                "Fallback heurístico (GGUF no encontrado): exit_code={:?}",
+                                ctx.last_exit_code
+                            )
+                        },
                     )
                 }
             } else {
-                let fallback_pass = ctx.last_exit_code == Some(0);
+                let fallback_pass = !strict_verdict && ctx.last_exit_code == Some(0);
                 (
                     fallback_pass,
-                    format!(
-                        "Fallback heurístico (sin runtime/modelo conectado): exit_code={:?}",
-                        ctx.last_exit_code
-                    ),
+                    if strict_verdict {
+                        "El juez requiere un modelo conectado para emitir un veredicto.".to_string()
+                    } else {
+                        format!(
+                            "Fallback heurístico (sin runtime/modelo conectado): exit_code={:?}",
+                            ctx.last_exit_code
+                        )
+                    },
                 )
             };
 
@@ -2011,7 +2102,11 @@ async fn run_node(
                     reason
                 ),
             );
-            NodeStepOutcome::Continue(if passed { "pass" } else { "fail" }.to_string())
+            if !passed && find_next_node(&graph.edges, &node.id, "fail").is_none() {
+                NodeStepOutcome::Finish(RunOutcomeKind::Failed, reason)
+            } else {
+                NodeStepOutcome::Continue(if passed { "pass" } else { "fail" }.to_string())
+            }
         }
 
         "notify" => {
@@ -2914,13 +3009,19 @@ async fn run_node(
                     ctx.last_stderr = err_msg.clone();
                     ctx.last_judge_reason = err_msg.clone();
                     log(iter, LogStreamKind::Stderr, format!("JSON invalid: {err_msg}"));
-                    NodeStepOutcome::Continue("invalid".to_string())
+                    if find_next_node(&graph.edges, &node.id, "invalid").is_some() {
+                        NodeStepOutcome::Continue("invalid".to_string())
+                    } else {
+                        NodeStepOutcome::Finish(RunOutcomeKind::Failed, err_msg)
+                    }
                 }
             }
         }
 
         "output" => {
-            let label = config_str(node, "label", "Completado");
+            let label = opt_config_str(node, "labelTemplate")
+                .map(|template| ctx.render_template(&template))
+                .unwrap_or_else(|| config_str(node, "label", "Completado"));
             let summary = format!(
                 "{label} tras {} iteración(es) (exit_code={:?}).",
                 ctx.iteration, ctx.last_exit_code
@@ -3312,6 +3413,10 @@ fn resolve_workspace_file(workspace: &str, rel: &str) -> Result<std::path::PathB
 }
 
 pub fn parse_judge_json(raw: &str) -> (bool, String) {
+    parse_judge_verdict(raw, false)
+}
+
+fn parse_judge_verdict(raw: &str, strict: bool) -> (bool, String) {
     let trimmed = raw.trim();
     let candidate = if let (Some(start), Some(end)) = (trimmed.find('{'), trimmed.rfind('}')) {
         &trimmed[start..=end]
@@ -3325,17 +3430,24 @@ pub fn parse_judge_json(raw: &str) -> (bool, String) {
             .and_then(|v| v.as_str())
             .unwrap_or("fail")
             .to_lowercase();
-        let passed = matches!(decision.as_str(), "pass" | "keep" | "done" | "approved" | "true");
         let reason = val
             .get("reason")
             .and_then(|v| v.as_str())
+            .filter(|reason| !strict || !reason.trim().is_empty());
+        let passed = if strict {
+            decision == "pass" && reason.is_some()
+        } else {
+            matches!(decision.as_str(), "pass" | "keep" | "done" | "approved" | "true")
+        };
+        let reason = reason
             .unwrap_or("Sin explicación.")
             .to_string();
         return (passed, reason);
     }
 
     let lower = trimmed.to_lowercase();
-    let passed = lower.contains("\"pass\"") || lower.contains("\"keep\"") || lower.starts_with("pass");
+    let passed = !strict
+        && (lower.contains("\"pass\"") || lower.contains("\"keep\"") || lower.starts_with("pass"));
     (passed, truncate(trimmed, 220))
 }
 
@@ -3451,7 +3563,10 @@ fn record_node_output(ctx: &mut ExecutionContext, node: &GraphNode) {
         "http_request" => Some(ctx.last_http_response.clone()),
         "custom" | "custom_node" | "json_validator" => Some(ctx.last_custom_output.clone()),
         "for_each" => Some(ctx.current_item.clone()),
-        "git_checkpoint" => Some(ctx.last_git_diff.clone()),
+        "git_checkpoint" if !matches!(
+            config_str(node, "mode", "diff").as_str(),
+            "delivery_branch" | "delivery_publish"
+        ) => Some(ctx.last_git_diff.clone()),
         _ => None,
     };
     if let Some(v) = val {
@@ -3490,42 +3605,72 @@ pub fn parse_inline_tool_calls(content: &str) -> Vec<ToolCall> {
     out
 }
 
-pub fn compact_agent_messages(messages: &mut [ChatMessage], context_size: u32) -> bool {
-    // Frozen-Prefix KV-Cache strategy: keep messages[0..2] immutable so llama-server hits 100% KV-cache.
-    // Trigger only at 75% of ctx budget, then compact oldest middle tool outputs down toward ~45%.
-    let max_chars = (context_size as usize).saturating_mul(26) / 10;
-    let trigger_budget = (max_chars * 75) / 100;
-    let target_budget = (max_chars * 45) / 100;
+pub fn compaction_threshold(context_size: u32, configured: u32) -> u32 {
+    match (context_size, configured) {
+        (0, tokens) => tokens,
+        (context, 0) => ((u64::from(context) * 3 + 2) / 4) as u32,
+        (context, tokens) => context.min(tokens),
+    }
+}
 
-    let mut total_chars: usize = messages
-        .iter()
-        .map(|m| m.content.as_ref().map(|s| s.len()).unwrap_or(0))
-        .sum();
-    if total_chars <= trigger_budget || messages.len() <= 6 {
+pub fn chat_tool_bytes(tools: &[Value]) -> usize {
+    if tools.is_empty() {
+        return 0;
+    }
+    serde_json::to_vec(tools).map_or(0, |bytes| bytes.len())
+}
+
+fn chat_prompt_bytes(messages: &[ChatMessage], tool_bytes: usize) -> usize {
+    tool_bytes + messages.iter().map(|message| {
+        let content = message.content.as_ref().map_or(0, String::len);
+        let calls = message.tool_calls.as_ref().map_or(0, |calls| {
+            calls.iter().map(|call| {
+                call.id.len() + call.function.name.len() + call.function.arguments.len() + 24
+            }).sum::<usize>()
+        });
+        // Allow for role markers and separators in the chat template.
+        16 + content + calls + message.tool_call_id.as_ref().map_or(0, String::len)
+    }).sum::<usize>()
+}
+
+pub fn chat_prompt_tokens(messages: &[ChatMessage], tool_bytes: usize) -> usize {
+    chat_prompt_bytes(messages, tool_bytes).saturating_mul(10).div_ceil(26)
+}
+
+pub fn compact_agent_messages(messages: &mut [ChatMessage], tool_bytes: usize, threshold: u32) -> bool {
+    // Estimate one token per 2.6 UTF-8 bytes and aim for 60% of the trigger.
+    let trigger_budget = (threshold as usize).saturating_mul(26) / 10;
+    let target_budget = trigger_budget.saturating_mul(3) / 5;
+    let mut total_bytes = chat_prompt_bytes(messages, tool_bytes);
+    if threshold == 0 || total_bytes <= trigger_budget {
         return false;
     }
 
-    let keep_tail = 4;
-    let end_compact = messages.len().saturating_sub(keep_tail);
+    let recent_start = messages.len().saturating_sub(4).max(2).min(messages.len());
+    let (older, recent) = messages.split_at_mut(recent_start);
     let mut compacted_any = false;
-    for msg in messages.iter_mut().take(end_compact).skip(2) {
-        if total_chars <= target_budget {
-            break;
-        }
-        if msg.role == "tool" {
-            if let Some(ref text) = msg.content {
-                let old_len = text.len();
-                if old_len > 220 {
-                    let replacement = format!(
-                        "{}\n... [compactado para KV-cache]",
-                        truncate(text, 180)
-                    );
-                    let new_len = replacement.len();
-                    msg.content = Some(replacement);
-                    total_chars = total_chars.saturating_sub(old_len.saturating_sub(new_len));
+    // Preserve the initial prompt and recent conversation. Shorten recent tool output
+    // only if older output alone could not bring the prompt below the trigger.
+    for (candidates, budget) in [(older, target_budget), (recent, trigger_budget)] {
+        for msg in candidates.iter_mut().filter(|message| message.role == "tool") {
+            if total_bytes <= budget {
+                break;
+            }
+            if let Some(text) = &mut msg.content {
+                if text.contains("[salida de herramienta compactada]") {
+                    continue;
+                }
+                let replacement =
+                    format!("{}\n[salida de herramienta compactada]", truncate(text, 180));
+                if replacement.len() < text.len() {
+                    total_bytes -= text.len() - replacement.len();
+                    *text = replacement;
                     compacted_any = true;
                 }
             }
+        }
+        if total_bytes <= trigger_budget {
+            break;
         }
     }
     compacted_any
@@ -3635,6 +3780,34 @@ fn validate_json_output(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolves_compaction_threshold_in_tokens() {
+        assert_eq!(compaction_threshold(4096, 0), 3072);
+        assert_eq!(compaction_threshold(4096, 3500), 3500);
+        assert_eq!(compaction_threshold(4096, u32::MAX), 4096);
+        assert_eq!(compaction_threshold(0, 3500), 3500);
+    }
+
+    #[test]
+    fn tool_schemas_can_trigger_compaction_in_a_short_history() {
+        let mut messages: Vec<_> = ["system", "user", "tool"]
+            .into_iter()
+            .map(|role| ChatMessage {
+                role: role.into(),
+                content: Some(if role == "tool" { "x".repeat(1000) } else { "keep".into() }),
+                tool_calls: None,
+                tool_call_id: None,
+                image_paths: Vec::new(),
+            })
+            .collect();
+        assert!(!compact_agent_messages(&mut messages, 0, 500));
+        assert!(compact_agent_messages(&mut messages, 500, 500));
+        assert!(chat_prompt_tokens(&messages, 500) < 500);
+        assert_eq!(messages[0].content.as_deref(), Some("keep"));
+        assert_eq!(messages[1].content.as_deref(), Some("keep"));
+        assert!(!compact_agent_messages(&mut messages, 500, 500));
+    }
 
     #[test]
     fn parses_for_each_json_and_lines() {
@@ -3763,6 +3936,21 @@ mod tests {
         let (ok2, reason2) = parse_judge_json("{\"decision\":\"fail\",\"reason\":\"Falta validar null\"}");
         assert!(!ok2);
         assert_eq!(reason2, "Falta validar null");
+    }
+
+    #[test]
+    fn strict_judge_requires_valid_pass_and_nonempty_reason() {
+        assert!(parse_judge_verdict(r#"{"decision":"pass","reason":"Tests passed"}"#, true).0);
+        for invalid in [
+            "PASS",
+            r#"{"decision":"pass","reason":"#,
+            r#"{"decision":"pass","reason":" "}"#,
+            r#"{"decision":"pass"}"#,
+            r#"{"decision":"keep","reason":"Looks good"}"#,
+            r#"{"decision":"fail","reason":"Tests failed"}"#,
+        ] {
+            assert!(!parse_judge_verdict(invalid, true).0, "{invalid}");
+        }
     }
 
     #[tokio::test]

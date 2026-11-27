@@ -1,3 +1,4 @@
+mod delivery;
 pub mod executor;
 pub mod swarm;
 pub mod types;

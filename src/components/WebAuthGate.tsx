@@ -1,3 +1,4 @@
+import { ModalBackdrop } from "./ModalBackdrop";
 import { useState } from "react";
 import { KeyRound, Lock, RefreshCw } from "lucide-react";
 import { setServerToken } from "../lib/bridge";
@@ -40,7 +41,7 @@ export function WebAuthGate({ onAuthenticated }: WebAuthGateProps) {
   };
 
   return (
-    <div className="modal-backdrop" style={{ zIndex: 9999, background: "#09090b" }}>
+    <ModalBackdrop label="Loors" className="web-auth-dialog">
       <form
         className="modal-card"
         style={{ width: 400, padding: 24, display: "flex", flexDirection: "column", gap: 14 }}
@@ -96,6 +97,6 @@ export function WebAuthGate({ onAuthenticated }: WebAuthGateProps) {
           <span>{L("Connect to Loors", "Conectar a Loors")}</span>
         </button>
       </form>
-    </div>
+    </ModalBackdrop>
   );
 }

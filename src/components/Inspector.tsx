@@ -1,6 +1,13 @@
+import { useReactFlow } from "@xyflow/react";
 ﻿import { useEffect, useState } from "react";
 import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Check,
+  ChevronRight,
+  Circle,
   Copy,
+  MoreHorizontal,
   FolderOpen,
   FolderSearch,
   Play,
@@ -15,6 +22,8 @@ import { invoke } from "../lib/bridge";
 import {
   isResourceKind,
   NODE_BLUEPRINTS,
+  validateGraphBeforeRun,
+  type LoorsFlowNode,
   type CustomFieldDef,
   type CustomNodeDef,
   type CloudProviderConfig,
@@ -25,6 +34,9 @@ import {
 } from "../types/graph";
 import { useGraphStore } from "../store/useGraphStore";
 import { getNodeDescription, getNodeGuide, getNodeLabel, useI18n } from "../i18n";
+
+import { NodeIcon } from "./nodes/LoorsNode";
+import { getPortLabel } from "./nodePorts";
 
 const TEMPLATE_VARS = [
   "{{prompt}}",
@@ -293,8 +305,32 @@ function WorkspaceField({
   );
 }
 
-export function Inspector() {
-  const { locale, t } = useI18n();
+function WorkerTools({ tools, label, onChange }: {
+  tools: string[];
+  label: string;
+  onChange: (tools: string[]) => void;
+}) {
+  const [draft, setDraft] = useState(() => tools.join(", "));
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <textarea rows={3} value={draft} onChange={(event) => {
+        setDraft(event.target.value);
+        onChange(event.target.value.split(/[,\n]/).map((tool) => tool.trim()).filter(Boolean));
+      }} />
+    </label>
+  );
+}
+
+export function Inspector({ onStartHarness, onRun, onShowConsole }: {
+  onStartHarness: () => void;
+  onRun: () => void;
+  onShowConsole: () => void;
+}) {
+  const { locale } = useI18n();
+  const { getZoom, setCenter } = useReactFlow();
+  const workflowName = useGraphStore((s) => s.workflowName);
+  const runStatus = useGraphStore((s) => s.runStatus);
   const L = (en: string, es: string) => (locale === "es" ? es : en);
   const nodes = useGraphStore((s) => s.nodes);
   const edges = useGraphStore((s) => s.edges);
@@ -304,11 +340,14 @@ export function Inspector() {
   const updateNodeConfig = useGraphStore((s) => s.updateNodeConfig);
   const deleteNode = useGraphStore((s) => s.deleteNode);
   const duplicateNode = useGraphStore((s) => s.duplicateNode);
+  const connect = useGraphStore((s) => s.onConnect);
   const attachResourceToNode = useGraphStore((s) => s.attachResourceToNode);
   const openTuningModal = useGraphStore((s) => s.openTuningModal);
   const setEditingCustomNode = useGraphStore((s) => s.setEditingCustomNode);
   const setActiveModelPath = useGraphStore((s) => s.setActiveModelPath);
   const selectedBackend = useGraphStore((s) => s.selectedBackend);
+
+  const [openWorker, setOpenWorker] = useState<{ nodeId: string; index: number } | null>(null);
 
   const [scannedModels, setScannedModels] = useState<LocalModelFile[] | null>(
     null
@@ -417,18 +456,135 @@ export function Inspector() {
     }
   };
 
+  const taskNode = nodes.find((item) => item.data.kind === "task_input");
+  const modelNode = nodes.find((item) => item.data.kind === "local_model");
+  const jumpToNode = (target: LoorsFlowNode) => {
+    setSelectedNodeId(target.id);
+    void setCenter(
+      target.position.x + (target.measured?.width ?? 224) / 2,
+      target.position.y + (target.measured?.height ?? 80) / 2,
+      { zoom: Math.max(0.7, getZoom()), duration: 180 }
+    );
+  };
+
   if (!node) {
-    return (
-      <div className="loors-inspector">
-        <div className="muted-empty" style={{ padding: "32px 14px", textAlign: "center" }}>
-          {t("canvas.selectNodeHint")}
+    if (!nodes.length) {
+      return (
+        <div className="loors-inspector harness-overview">
+          <div className="harness-overview-head">
+            <h2>{L("Start a harness", "Empieza un arnés")}</h2>
+            <p>{L("Give an agent a task you can run again.", "Dale al agente una tarea que puedas volver a ejecutar.")}</p>
+          </div>
+          <div className="harness-overview-flow">
+            <span>{L("Task", "Tarea")}</span><ChevronRight size={12} />
+            <span>{L("Agent", "Agente")}</span><ChevronRight size={12} />
+            <span>{L("Output", "Salida")}</span>
+          </div>
+          <button type="button" className="btn-primary harness-overview-action" onClick={onStartHarness}>
+            <Plus size={14} /> {L("Create a starter harness", "Crear un arnés básico")}
+          </button>
         </div>
+      );
+    }
+
+    const issues = validateGraphBeforeRun(nodes, edges);
+    const issue = issues[0];
+    const project = String(taskNode?.data.config.workspace ?? "").trim();
+    const hasProject = Boolean(project && project !== ".");
+    const hasTask = Boolean(String(taskNode?.data.config.prompt ?? "").trim());
+    const incompleteTask = taskNode && (!hasProject || !hasTask) ? taskNode : undefined;
+    const firstIssueNode = nodes.find((item) => item.id === issue?.nodeId);
+    const modelIssueNode = nodes.find((item) => issues.some((problem) => problem.nodeId === item.id) &&
+      (item.data.kind === "local_model" || ((item.data.kind === "agent" || item.data.kind === "llm_judge")
+        && !edges.some((edge) => edge.target === item.id && edge.targetHandle === "model_ref"))));
+    const nextNode = incompleteTask ?? firstIssueNode;
+    const configuredModel = modelNode && String(modelNode.data.config.modelPath ?? "");
+    const taskDetail = !hasProject ? L("Choose a project folder", "Falta elegir la carpeta")
+      : !hasTask ? L("Write the task", "Falta escribir la tarea")
+      : project.split(/[\\/]/).filter(Boolean).pop() || project;
+    const modelDetail = modelIssueNode?.data.kind === "local_model" ? L("Choose a model", "Falta elegir un modelo")
+      : modelIssueNode ? L("Connect a model", "Falta conectar un modelo")
+      : configuredModel ? configuredModel.split(/[\\/]/).pop()?.split("::").pop()
+      : L("No model required", "No requiere modelo");
+    const running = runStatus === "running";
+    const hasRun = runStatus !== "idle";
+    const blocked = Boolean(incompleteTask || issue);
+    const actionLabel = running ? L("Open console", "Abrir consola")
+      : incompleteTask ? L("Set up task", "Configurar tarea")
+      : modelIssueNode === nextNode && modelIssueNode ? modelDetail
+      : nextNode ? L("Review the next issue", "Revisar qué falta")
+      : issue ? L("Create a starter harness", "Crear un arnés básico")
+      : L("Run harness", "Ejecutar arnés");
+
+    return (
+      <div className="loors-inspector harness-overview">
+        <div className="harness-overview-head">
+          <div className="harness-overview-title">
+            <h2 title={workflowName}>{workflowName}</h2>
+            <span className="harness-overview-status" data-state={running ? "running" : blocked ? "blocked" : "ready"}>
+              {running ? L("Running", "En ejecución") : blocked ? L("Setup needed", "Por configurar") : L("Ready", "Listo")}
+            </span>
+          </div>
+          <p>{L("A harness runs the connected steps on the canvas.", "Un arnés ejecuta los pasos conectados en el lienzo.")}</p>
+        </div>
+        <div className="harness-overview-rows">
+          {taskNode && (
+            <button type="button" className="harness-overview-row" onClick={() => jumpToNode(taskNode)}>
+              <NodeIcon kind="task_input" />
+              <span><strong>{L("Task", "Tarea")}</strong><small title={taskDetail}>{taskDetail}</small></span>
+              {incompleteTask ? <Circle size={13} /> : <Check size={14} />}
+              <ChevronRight size={14} />
+            </button>
+          )}
+          {(modelNode || modelIssueNode) && (
+            <button type="button" className="harness-overview-row" onClick={() => {
+              const target = modelIssueNode ?? modelNode;
+              if (target) jumpToNode(target);
+            }}>
+              <NodeIcon kind="local_model" />
+              <span><strong>{L("Model", "Modelo")}</strong><small title={modelDetail}>{modelDetail}</small></span>
+              {modelIssueNode ? <Circle size={13} /> : <Check size={14} />}
+              <ChevronRight size={14} />
+            </button>
+          )}
+        </div>
+        {issue && !nextNode && <p className="harness-overview-issue">{issue.message}</p>}
+        <button type="button" className="btn-primary harness-overview-action" onClick={() => {
+          if (running) onShowConsole();
+          else if (nextNode) jumpToNode(nextNode);
+          else if (issue) onStartHarness();
+          else onRun();
+        }}>
+          {blocked && !running ? <ChevronRight size={15} /> : <Play size={14} />}
+          {actionLabel}
+        </button>
+        {hasRun && !running && (
+          <button type="button" className="harness-overview-link" onClick={onShowConsole}>
+            {L("View last run", "Ver última ejecución")}
+          </button>
+        )}
+        <button type="button" className="harness-overview-link" onClick={onStartHarness}>
+          <Plus size={13} /> {L("New starter harness", "Nuevo arnés básico")}
+        </button>
       </div>
     );
   }
 
-  const bp = NODE_BLUEPRINTS[node.data.kind];
   const cfg = node.data.config;
+  const blueprint = NODE_BLUEPRINTS[node.data.kind];
+  const typeLabel = getNodeLabel(node.data.kind, locale);
+  const nodeTitle = node.data.title === blueprint.label ? typeLabel : node.data.title;
+  const requiresModel = node.data.kind === "agent" || node.data.kind === "llm_judge";
+  const nodeEdges = edges.filter((edge) => edge.source === node.id || edge.target === node.id);
+  const modelEdge = nodeEdges.find((edge) => edge.target === node.id && edge.targetHandle === "model_ref");
+  const connectedModel = nodes.find((item) => item.id === modelEdge?.source);
+  const addModel = () => {
+    attachResourceToNode(node.id, "local_model");
+    const state = useGraphStore.getState();
+    const model = state.nodes.find((item) => item.id === state.selectedNodeId);
+    if (model) jumpToNode(model);
+  };
+
   const canConvertCustom =
     node.data.kind === "shell" || node.data.kind === "http_request";
 
@@ -488,117 +644,97 @@ export function Inspector() {
   return (
     <div className="loors-inspector">
       <div className="inspector-head">
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div className="panel-title">
-            {isResourceKind(node.data.kind)
-              ? locale === "es"
-                ? "Recurso"
-                : "Resource"
-              : locale === "es"
-                ? "Paso"
-                : "Step"}{" "}
-            · {t("canvas.inspector")}
+        <div className="inspector-identity">
+          <span className="inspector-node-icon" style={{ color: blueprint.accent }}><NodeIcon kind={node.data.kind} /></span>
+          <div>
+            <h2 className="inspector-kind" title={nodeTitle}>{nodeTitle}</h2>
+            {nodeTitle !== typeLabel && <span>{typeLabel}</span>}
           </div>
-          <span className="inspector-kind" style={{ color: bp.accent }}>
-            {getNodeLabel(node.data.kind, locale)}
-          </span>
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: 11.5,
-              lineHeight: 1.4,
-              color: "#a1a1aa",
-            }}
-          >
-            {getNodeDescription(node.data.kind, locale)}
-          </p>
         </div>
         <div className="inspector-head-actions">
-          {!isResourceKind(node.data.kind) && (
-            <button
-              type="button"
-              className="icon-btn"
-              title={
-                locale === "es"
-                  ? "Ejecutar arnés desde este nodo (reutilizando salidas previas)"
-                  : "Run harness from this node (reusing previous outputs)"
+          <details key={node.id} className="inspector-node-actions">
+            <summary className="icon-btn" title={L("Node actions", "Acciones del nodo")} aria-label={L("Node actions", "Acciones del nodo")}>
+              <MoreHorizontal size={16} />
+            </summary>
+            <div className="inspector-node-menu" onClick={(event) => {
+              if (event.target instanceof Element && event.target.closest("button")) {
+                event.currentTarget.closest("details")?.removeAttribute("open");
               }
-              onClick={() =>
-                window.dispatchEvent(
-                  new CustomEvent("loors:run-workflow", {
-                    detail: { startNodeId: node.id },
-                  })
-                )
-              }
-            >
-              <Play size={13} style={{ color: "#4ade80" }} />
-            </button>
-          )}
-          {canConvertCustom && (
-            <button
-              type="button"
-              className="icon-btn"
-              title={L("Save as reusable Custom Node", "Guardar como Nodo Custom reutilizable")}
-              onClick={handleConvertToCustom}
-            >
-              <Star size={14} />
-            </button>
-          )}
-          <button
-            type="button"
-            className="icon-btn"
-            title={L("Duplicate node", "Duplicar nodo")}
-            onClick={() => duplicateNode(node.id)}
-          >
-            <Copy size={14} />
-          </button>
-          <button
-            type="button"
-            className="icon-btn danger"
-            title={L("Delete node", "Eliminar nodo")}
-            onClick={() => deleteNode(node.id)}
-          >
-            <Trash2 size={14} />
-          </button>
+            }}>
+              {!isResourceKind(node.data.kind) && (
+                <button
+                  type="button"
+
+                  title={
+                    locale === "es"
+                      ? "Ejecutar arnés desde este nodo (reutilizando salidas previas)"
+                      : "Run harness from this node (reusing previous outputs)"
+                  }
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent("loors:run-workflow", {
+                        detail: { startNodeId: node.id },
+                      })
+                    )
+                  }
+                >
+                  <Play size={13} />
+                  {L("Run from here", "Ejecutar desde aquí")}
+                </button>
+              )}
+              {canConvertCustom && (
+                <button type="button" onClick={handleConvertToCustom}>
+                  <Star size={14} /> {L("Save as reusable node", "Guardar como nodo reutilizable")}
+                </button>
+              )}
+              <button type="button" onClick={() => duplicateNode(node.id)}>
+                <Copy size={14} /> {L("Duplicate", "Duplicar")}
+              </button>
+              <button type="button" className="danger" onClick={() => deleteNode(node.id)}>
+                <Trash2 size={14} /> {L("Delete node", "Eliminar nodo")}
+              </button>
+            </div>
+          </details>
         </div>
       </div>
 
       <div className="inspector-body">
-        <div
-          style={{
-            padding: "9px 11px",
-            borderRadius: 9,
-            border: "1px solid rgba(255,255,255,0.08)",
-            background: "rgba(255,255,255,0.025)",
-            fontSize: 11.5,
-            lineHeight: 1.45,
-            color: "#d4d4d8",
-          }}
-        >
-          <span
-            style={{
-              display: "block",
-              fontSize: 10,
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.05em",
-              color: "#a78bfa",
-              marginBottom: 3,
-            }}
-          >
-            {locale === "es" ? "Cómo usarlo" : "How to use"}
-          </span>
-          {getNodeGuide(node.data.kind, locale)}
-        </div>
-
-        <label className="field">
-          <span>{locale === "es" ? "Nombre del nodo" : "Node name"}</span>
-          <input
-            type="text"
-            value={node.data.title}
-            onChange={(e) => updateNodeTitle(node.id, e.target.value)}
-          />
-        </label>
+        <button type="button" className="harness-overview-link" onClick={() => setSelectedNodeId(null)}>
+          <ArrowDownLeft size={13} /> {L("Harness overview", "Resumen del arnés")}
+        </button>
+        {requiresModel && (
+          <div className="inspector-model-link" data-missing={!connectedModel}>
+            <span>{L("Model", "Modelo")}</span>
+            {connectedModel ? (
+              <button type="button" className="btn-secondary" onClick={() => jumpToNode(connectedModel)}>
+                <NodeIcon kind="local_model" />
+                <span className="truncate-text">{connectedModel.data.title === NODE_BLUEPRINTS.local_model.label
+                  ? getNodeLabel("local_model", locale) : connectedModel.data.title}</span>
+                <ArrowUpRight size={13} />
+              </button>
+            ) : (
+              <>
+                <strong>{L("Connect a model", "Conecta un modelo")}</strong>
+                {nodes.some((item) => item.data.kind === "local_model") && (
+                  <select aria-label={L("Connect an existing model", "Conectar un modelo existente")} value="" onChange={(event) => {
+                    if (event.target.value) connect({
+                      source: event.target.value, sourceHandle: "model_ref",
+                      target: node.id, targetHandle: "model_ref",
+                    });
+                  }}>
+                    <option value="" disabled>{L("Choose an existing model…", "Elegir un modelo existente…")}</option>
+                    {nodes.filter((item) => item.data.kind === "local_model").map((model) => (
+                      <option key={model.id} value={model.id}>{model.data.title} · {String(model.data.config.modelPath ?? "").split(/[\\/]/).pop() || L("Unconfigured", "Sin configurar")}</option>
+                    ))}
+                  </select>
+                )}
+                <button type="button" className="btn-secondary" onClick={addModel}>
+                  <Plus size={14} /> {L("Add model", "Añadir modelo")}
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         {node.data.kind === "workspace" && (
           <>
@@ -639,13 +775,13 @@ export function Inspector() {
         {node.data.kind === "task_input" && (
           <>
             <WorkspaceField
-              label={L("Workspace (repository folder)", "Workspace (carpeta del repo)")}
+              label={L("Project folder", "Carpeta del proyecto")}
               value={String(cfg.workspace ?? "")}
               placeholder="Ej: C:\Users\...\mi-proyecto"
               onChange={(val) => updateNodeConfig(node.id, { workspace: val })}
             />
             <label className="field">
-              <span>{locale === "es" ? "Prompt inicial" : "Initial prompt"}</span>
+              <span>{L("What should the agent do?", "¿Qué debe hacer el agente?")}</span>
               <textarea
                 rows={5}
                 value={String(cfg.prompt ?? "")}
@@ -654,36 +790,44 @@ export function Inspector() {
                 }
               />
             </label>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <label className="field">
-                <span>{locale === "es" ? "Límite llamadas LLM (0 = ∞)" : "Max LLM calls (0 = ∞)"}</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="1000"
-                  value={Number(cfg.maxLlmCalls ?? 0)}
-                  onChange={(e) =>
-                    updateNodeConfig(node.id, {
-                      maxLlmCalls: Math.max(0, Number(e.target.value)),
-                    })
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{locale === "es" ? "Timeout máx. min (0 = ∞)" : "Max run mins (0 = ∞)"}</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="1440"
-                  value={Number(cfg.maxRunMinutes ?? 0)}
-                  onChange={(e) =>
-                    updateNodeConfig(node.id, {
-                      maxRunMinutes: Math.max(0, Number(e.target.value)),
-                    })
-                  }
-                />
-              </label>
-            </div>
+            {modelNode && (
+              <button type="button" className="btn-secondary harness-next-step" onClick={() => jumpToNode(modelNode)}>
+                {L("Next: choose a model", "Siguiente: elegir un modelo")} <ArrowUpRight size={13} />
+              </button>
+            )}
+            <details className="inspector-disclosure">
+              <summary>{L("Run limits", "Límites de ejecución")}</summary>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <label className="field">
+                  <span>{locale === "es" ? "Límite llamadas LLM (0 = ∞)" : "Max LLM calls (0 = ∞)"}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1000"
+                    value={Number(cfg.maxLlmCalls ?? 0)}
+                    onChange={(e) =>
+                      updateNodeConfig(node.id, {
+                        maxLlmCalls: Math.max(0, Number(e.target.value)),
+                      })
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>{locale === "es" ? "Timeout máx. min (0 = ∞)" : "Max run mins (0 = ∞)"}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1440"
+                    value={Number(cfg.maxRunMinutes ?? 0)}
+                    onChange={(e) =>
+                      updateNodeConfig(node.id, {
+                        maxRunMinutes: Math.max(0, Number(e.target.value)),
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            </details>
           </>
         )}
 
@@ -820,13 +964,13 @@ export function Inspector() {
           <>
             <div className="field">
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                <span>{L("Local GGUF / API Model", "Modelo GGUF local / API")}</span>
+                <span>{L("Model for this harness", "Modelo de este arnés")}</span>
                 <span className="runtime-mini-tag">{runtimeLabel}</span>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
                 <select
                   style={{ flex: 1, minWidth: 0 }}
-                  value={String(cfg.modelPath ?? "")}
+                  value={cfg.modelPath === NODE_BLUEPRINTS.local_model.defaultConfig.modelPath ? "" : String(cfg.modelPath ?? "")}
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val === "__open_hub__") {
@@ -872,7 +1016,7 @@ export function Inspector() {
                           : String(cfg.modelPath ?? "").split(/[\\/]/).pop()}
                       </option>
                     )}
-                  <option value="__open_hub__">Explorar modelos o configurar APIs...</option>
+                  <option value="__open_hub__">{L("Browse models or configure an API…", "Explorar modelos o configurar una API…")}</option>
                 </select>
                 <button
                   type="button"
@@ -1086,66 +1230,11 @@ export function Inspector() {
         )}
 
         {node.data.kind === "agent" && (() => {
-          const modelEdge = edges.find(
-            (e) => e.target === node.id && e.targetHandle === "model_ref"
-          );
-          const connectedModel = modelEdge
-            ? nodes.find((n) => n.id === modelEdge.source)
-            : null;
-          const connectedModelPath = String(
-            connectedModel?.data.config.modelPath ?? ""
-          ).trim();
-          const connectedModelDisplay = connectedModelPath
-            ? connectedModelPath.split(/[\\/]/).pop() || connectedModelPath
-            : connectedModel?.data.title ?? "";
           return (
           <>
-            {connectedModel ? (
-              <div className="hw-box">
-                <div style={{ fontSize: 11.5, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
-                  <span>
-                    <strong>{locale === "es" ? "Modelo conectado:" : "Connected model:"}</strong> {connectedModelDisplay}
-                  </span>
-                  <span className="runtime-mini-tag">{runtimeLabel}</span>
-                </div>
-                <button
-                  type="button"
-                  className="btn-mini"
-                  onClick={() => setSelectedNodeId(connectedModel.id)}
-                >
-                  {locale === "es"
-                    ? "Configurar contexto, GPU y parámetros del LLM"
-                    : "Configure context, GPU & LLM parameters"}
-                </button>
-              </div>
-            ) : (
-              <div
-                style={{
-                  padding: "8px 10px",
-                  borderRadius: 8,
-                  border: "1px solid rgba(245,158,11,0.35)",
-                  background: "rgba(245,158,11,0.08)",
-                  fontSize: 11.5,
-                  color: "#fcd34d",
-                }}
-              >
-                {locale === "es"
-                  ? "Falta conectar un nodo Model (GGUF / API) al puerto 'model'."
-                  : "No Model connected yet — wire a Model (GGUF / API) node to the 'model' port."}
-              </div>
-            )}
             <div className="field">
-              <span>{locale === "es" ? "Conectar recursos en 1 clic" : "Quick-connect resources (1 click)"}</span>
+              <span>{L("Add resources", "Añadir recursos")}</span>
               <div className="tool-chips">
-                {!connectedModel && (
-                  <button
-                    type="button"
-                    className="btn-mini"
-                    onClick={() => attachResourceToNode(node.id, "local_model")}
-                  >
-                    <Plus size={11} /> Model
-                  </button>
-                )}
                 <button
                   type="button"
                   className="btn-mini"
@@ -1462,8 +1551,35 @@ export function Inspector() {
                 <option value="diff">Capturar git diff ({"{{git_diff}}"})</option>
                 <option value="snapshot">Crear snapshot seguro (git stash create)</option>
                 <option value="rollback">Rollback de cambios no confirmados</option>
+                <option value="delivery_branch">{L("Create delivery branch and worktree", "Crear rama y worktree de entrega")}</option>
+                <option value="delivery_publish">{L("Commit and push delivery", "Hacer commit y push de la entrega")}</option>
               </select>
             </label>
+            {cfg.mode === "delivery_branch" && (
+              <label className="field">
+                <span>{L("Git remote", "Remoto de Git")}</span>
+                <input
+                  value={String(cfg.remote ?? "origin")}
+                  onChange={(e) => updateNodeConfig(node.id, { remote: e.target.value })}
+                />
+              </label>
+            )}
+            {cfg.mode === "delivery_publish" && (
+              <label className="field">
+                <span>{L("Delivery branch node", "Nodo de rama de entrega")}</span>
+                <select
+                  value={String(cfg.branchNodeId ?? "")}
+                  onChange={(e) => updateNodeConfig(node.id, { branchNodeId: e.target.value })}
+                >
+                  <option value="">{L("Select a node", "Selecciona un nodo")}</option>
+                  {nodes
+                    .filter((candidate) => candidate.data.kind === "git_checkpoint" && candidate.data.config.mode === "delivery_branch")
+                    .map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>{candidate.data.title}</option>
+                    ))}
+                </select>
+              </label>
+            )}
             <WorkspaceField
               label={L("Workspace override (optional, multi-project)", "Workspace override (opcional, multi-proyecto)")}
               value={String(cfg.workspace ?? "")}
@@ -1668,21 +1784,7 @@ export function Inspector() {
         {node.data.kind === "llm_judge" && (
           <>
             <label className="field">
-              <span>{locale === "es" ? "Thinking / Esfuerzo" : "Thinking / Reasoning Effort"}</span>
-              <select
-                value={String(cfg.reasoningEffort ?? "low")}
-                onChange={(e) =>
-                  updateNodeConfig(node.id, { reasoningEffort: e.target.value })
-                }
-              >
-                <option value="off">{locale === "es" ? "Off (sin thinking, rápido)" : "Off (no thinking, fast)"}</option>
-                <option value="low">{locale === "es" ? "Bajo (Low · recomendado)" : "Low (recommended)"}</option>
-                <option value="medium">{locale === "es" ? "Medio (Medium)" : "Medium"}</option>
-                <option value="high">{locale === "es" ? "Alto (High)" : "High"}</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>{L("Evaluation rubric / criteria", "Rúbrica / Criterio de evaluación")}</span>
+              <span>{L("Review criteria", "Criterios de revisión")}</span>
               <textarea
                 rows={4}
                 value={String(cfg.rubric ?? "")}
@@ -1691,34 +1793,81 @@ export function Inspector() {
                 }
               />
             </label>
-            <label className="field">
-              <span>Contexto enviado al Judge</span>
-              <textarea
-                rows={4}
-                value={String(cfg.inputTemplate ?? "")}
-                onChange={(e) =>
-                  updateNodeConfig(node.id, { inputTemplate: e.target.value })
-                }
-              />
-              <VarInserter
-                onInsert={(tok) =>
-                  updateNodeConfig(node.id, {
-                    inputTemplate: `${String(cfg.inputTemplate ?? "")}\n${tok}`.trim(),
-                  })
-                }
-              />
-            </label>
-            <label className="field">
-              <span>Imagen / Screenshot a evaluar (opcional, VLM)</span>
-              <input
-                type="text"
-                placeholder="Ej: .loors/screenshot.png"
-                value={String(cfg.imagePath ?? "")}
-                onChange={(e) =>
-                  updateNodeConfig(node.id, { imagePath: e.target.value })
-                }
-              />
-            </label>
+            <dl className="inspector-judge-branches">
+              {blueprint.outputs.map((port) => {
+                const destinations = nodeEdges.filter((edge) => edge.source === node.id && edge.sourceHandle === port.id)
+                  .flatMap((edge) => nodes.filter((item) => item.id === edge.target));
+                return (
+                  <div key={port.id}>
+                    <dt>{getPortLabel(port, locale, node.data.kind)}</dt>
+                    <dd>
+                      {destinations.length ? destinations.map((target) => (
+                        <button type="button" className="inspector-connection" key={target.id} onClick={() => jumpToNode(target)}>
+                          <span className="truncate-text">{target.data.title}</span><ArrowUpRight size={13} />
+                        </button>
+                      )) : L("Unconnected", "Sin conectar")}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+            <details key={node.id} className="inspector-disclosure">
+              <summary>{L("Advanced settings", "Ajustes avanzados")}</summary>
+              <div className="inspector-advanced-fields">
+                <label className="field">
+                  <span>{L("Require an explicit model verdict", "Exigir un veredicto explícito del modelo")}</span>
+                  <input
+                    type="checkbox"
+                    checked={cfg.strictVerdict === true}
+                    onChange={(e) =>
+                      updateNodeConfig(node.id, { strictVerdict: e.target.checked })
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>{locale === "es" ? "Thinking / Esfuerzo" : "Thinking / Reasoning Effort"}</span>
+                  <select
+                    value={String(cfg.reasoningEffort ?? "low")}
+                    onChange={(e) =>
+                      updateNodeConfig(node.id, { reasoningEffort: e.target.value })
+                    }
+                  >
+                    <option value="off">{locale === "es" ? "Off (sin thinking, rápido)" : "Off (no thinking, fast)"}</option>
+                    <option value="low">{locale === "es" ? "Bajo (Low · recomendado)" : "Low (recommended)"}</option>
+                    <option value="medium">{locale === "es" ? "Medio (Medium)" : "Medium"}</option>
+                    <option value="high">{locale === "es" ? "Alto (High)" : "High"}</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Contexto enviado al Judge</span>
+                  <textarea
+                    rows={4}
+                    value={String(cfg.inputTemplate ?? "")}
+                    onChange={(e) =>
+                      updateNodeConfig(node.id, { inputTemplate: e.target.value })
+                    }
+                  />
+                  <VarInserter
+                    onInsert={(tok) =>
+                      updateNodeConfig(node.id, {
+                        inputTemplate: `${String(cfg.inputTemplate ?? "")}\n${tok}`.trim(),
+                      })
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>Imagen / Screenshot a evaluar (opcional, VLM)</span>
+                  <input
+                    type="text"
+                    placeholder="Ej: .loors/screenshot.png"
+                    value={String(cfg.imagePath ?? "")}
+                    onChange={(e) =>
+                      updateNodeConfig(node.id, { imagePath: e.target.value })
+                    }
+                  />
+                </label>
+              </div>
+            </details>
           </>
         )}
 
@@ -1955,173 +2104,146 @@ export function Inspector() {
                 />
               </label>
 
-              <div className="swarm-grid-2">
-                <label className="field">
-                  <span>{L("Max Rounds", "Máx. rondas")}</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={30}
-                    value={Number(cfg.maxRounds ?? 8)}
-                    onChange={(e) =>
-                      updateNodeConfig(node.id, { maxRounds: Math.max(1, Number(e.target.value) || 8) })
-                    }
-                  />
-                </label>
-                <label className="field">
-                  <span>{L("Max Parallel (0 = Auto HW)", "Paralelo máx. (0 = Auto HW)")}</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={24}
-                    value={Number(cfg.maxConcurrency ?? 0)}
-                    onChange={(e) =>
-                      updateNodeConfig(node.id, {
-                        maxConcurrency: Math.max(0, Math.min(24, Number(e.target.value) || 0)),
-                      })
-                    }
-                  />
-                </label>
-              </div>
+              <details className="inspector-disclosure">
+                <summary>{L("Advanced settings", "Ajustes avanzados")}</summary>
+                <div className="inspector-advanced-fields">
+                  <div className="swarm-grid-2">
+                    <label className="field">
+                      <span>{L("Max Rounds", "Máx. rondas")}</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={Number(cfg.maxRounds ?? 8)}
+                        onChange={(e) =>
+                          updateNodeConfig(node.id, { maxRounds: Math.max(1, Number(e.target.value) || 8) })
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>{L("Max Parallel (0 = Auto HW)", "Paralelo máx. (0 = Auto HW)")}</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={24}
+                        value={Number(cfg.maxConcurrency ?? 0)}
+                        onChange={(e) =>
+                          updateNodeConfig(node.id, {
+                            maxConcurrency: Math.max(0, Math.min(24, Number(e.target.value) || 0)),
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
 
-              <label className="field">
-                <span>{L("Git Worktree Isolation", "Aislamiento con Git Worktrees")}</span>
-                <select
-                  value={cfg.useWorktrees ? "true" : "false"}
-                  onChange={(e) => updateNodeConfig(node.id, { useWorktrees: e.target.value === "true" })}
-                >
-                  <option value="false">
-                    {L("No — shared workspace (research / sequential edits)", "No — workspace compartido (investigación / edición ligera)")}
-                  </option>
-                  <option value="true">
-                    {L("Yes — isolated worktree per worker + auto-patch", "Sí — worktree aislado por worker + parche automático")}
-                  </option>
-                </select>
-              </label>
+                  <label className="field">
+                    <span>{L("Git Worktree Isolation", "Aislamiento con Git Worktrees")}</span>
+                    <select
+                      value={cfg.useWorktrees ? "true" : "false"}
+                      onChange={(e) => updateNodeConfig(node.id, { useWorktrees: e.target.value === "true" })}
+                    >
+                      <option value="false">
+                        {L("No — shared workspace (research / sequential edits)", "No — workspace compartido (investigación / edición ligera)")}
+                      </option>
+                      <option value="true">
+                        {L("Yes — isolated worktree per worker + auto-patch", "Sí — worktree aislado por worker + parche automático")}
+                      </option>
+                    </select>
+                  </label>
+                </div>
+              </details>
 
               {planningMode === "manual" && (
-              <div className="field">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span>
-                    {L(`Workers (${workers.length})`, `Workers (${workers.length})`)}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    style={{ padding: "3px 8px", fontSize: 11 }}
-                    onClick={() =>
-                      setWorkers([
-                        ...workers,
-                        {
-                          id: `worker-${workers.length + 1}`,
-                          name: `Worker ${workers.length + 1}`,
-                          role: "Specialist",
-                          systemPrompt: "Execute assigned tasks and report back to @coordinator.",
-                          modelPath: "",
-                          tools: ["read_file", "grep_search"],
-                          maxSteps: 8,
-                        },
-                      ])
-                    }
-                  >
-                    + {L("Add worker", "Añadir worker")}
-                  </button>
-                </div>
-
-                <div className="swarm-workers-editor">
-                  {workers.map((w, idx) => (
-                    <div key={`${w.id}-${idx}`} className="swarm-worker-card">
-                      <div className="swarm-worker-card-head">
-                        <input
-                          type="text"
-                          value={w.id}
-                          placeholder="id (e.g. backend)"
-                          style={{ width: 92, fontFamily: "monospace", fontSize: 11 }}
-                          onChange={(e) =>
-                            setWorkers(
-                              workers.map((item, i) =>
-                                i === idx ? { ...item, id: e.target.value } : item
-                              )
-                            )
-                          }
-                        />
-                        <input
-                          type="text"
-                          value={w.role}
-                          placeholder={L("Role", "Rol")}
-                          style={{ flex: 1, fontSize: 11 }}
-                          onChange={(e) =>
-                            setWorkers(
-                              workers.map((item, i) =>
-                                i === idx
-                                  ? { ...item, role: e.target.value, name: e.target.value || item.id }
-                                  : item
-                              )
-                            )
-                          }
-                        />
-                        <button
-                          type="button"
-                          className="icon-btn danger"
-                          title={L("Remove worker", "Quitar worker")}
-                          onClick={() => setWorkers(workers.filter((_, i) => i !== idx))}
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                      <textarea
-                        rows={2}
-                        value={w.systemPrompt}
-                        placeholder={L("Worker instructions...", "Instrucciones del worker...")}
-                        onChange={(e) =>
-                          setWorkers(
-                            workers.map((item, i) =>
-                              i === idx ? { ...item, systemPrompt: e.target.value } : item
-                            )
-                          )
-                        }
-                      />
-                      <input
-                        type="text"
-                        value={(w.tools ?? []).join(", ")}
-                        placeholder="tools: read_file, grep_search, run_cmd..."
-                        style={{ fontSize: 11, fontFamily: "monospace" }}
-                        onChange={(e) =>
-                          setWorkers(
-                            workers.map((item, i) =>
-                              i === idx
-                                ? {
-                                    ...item,
-                                    tools: e.target.value
-                                      .split(",")
-                                      .map((s) => s.trim())
-                                      .filter(Boolean),
-                                  }
-                                : item
-                            )
-                          )
-                        }
-                      />
-                      <input
-                        type="text"
-                        value={w.modelPath ?? ""}
-                        placeholder={L(
-                          "Model override (empty = inherit model_ref, or cloud::provider::model)",
-                          "Modelo opcional (vacío = hereda model_ref, o cloud::provider::model)"
-                        )}
-                        style={{ fontSize: 10.5, fontFamily: "monospace" }}
-                        onChange={(e) =>
-                          setWorkers(
-                            workers.map((item, i) =>
-                              i === idx ? { ...item, modelPath: e.target.value } : item
-                            )
-                          )
-                        }
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
+                <section className="swarm-worker-section">
+                  <div className="swarm-worker-section-head">
+                    <h3>{L("Workers", "Workers")} <span>{workers.length}</span></h3>
+                    <button type="button" className="btn-secondary" onClick={() => {
+                      let suffix = workers.length + 1;
+                      while (workers.some((item) => item.id === `worker-${suffix}`)) suffix += 1;
+                      setWorkers([...workers, {
+                        id: `worker-${suffix}`,
+                        name: `Worker ${suffix}`,
+                        role: "Specialist",
+                        systemPrompt: "Execute assigned tasks and report back to @coordinator.",
+                        modelPath: "",
+                        tools: ["read_file", "grep_search"],
+                        maxSteps: 8,
+                      }]);
+                      setOpenWorker({ nodeId: node.id, index: workers.length });
+                    }}>
+                      <Plus size={13} /> {L("Add worker", "Añadir worker")}
+                    </button>
+                  </div>
+                  <div className="swarm-workers-editor">
+                    {workers.map((worker, index) => {
+                      const expanded = openWorker?.nodeId === node.id && openWorker.index === index;
+                      const editorId = `worker-editor-${index}`;
+                      const updateWorker = (change: Partial<typeof worker>) => {
+                        setWorkers(workers.map((item, i) => i === index ? { ...item, ...change } : item));
+                      };
+                      return (
+                        <div key={index} className="swarm-worker-card">
+                          <button
+                            type="button"
+                            className="swarm-worker-summary"
+                            aria-expanded={expanded}
+                            aria-controls={editorId}
+                            onClick={() => setOpenWorker(expanded ? null : { nodeId: node.id, index })}
+                          >
+                            <span className="swarm-worker-identity">
+                              <strong>{worker.role || worker.name || L("Worker", "Worker")}</strong>
+                              <small>@{worker.id}</small>
+                            </span>
+                            <ChevronRight size={15} />
+                          </button>
+                          <div id={editorId} hidden={!expanded} className="swarm-worker-fields">
+                            {expanded && (
+                              <>
+                                <div className="swarm-worker-fields-pair">
+                                  <label className="field">
+                                    <span>{L("Worker ID", "ID del worker")}</span>
+                                    <input type="text" value={worker.id} onChange={(event) => updateWorker({ id: event.target.value })} />
+                                  </label>
+                                  <label className="field">
+                                    <span>{L("Role", "Rol")}</span>
+                                    <input type="text" value={worker.role} onChange={(event) => updateWorker({
+                                      role: event.target.value, name: event.target.value || worker.id,
+                                    })} />
+                                  </label>
+                                </div>
+                                <label className="field">
+                                  <span>{L("Instructions", "Instrucciones")}</span>
+                                  <textarea rows={6} value={worker.systemPrompt} onChange={(event) => updateWorker({ systemPrompt: event.target.value })} />
+                                </label>
+                                <details className="inspector-disclosure">
+                                  <summary>{L("Tools and model", "Herramientas y modelo")}</summary>
+                                  <div className="inspector-advanced-fields">
+                                    <WorkerTools key={node.id} tools={worker.tools ?? []} label={L("Allowed tools", "Herramientas permitidas")} onChange={(tools) => updateWorker({ tools })} />
+                                    <label className="field">
+                                      <span>{L("Model override", "Modelo propio")}</span>
+                                      <input
+                                        type="text"
+                                        value={worker.modelPath ?? ""}
+                                        placeholder={L("Uses the team model", "Usa el modelo del equipo")}
+                                        onChange={(event) => updateWorker({ modelPath: event.target.value })}
+                                      />
+                                    </label>
+                                  </div>
+                                </details>
+                                <button type="button" className="swarm-worker-remove" onClick={() => {
+                                  setWorkers(workers.filter((_, i) => i !== index));
+                                  setOpenWorker(null);
+                                }}>
+                                  <Trash2 size={13} /> {L("Remove worker", "Quitar worker")}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
               )}
 
               <div className="hw-note">
@@ -2508,6 +2630,51 @@ export function Inspector() {
             />
           </label>
         )}
+        <details key={`connections-${node.id}`} className="inspector-disclosure">
+          <summary>{L("Connections", "Conexiones")}</summary>
+          <ul className="inspector-connections">
+            {nodeEdges.map((edge) => {
+              const incoming = edge.target === node.id;
+              const peer = nodes.find((item) => item.id === (incoming ? edge.source : edge.target));
+              if (!peer) return null;
+              const handleId = incoming ? edge.targetHandle : edge.sourceHandle;
+              const port = (incoming ? blueprint.inputs : blueprint.outputs).find((item) => item.id === handleId);
+              const portLabel = port ? getPortLabel(port, locale, node.data.kind) : handleId;
+              return (
+                <li key={edge.id}>
+                  <button type="button" className="inspector-connection" onClick={() => jumpToNode(peer)}>
+                    {incoming ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}
+                    <span className="truncate-text">{peer.data.title}</span>
+                    <small>{portLabel}</small>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {nodeEdges.length === 0 && (
+            <p>{L("No connections yet.", "Todavía no hay conexiones.")}</p>
+          )}
+        </details>
+
+        <details key={`rename-${node.id}`} className="inspector-disclosure">
+          <summary>{L("Rename node", "Renombrar nodo")}</summary>
+          <div className="inspector-advanced-fields">
+          <label className="field">
+            <span>{locale === "es" ? "Nombre del nodo" : "Node name"}</span>
+            <input
+              type="text"
+              value={node.data.title}
+              onChange={(e) => updateNodeTitle(node.id, e.target.value)}
+            />
+          </label>
+          </div>
+        </details>
+        <details key={node.id} className="inspector-disclosure">
+          <summary>{L("Node guide", "Guía del nodo")}</summary>
+          <p>{getNodeDescription(node.data.kind, locale)}</p>
+          <p>{getNodeGuide(node.data.kind, locale)}</p>
+        </details>
+
       </div>
     </div>
   );

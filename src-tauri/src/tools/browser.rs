@@ -16,6 +16,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BrowserFrameEvent {
+    pub session_id: String,
     pub url: String,
     pub title: String,
     pub action: String,
@@ -1307,9 +1308,12 @@ pub async fn run_browser_action(workspace: &str, args: &Value) -> String {
             .and_then(|v| v.as_str())
             .filter(|s| !s.trim().is_empty())
             .unwrap_or("default");
-        let _ = ensure_session_tab(session, agent_session_key, true).await;
+        if let Err(err) = ensure_session_tab(session, agent_session_key, true).await {
+            return json!({ "ok": false, "error": err }).to_string();
+        }
         let res = drive_cdp_action(
             session,
+            agent_session_key,
             action,
             Some(&first_url),
             selector,
@@ -1343,9 +1347,12 @@ pub async fn run_browser_action(workspace: &str, args: &Value) -> String {
         .and_then(|v| v.as_str())
         .filter(|s| !s.trim().is_empty())
         .unwrap_or("default");
-    let _ = ensure_session_tab(session, agent_session_key, true).await;
+    if let Err(err) = ensure_session_tab(session, agent_session_key, true).await {
+        return json!({ "ok": false, "error": err }).to_string();
+    }
     let res = drive_cdp_action(
         session,
+        agent_session_key,
         action,
         req_url,
         selector,
@@ -1461,6 +1468,7 @@ const HOOK_SCRIPT: &str = r##"(() => {
 #[allow(clippy::too_many_arguments)]
 async fn drive_cdp_action(
     session: &mut PersistentBrowser,
+    session_id: &str,
     action: &str,
     req_url: Option<&str>,
     selector: &str,
@@ -1527,6 +1535,7 @@ async fn drive_cdp_action(
             {
                 if let Some(b64) = shot.get("data").and_then(|v| v.as_str()) {
                     emit_browser_frame(BrowserFrameEvent {
+                        session_id: session_id.to_owned(),
                         url: url.to_string(),
                         title: String::new(),
                         action: "goto".to_string(),
@@ -1607,6 +1616,7 @@ async fn drive_cdp_action(
 
                 // Emit pre-click visual frame with cursor and highlight in place
                 emit_live_jpeg(
+                    session_id,
                     &mut ws,
                     &mut next_id,
                     &session.current_url,
@@ -1642,6 +1652,7 @@ async fn drive_cdp_action(
                     .await;
                     tokio::time::sleep(Duration::from_millis(260)).await;
                     emit_live_jpeg(
+                        session_id,
                         &mut ws,
                         &mut next_id,
                         &session.current_url,
@@ -1718,6 +1729,7 @@ async fn drive_cdp_action(
                 target_label = Some(format!("Type \"{text}\""));
             }
             emit_live_jpeg(
+                session_id,
                 &mut ws,
                 &mut next_id,
                 &session.current_url,
@@ -1760,6 +1772,7 @@ async fn drive_cdp_action(
                 let _ = cdp_eval(&mut ws, &mut next_id, &format!("window.scrollBy(0, {step})")).await;
                 tokio::time::sleep(Duration::from_millis(120)).await;
                 emit_live_jpeg(
+                    session_id,
                     &mut ws,
                     &mut next_id,
                     &session.current_url,
@@ -1781,6 +1794,7 @@ async fn drive_cdp_action(
 
     // Always capture final screenshot of the action so live viewer updates smoothly
     let (saved_screenshot, b64_frame) = capture_and_emit(
+        session_id,
         &mut ws,
         &mut next_id,
         ws_root,
@@ -1847,6 +1861,7 @@ async fn drive_cdp_action(
 
     if let Some(frame) = b64_frame {
         emit_browser_frame(BrowserFrameEvent {
+            session_id: session_id.to_owned(),
             url: final_url.clone(),
             title: final_title.clone(),
             action: action.to_string(),
@@ -1917,6 +1932,7 @@ async fn drive_cdp_action(
 
 #[allow(clippy::too_many_arguments)]
 async fn emit_live_jpeg<S>(
+    session_id: &str,
     ws: &mut S,
     next_id: &mut u64,
     url: &str,
@@ -1939,6 +1955,7 @@ async fn emit_live_jpeg<S>(
     {
         if let Some(b64) = shot.get("data").and_then(|v| v.as_str()) {
             emit_browser_frame(BrowserFrameEvent {
+                session_id: session_id.to_owned(),
                 url: url.to_string(),
                 title: String::new(),
                 action: action.to_string(),
@@ -1955,6 +1972,7 @@ async fn emit_live_jpeg<S>(
 
 #[allow(clippy::too_many_arguments)]
 async fn capture_and_emit<S>(
+    session_id: &str,
     ws: &mut S,
     next_id: &mut u64,
     ws_root: &Path,
@@ -1998,6 +2016,7 @@ where
 
     if cursor_x.is_some() {
         emit_browser_frame(BrowserFrameEvent {
+            session_id: session_id.to_owned(),
             url: String::new(),
             title: String::new(),
             action: format!("{action} (cursor)"),

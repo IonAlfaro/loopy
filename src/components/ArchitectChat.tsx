@@ -1,14 +1,12 @@
 ﻿import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
-  Bot,
   Check,
   ChevronUp,
   Cloud,
   FolderPlus,
   Paperclip,
   RefreshCw,
-  Sparkles,
   Square,
   Trash2,
   Undo2,
@@ -35,7 +33,7 @@ import {
   ModelLoadInlineBar,
   ReasoningEffortSelect,
   ThinkingDisclosure,
-  ToolActivityRow,
+  ToolCallGroup,
   type ActivityToolItem,
   type QueuedMessageItem,
 } from "./ChatActivity";
@@ -514,40 +512,25 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
         }
       }}
     >
-      <div className="architect-subhead">
-        <div className="architect-subhead-title">
-          <Sparkles size={14} style={{ color: "#a855f7" }} />
-          <span>{t("architect.subtitle")}</span>
-        </div>
-        {messages.length > 0 && (
-          <button
-            type="button"
-            className="icon-btn"
-            title={locale === "es" ? "Limpiar conversación" : "Clear conversation"}
-            onClick={() => setMessages([])}
-          >
-            <Trash2 size={13} />
-          </button>
-        )}
-      </div>
-
-      {skillInfo && (
-        <div
-          className="architect-model-bar"
-          style={{
-            padding: "6px 12px",
-            fontSize: 11,
-            color: "#94a3b8",
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 8,
-          }}
-          title={`Skill cargada: ${skillInfo.path}\nHerramientas activas: list_files, find_files, grep_search, read_file, list_loors_capabilities, read_skill`}
-        >
-          <span>
-            Skill: <strong style={{ color: "#c084fc" }}>{skillInfo.name}</strong> ({skillInfo.source})
-          </span>
-          <span>{locale === "es" ? "6 tools lectura" : "6 read-only tools"}</span>
+      {(skillInfo || messages.length > 0) && (
+        <div className="architect-subhead">
+          {skillInfo && (
+            <details className="architect-skill inspector-disclosure">
+              <summary>{locale === "es" ? "Configuración del arquitecto" : "Architect configuration"}</summary>
+              <p title={skillInfo.path}>{skillInfo.name} · {skillInfo.source}</p>
+              <p>{locale === "es" ? "6 herramientas de solo lectura" : "6 read-only tools"}</p>
+            </details>
+          )}
+          {messages.length > 0 && (
+            <button
+              type="button"
+              className="icon-btn"
+              title={locale === "es" ? "Limpiar conversación" : "Clear conversation"}
+              onClick={() => setMessages([])}
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
         </div>
       )}
 
@@ -563,17 +546,24 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
       >
         {messages.length === 0 && !sending && (
           <div className="architect-welcome">
-            <Bot size={22} style={{ color: "#818cf8" }} />
-            <p>{t("architect.emptyIntro")}</p>
             <div className="architect-quick">
-              {[t("architect.p1"), t("architect.p2"), t("architect.p3"), t("architect.p4")].map((qp) => (
+              {[
+                [locale === "es" ? "Crear un arnés" : "Create a harness", t("architect.p2")],
+                [locale === "es" ? "Revisar este flujo" : "Review this workflow", t("architect.p4")],
+                [locale === "es" ? "Mejorar un nodo" : "Improve a node", locale === "es"
+                  ? "Ayúdame a mejorar un nodo de este arnés. Pregúntame cuál y qué quiero cambiar."
+                  : "Help me improve a node in this harness. Ask which node and what I want to change."],
+              ].map(([label, prompt]) => (
                 <button
-                  key={qp}
+                  key={label}
                   type="button"
                   className="architect-quick-btn"
-                  onClick={() => void sendPrompt(qp)}
+                  onClick={() => {
+                    setInput((draft) => draft.trim() ? `${draft}\n\n${prompt}` : prompt);
+                    inputRef.current?.focus();
+                  }}
                 >
-                  {qp}
+                  {label}
                 </button>
               ))}
             </div>
@@ -622,21 +612,13 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
                 />
               )}
               {m.toolCalls && m.toolCalls.length > 0 && (
-                <div className="codex-tool-list">
-                  {m.toolCalls.map((call) => {
-                    const isOpen = expandedTools[call.id] ?? false;
-                    return (
-                      <ToolActivityRow
-                        key={call.id}
-                        call={call}
-                        open={isOpen}
-                        onToggle={() =>
-                          setExpandedTools((p) => ({ ...p, [call.id]: !isOpen }))
-                        }
-                      />
-                    );
-                  })}
-                </div>
+                <ToolCallGroup
+                  calls={m.toolCalls}
+                  expandedTools={expandedTools}
+                  onToggleTool={(id, next) =>
+                    setExpandedTools((p) => ({ ...p, [id]: next }))
+                  }
+                />
               )}
               {m.content && (
                 <div className="chat-content">
@@ -873,21 +855,13 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
               />
             )}
             {streamTools.length > 0 && (
-              <div className="codex-tool-list">
-                {streamTools.map((call) => {
-                  const isOpen = expandedTools[call.id] ?? false;
-                  return (
-                    <ToolActivityRow
-                      key={call.id}
-                      call={call}
-                      open={isOpen}
-                      onToggle={() =>
-                        setExpandedTools((p) => ({ ...p, [call.id]: !isOpen }))
-                      }
-                    />
-                  );
-                })}
-              </div>
+              <ToolCallGroup
+                calls={streamTools}
+                expandedTools={expandedTools}
+                onToggleTool={(id, next) =>
+                  setExpandedTools((p) => ({ ...p, [id]: next }))
+                }
+              />
             )}
             {streamContent ? (
               <div className="chat-content">

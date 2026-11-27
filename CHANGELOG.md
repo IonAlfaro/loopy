@@ -2,6 +2,23 @@
 
 All notable changes to **Loors** are documented in this file.
 
+## [0.1.6] — Harness workspace and Agent improvements
+
+### Added
+
+- An actionable harness overview shows what is missing, opens the relevant node, and runs a ready harness.
+- A wide Inspector view and expandable Swarm worker cards make long configurations easier to edit.
+- The CLI can start an Agent session in an isolated worktree and save the conversation for desktop review.
+- Agent Mode includes a diff viewer and model context usage feedback.
+
+### Improved
+
+- Node cards distinguish flow branches from technical ports, with larger connection targets and compatible-port highlighting.
+- The Inspector shows Judge destinations and can connect a new or existing model to an Agent or Judge.
+- Agent and Architect use shorter prompts and contextual help. Local model cards keep disk paths and capabilities in expandable details.
+- Dialogs restore focus, the harness library scrolls within the viewport, and side panels resize with the keyboard.
+- Closing a harness waits for saving and keeps the tab open if the save fails. Harness tabs restore their canvas viewport.
+
 ## [0.1.3] — Harness Auto-Save, Full Context Recovery & Silent Windows Updater
 
 ### Added

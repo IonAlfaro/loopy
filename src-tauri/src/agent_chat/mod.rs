@@ -1,5 +1,6 @@
 ﻿use crate::engine::executor::{compact_agent_messages, parse_inline_tool_calls};
-use crate::inference::llama_cpp::LlamaCppManager;
+use crate::engine::executor::{chat_prompt_tokens, chat_tool_bytes, compaction_threshold};
+use crate::inference::llama_cpp::{agent_slot_context, LlamaCppManager};
 use crate::inference::{resolve_load_config_with_profile, ChatMessage, ChatRequest};
 use crate::knowledge::{build_knowledge_tree, build_or_update_index, search_bm25, KnowledgeIndex};
 use crate::mcp::{load_saved_mcp_servers, mcp_prefixed_tool_name, McpSession};
@@ -11,6 +12,7 @@ use crate::tools::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -191,6 +193,13 @@ pub enum AgentChatEvent {
         kind: String,
         content: String,
     },
+    ContextUsage {
+        session_id: String,
+        model_path: String,
+        used_tokens: usize,
+        max_tokens: u32,
+        compact_at_tokens: u32,
+    },
     TurnFinished {
         session_id: String,
         status: String,
@@ -209,73 +218,83 @@ pub struct WorkspaceMemoryFileInfo {
     pub size_bytes: usize,
 }
 
+#[derive(Default)]
 pub struct AgentChatState {
-    active_cancel: Mutex<Option<Arc<AtomicBool>>>,
-    pending_permission: Arc<Mutex<Option<oneshot::Sender<PermissionDecision>>>>,
-    pending_question: Arc<Mutex<Option<oneshot::Sender<QuestionDecision>>>>,
-    running: Arc<AtomicBool>,
-}
-
-impl Default for AgentChatState {
-    fn default() -> Self {
-        Self {
-            active_cancel: Mutex::new(None),
-            pending_permission: Arc::new(Mutex::new(None)),
-            pending_question: Arc::new(Mutex::new(None)),
-            running: Arc::new(AtomicBool::new(false)),
-        }
-    }
+    turns: Mutex<HashMap<String, Arc<AgentTurnState>>>,
 }
 
 impl AgentChatState {
     pub fn is_running(&self) -> bool {
-        self.running.load(Ordering::SeqCst)
+        self.turns.lock().map_or(true, |turns| !turns.is_empty())
     }
 
-    pub fn begin_turn(&self) -> Result<Arc<AtomicBool>, String> {
-        let mut guard = self
-            .active_cancel
-            .lock()
-            .map_err(|_| "Agent lock poisoned".to_string())?;
-        if let Some(prev) = guard.take() {
-            prev.store(true, Ordering::SeqCst);
+    fn begin_turn(&self, id: &str) -> Result<Arc<AgentTurnState>, String> {
+        let mut turns = self.turns.lock().map_err(|_| "Agent lock poisoned")?;
+        if turns.contains_key(id) {
+            return Err("This conversation already has an active turn.".into());
         }
-        if let Ok(mut perm) = self.pending_permission.lock() {
-            perm.take();
-        }
-        if let Ok(mut q) = self.pending_question.lock() {
-            q.take();
-        }
-        let flag = Arc::new(AtomicBool::new(false));
-        *guard = Some(flag.clone());
-        self.running.store(true, Ordering::SeqCst);
-        Ok(flag)
+        let turn = Arc::new(AgentTurnState::default());
+        turns.insert(id.to_owned(), turn.clone());
+        Ok(turn)
     }
 
-    pub fn end_turn(&self) {
-        self.running.store(false, Ordering::SeqCst);
-        if let Ok(mut perm) = self.pending_permission.lock() {
-            perm.take();
+    pub fn with_idle_session<T>(
+        &self,
+        id: &str,
+        operation: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        let turns = self.turns.lock().map_err(|_| "Agent lock poisoned")?;
+        if turns.contains_key(id) {
+            return Err("Wait for this conversation to finish before modifying its saved history.".into());
         }
-        if let Ok(mut q) = self.pending_question.lock() {
-            q.take();
-        }
+        operation()
     }
 
-    pub fn stop_turn(&self) {
-        if let Ok(guard) = self.active_cancel.lock() {
-            if let Some(flag) = guard.as_ref() {
-                flag.store(true, Ordering::SeqCst);
+    pub fn stop_turn(&self, id: Option<&str>) {
+        if let Ok(turns) = self.turns.lock() {
+            for (session_id, turn) in turns.iter() {
+                if id.is_none() || id == Some(session_id.as_str()) {
+                    turn.cancel.store(true, Ordering::SeqCst);
+                }
             }
         }
-        if let Ok(mut perm) = self.pending_permission.lock() {
-            perm.take();
-        }
-        if let Ok(mut q) = self.pending_question.lock() {
-            q.take();
-        }
     }
 
+    fn get_turn(&self, id: Option<&str>) -> Result<Arc<AgentTurnState>, String> {
+        let turns = self.turns.lock().map_err(|_| "Agent lock poisoned")?;
+        let turn = match id {
+            Some(id) => turns.get(id),
+            None if turns.len() == 1 => turns.values().next(),
+            None => None,
+        };
+        turn.cloned().ok_or_else(|| "Specify an active conversation.".into())
+    }
+
+    pub fn resolve_question(
+        &self,
+        id: Option<&str>,
+        decision: QuestionDecision,
+    ) -> Result<(), String> {
+        self.get_turn(id)?.resolve_question(decision)
+    }
+
+    pub fn resolve_permission(
+        &self,
+        id: Option<&str>,
+        decision: PermissionDecision,
+    ) -> Result<(), String> {
+        self.get_turn(id)?.resolve_permission(decision)
+    }
+}
+
+#[derive(Default)]
+struct AgentTurnState {
+    cancel: Arc<AtomicBool>,
+    pending_permission: Mutex<Option<oneshot::Sender<PermissionDecision>>>,
+    pending_question: Mutex<Option<oneshot::Sender<QuestionDecision>>>,
+}
+
+impl AgentTurnState {
     pub fn resolve_question(&self, decision: QuestionDecision) -> Result<(), String> {
         let mut slot = self
             .pending_question
@@ -365,7 +384,17 @@ pub fn save_session_in(dir: &Path, session: &AgentSession) -> Result<(), String>
     let p = session_file_path(dir, &session.id);
     let json = serde_json::to_string_pretty(session)
         .map_err(|e| format!("Error serializando sesiÃ³n: {e}"))?;
-    fs::write(&p, json).map_err(|e| format!("Error escribiendo sesiÃ³n: {e}"))
+    static WRITE_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tmp = p.with_extension(format!(
+        "{}.{}.tmp",
+        std::process::id(),
+        WRITE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let result = fs::write(&tmp, json).and_then(|()| fs::rename(&tmp, &p));
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result.map_err(|e| format!("Error escribiendo sesiÃ³n: {e}"))
 }
 
 pub fn delete_session_in(dir: &Path, id: &str) -> Result<(), String> {
@@ -482,42 +511,18 @@ pub async fn run_agent_turn<F>(
 where
     F: Fn(AgentChatEvent) + Send + Sync + 'static,
 {
-    let cancel = state.begin_turn()?;
-    struct TurnGuard<'a>(&'a AgentChatState);
-    impl<'a> Drop for TurnGuard<'a> {
+    let turn = state.begin_turn(&session.id)?;
+    struct TurnGuard<'a>(&'a AgentChatState, String);
+    impl Drop for TurnGuard<'_> {
         fn drop(&mut self) {
-            self.0.end_turn();
+            if let Ok(mut turns) = self.0.turns.lock() {
+                turns.remove(&self.1);
+            }
         }
     }
-    let _guard = TurnGuard(state);
-
+    let _guard = TurnGuard(state, session.id.clone());
+    let cancel = turn.cancel.clone();
     let is_cloud = crate::inference::cloud::is_cloud_model(&session.model_path);
-    let (context_size, has_mmproj, profile, port) = if is_cloud {
-        let mut prof = crate::inference::ModelTuningProfile::default();
-        prof.max_tokens = 0;
-        (128_000u32, true, prof, None)
-    } else {
-        let (load_cfg, profile) = resolve_load_config_with_profile(
-            binary_path,
-            &session.model_path,
-            override_ctx,
-            None,
-        );
-        let ctx = load_cfg.context_size;
-        let mm = load_cfg.mmproj_path.is_some();
-        let p = llama
-            .ensure_loaded_cancellable(load_cfg, Some(&cancel))
-            .await
-            .map_err(|e| {
-                if e == "__CANCELLED__" {
-                    "Generación detenida por el usuario.".to_string()
-                } else {
-                    e
-                }
-            })?;
-        (ctx, mm, profile, Some(p))
-    };
-
     let dir = sessions_dir();
     let trimmed_prompt = user_prompt.trim().to_string();
     if !trimmed_prompt.is_empty() || !attachments.is_empty() {
@@ -543,7 +548,10 @@ where
             session.title = truncate_chars(&title_seed, 46);
         }
         session.messages.push(AgentChatMessage {
-            id: format!("u-{}", now_epoch_secs()),
+            id: format!(
+                "u-{}",
+                SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos()
+            ),
             role: "user".to_string(),
             content: trimmed_prompt.clone(),
             thinking: String::new(),
@@ -552,6 +560,37 @@ where
             timestamp: now_epoch_secs(),
         });
     }
+
+    session.updated_at = now_epoch_secs();
+    save_session_in(&dir, &session)?;
+
+    let state = turn.as_ref();
+    let (context_size, has_mmproj, profile, runtime) = if is_cloud {
+        let mut prof = crate::inference::ModelTuningProfile::default();
+        prof.max_tokens = 0;
+        (128_000u32, true, prof, None)
+    } else {
+        let (load_cfg, profile) = resolve_load_config_with_profile(
+            binary_path,
+            &session.model_path,
+            override_ctx,
+            None,
+        );
+        let ctx = agent_slot_context(load_cfg.context_size);
+        let mm = load_cfg.mmproj_path.is_some();
+        let runtime = llama
+            .lease_for_agent(load_cfg, &cancel)
+            .await
+            .map_err(|e| {
+                if e == "__CANCELLED__" {
+                    "Generación detenida por el usuario.".to_string()
+                } else {
+                    e
+                }
+            })?;
+        (ctx, mm, profile, Some(runtime))
+    };
+    let port = runtime.as_ref().map(|lease| lease.port);
 
     let assistant_msg_id = format!(
         "a-{}",
@@ -569,9 +608,6 @@ where
         tool_calls: Vec::new(),
         timestamp: now_epoch_secs(),
     });
-    session.updated_at = now_epoch_secs();
-    let _ = save_session_in(&dir, &session);
-
     // Optional RAG index & Mini-Repo-Map (only when a real project workspace is linked)
     let has_workspace =
         !session.workspace.trim().is_empty() && session.workspace.trim() != ".";
@@ -1032,16 +1068,8 @@ where
     } else {
         profile.compact_at_tokens
     };
-    let effective_compact_budget = if target_compact_tokens > 0 {
-        let scaled = ((target_compact_tokens as u64 * 4) / 3) as u32;
-        if context_size > 0 {
-            scaled.min(context_size)
-        } else {
-            scaled
-        }
-    } else {
-        context_size
-    };
+    let effective_compact_budget = compaction_threshold(context_size, target_compact_tokens);
+    let tool_bytes = chat_tool_bytes(&tool_defs);
 
     let mut last_call_sig = String::new();
     let mut repeat_count: u32 = 0;
@@ -1055,7 +1083,14 @@ where
             break;
         }
 
-        let _ = compact_agent_messages(&mut llm_messages, effective_compact_budget);
+        compact_agent_messages(&mut llm_messages, tool_bytes, effective_compact_budget);
+        emit(AgentChatEvent::ContextUsage {
+            session_id: session.id.clone(),
+            model_path: session.model_path.clone(),
+            used_tokens: chat_prompt_tokens(&llm_messages, tool_bytes),
+            max_tokens: context_size,
+            compact_at_tokens: effective_compact_budget,
+        });
 
         let sid_clone = session.id.clone();
         let mid_clone = assistant_msg_id.clone();
@@ -1437,7 +1472,7 @@ where
                 last.tool_calls.push(record.clone());
             }
             session.updated_at = now_epoch_secs();
-            let _ = save_session_in(&dir, &session);
+            save_session_in(&dir, &session)?;
 
             emit(AgentChatEvent::ToolFinished {
                 session_id: session.id.clone(),
@@ -1489,7 +1524,7 @@ where
         .sum();
 
     session.updated_at = now_epoch_secs();
-    let _ = save_session_in(&dir, &session);
+    save_session_in(&dir, &session)?;
 
     emit(AgentChatEvent::TurnFinished {
         session_id: session.id.clone(),
@@ -1504,7 +1539,7 @@ where
 
 #[allow(clippy::too_many_arguments)]
 async fn dispatch_agent_tool<F>(
-    state: &AgentChatState,
+    state: &AgentTurnState,
     call_id: &str,
     session_id: &str,
     workspace: &str,
@@ -2181,6 +2216,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn active_turns_isolate_stop_and_decisions_by_session() {
+        let state = AgentChatState::default();
+        let first = state.begin_turn("first").unwrap();
+        let second = state.begin_turn("second").unwrap();
+        assert!(state.begin_turn("first").is_err());
+        assert!(state.with_idle_session("first", || Ok(())).is_err());
+        assert!(state.with_idle_session("third", || Ok(())).is_ok());
+
+        let (first_tx, mut first_rx) = oneshot::channel();
+        let (second_tx, mut second_rx) = oneshot::channel();
+        *first.pending_question.lock().unwrap() = Some(first_tx);
+        *second.pending_question.lock().unwrap() = Some(second_tx);
+        assert!(state.resolve_question(None, QuestionDecision { answers: vec![] }).is_err());
+        state.resolve_question(Some("second"), QuestionDecision { answers: vec!["B".into()] }).unwrap();
+        assert_eq!(second_rx.try_recv().unwrap().answers, vec!["B"]);
+        assert!(matches!(first_rx.try_recv(), Err(oneshot::error::TryRecvError::Empty)));
+
+        state.stop_turn(Some("first"));
+        assert!(first.cancel.load(Ordering::SeqCst));
+        assert!(!second.cancel.load(Ordering::SeqCst));
+    }
+
+
+    #[test]
     fn readonly_mode_filters_all_mutating_and_exec_tools() {
         let ro = enabled_tools_for_mode(&PermissionMode::ReadOnly);
         assert!(ro.contains(&"read_file".to_string()));
@@ -2369,7 +2428,7 @@ mod e2e_new_tools_tests {
         fs::create_dir_all(&ws).unwrap();
         let ws_str = ws.to_string_lossy().to_string();
 
-        let state = Arc::new(AgentChatState::default());
+        let state = Arc::new(AgentTurnState::default());
         let llama = LlamaCppManager::new();
         let cancel = Arc::new(AtomicBool::new(false));
         let mut mcp_sessions = Vec::new();

@@ -738,8 +738,8 @@ fn stop_architect_chat(architect_state: State<'_, ArchitectState>) -> Result<(),
 }
 
 #[tauri::command]
-fn get_model_profile(model_path: String) -> inference::ModelTuningProfile {
-    inference::load_model_profile(&model_path)
+fn get_model_profile(model_path: String, agent_mode: Option<bool>) -> inference::ModelTuningProfile {
+    inference::load_model_profile_for_ui(&model_path, agent_mode.unwrap_or(false))
 }
 
 #[tauri::command]
@@ -939,13 +939,13 @@ fn load_agent_session(id: String) -> Result<AgentSession, String> {
 }
 
 #[tauri::command]
-fn save_agent_session(session: AgentSession) -> Result<(), String> {
-    save_session_in(&sessions_dir(), &session)
+fn save_agent_session(session: AgentSession, agent_state: State<'_, AgentChatState>) -> Result<(), String> {
+    agent_state.with_idle_session(&session.id, || save_session_in(&sessions_dir(), &session))
 }
 
 #[tauri::command]
-fn delete_agent_session(id: String) -> Result<(), String> {
-    delete_session_in(&sessions_dir(), &id)
+fn delete_agent_session(id: String, agent_state: State<'_, AgentChatState>) -> Result<(), String> {
+    agent_state.with_idle_session(&id, || delete_session_in(&sessions_dir(), &id))
 }
 
 #[tauri::command]
@@ -960,6 +960,9 @@ async fn run_agent_turn(
     attachments: Option<Vec<String>>,
 ) -> Result<AgentSession, String> {
     let is_cloud = inference::cloud::is_cloud_model(&session.model_path);
+    if !is_cloud && engine.is_running() {
+        return Err("__GPU_BUSY_HARNESS__".to_string());
+    }
     if !is_cloud
         && (session.model_path.trim().is_empty() || !Path::new(&session.model_path).exists())
     {
@@ -1003,7 +1006,7 @@ async fn run_agent_turn(
             engine::types::EngineEvent::ModelState {
                 loaded: true,
                 model_name: Some(model_short),
-                context_size: Some(preview_cfg.context_size),
+                context_size: Some(inference::llama_cpp::agent_slot_context(preview_cfg.context_size)),
             },
         );
         rt.binary_path
@@ -1027,8 +1030,8 @@ async fn run_agent_turn(
 }
 
 #[tauri::command]
-fn stop_agent_turn(agent_state: State<'_, AgentChatState>) -> Result<(), String> {
-    agent_state.stop_turn();
+fn stop_agent_turn(agent_state: State<'_, AgentChatState>, session_id: Option<String>) -> Result<(), String> {
+    agent_state.stop_turn(session_id.as_deref());
     Ok(())
 }
 
@@ -1036,16 +1039,18 @@ fn stop_agent_turn(agent_state: State<'_, AgentChatState>) -> Result<(), String>
 fn resolve_agent_permission(
     agent_state: State<'_, AgentChatState>,
     decision: PermissionDecision,
+    session_id: Option<String>,
 ) -> Result<(), String> {
-    agent_state.resolve_permission(decision)
+    agent_state.resolve_permission(session_id.as_deref(), decision)
 }
 
 #[tauri::command]
 fn resolve_agent_question(
     agent_state: State<'_, AgentChatState>,
     decision: QuestionDecision,
+    session_id: Option<String>,
 ) -> Result<(), String> {
-    agent_state.resolve_question(decision)
+    agent_state.resolve_question(session_id.as_deref(), decision)
 }
 
 #[tauri::command]
@@ -1053,8 +1058,11 @@ fn undo_agent_tool_call(
     session_id: String,
     message_id: String,
     call_id: String,
+    agent_state: State<'_, AgentChatState>,
 ) -> Result<AgentSession, String> {
-    undo_tool_call_in_dir(&sessions_dir(), &session_id, &message_id, &call_id)
+    agent_state.with_idle_session(&session_id, || {
+        undo_tool_call_in_dir(&sessions_dir(), &session_id, &message_id, &call_id)
+    })
 }
 
 #[tauri::command]
@@ -1239,7 +1247,7 @@ pub fn run() {
                 triggers.stop_telegram();
             }
             if let Some(agent_state) = app_handle.try_state::<AgentChatState>() {
-                agent_state.stop_turn();
+                agent_state.stop_turn(None);
             }
             if let Some(architect_state) = app_handle.try_state::<ArchitectState>() {
                 architect_state.stop_turn();

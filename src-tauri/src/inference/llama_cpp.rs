@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tokio::process::{Child, Command};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelLoadProgressEvent {
@@ -56,24 +56,35 @@ fn short_model_name(path: &str) -> String {
         .to_string()
 }
 
+const AGENT_SLOTS: u32 = 2;
+
+pub fn agent_slot_context(total_context: u32) -> u32 {
+    total_context / AGENT_SLOTS
+}
+
 struct ActiveRuntime {
     config: ModelLoadConfig,
+    slots: Option<u32>,
     port: u16,
     child: Child,
 }
 
+pub struct RuntimeLease<'a> {
+    pub port: u16,
+    _guard: RwLockReadGuard<'a, ()>,
+}
+
 #[derive(Clone, Default)]
 pub struct LlamaCppManager {
+    admission: Arc<Mutex<()>>,
+    leases: Arc<RwLock<()>>,
     active: Arc<Mutex<Option<ActiveRuntime>>>,
     client: reqwest::Client,
 }
 
 impl LlamaCppManager {
     pub fn new() -> Self {
-        Self {
-            active: Arc::new(Mutex::new(None)),
-            client: reqwest::Client::new(),
-        }
+        Self::default()
     }
 
     pub async fn ensure_loaded(&self, config: ModelLoadConfig) -> Result<u16, String> {
@@ -85,20 +96,70 @@ impl LlamaCppManager {
         config: ModelLoadConfig,
         cancel: Option<&Arc<AtomicBool>>,
     ) -> Result<u16, String> {
-        if cancel.map(|c| c.load(Ordering::SeqCst)).unwrap_or(false) {
-            return Err("__CANCELLED__".to_string());
+        Ok(self.lease(config, None, cancel).await?.port)
+    }
+
+    pub async fn lease_for_agent(
+        &self,
+        config: ModelLoadConfig,
+        cancel: &Arc<AtomicBool>,
+    ) -> Result<RuntimeLease<'_>, String> {
+        self.lease(config, Some(AGENT_SLOTS), Some(cancel)).await
+    }
+
+    async fn lease(
+        &self,
+        config: ModelLoadConfig,
+        slots: Option<u32>,
+        cancel: Option<&Arc<AtomicBool>>,
+    ) -> Result<RuntimeLease<'_>, String> {
+        // Serialize admission so simultaneous cold starts can reuse the first load.
+        let acquire = async {
+            let _admission = self.admission.lock().await;
+            let shared = self.leases.read().await;
+            let compatible_port = self.active.lock().await.as_mut().and_then(|current| {
+                (current.config == config
+                    && current.slots == slots
+                    && matches!(current.child.try_wait(), Ok(None)))
+                .then_some(current.port)
+            });
+            if let Some(port) = compatible_port {
+                return Ok(RuntimeLease {
+                    port,
+                    _guard: shared,
+                });
+            }
+
+            drop(shared);
+            let exclusive = self.leases.write().await;
+            let port = self.load_runtime(config, slots, cancel).await?;
+            Ok(RuntimeLease {
+                port,
+                _guard: RwLockWriteGuard::downgrade(exclusive),
+            })
+        };
+
+        if let Some(flag) = cancel {
+            tokio::select! {
+                biased;
+                _ = wait_until_cancelled(flag) => Err("__CANCELLED__".into()),
+                result = acquire => result,
+            }
+        } else {
+            acquire.await
         }
+    }
+
+    async fn load_runtime(
+        &self,
+        config: ModelLoadConfig,
+        slots: Option<u32>,
+        cancel: Option<&Arc<AtomicBool>>,
+    ) -> Result<u16, String> {
         let mut guard = self.active.lock().await;
-        if cancel.map(|c| c.load(Ordering::SeqCst)).unwrap_or(false) {
-            return Err("__CANCELLED__".to_string());
-        }
         let target_name = short_model_name(&config.model_path);
 
         if let Some(ref mut current) = *guard {
-            let still_alive = matches!(current.child.try_wait(), Ok(None));
-            if still_alive && current.config == config {
-                return Ok(current.port);
-            }
             let prev_name = short_model_name(&current.config.model_path);
             emit_load_progress(
                 "unloading",
@@ -165,6 +226,9 @@ impl LlamaCppManager {
             if !flag.is_empty() {
                 cmd.arg(flag);
             }
+        }
+        if let Some(slots) = slots {
+            cmd.args(["--parallel", &slots.to_string(), "--cont-batching"]);
         }
         if let Some(ref mmproj) = config.mmproj_path {
             if !mmproj.trim().is_empty() && std::path::Path::new(mmproj).exists() {
@@ -341,6 +405,7 @@ impl LlamaCppManager {
 
         *guard = Some(ActiveRuntime {
             config,
+            slots,
             port,
             child,
         });
@@ -348,6 +413,7 @@ impl LlamaCppManager {
     }
 
     pub async fn shutdown(&self) {
+        let _exclusive = self.leases.write().await;
         let mut guard = self.active.lock().await;
         if let Some(ref mut current) = *guard {
             let prev_name = short_model_name(&current.config.model_path);
@@ -594,4 +660,72 @@ fn pick_free_port() -> Result<u16, String> {
         .local_addr()
         .map(|addr| addr.port())
         .map_err(|e| format!("No se pudo leer puerto local: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn compatible_agent_turns_share_runtime_until_both_leases_drop() {
+        let manager = LlamaCppManager::new();
+        let (config, _) = crate::inference::resolve_load_config_with_profile(
+            "missing-llama-server-for-lease-test".into(),
+            "test-model.gguf",
+            Some(8192),
+            None,
+        );
+
+        #[cfg(windows)]
+        let mut command = {
+            let mut command = Command::new("cmd.exe");
+            command.args(["/d", "/c", "set", "/p", "input="]);
+            command.creation_flags(0x0800_0000);
+            command
+        };
+        #[cfg(not(windows))]
+        let mut command = Command::new("cat");
+        let child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        *manager.active.lock().await = Some(ActiveRuntime {
+            config: config.clone(),
+            slots: Some(AGENT_SLOTS),
+            port: 12345,
+            child,
+        });
+
+        let cancel = Arc::new(AtomicBool::new(false));
+        let first = manager.lease_for_agent(config.clone(), &cancel).await.unwrap();
+        let second = tokio::time::timeout(
+            Duration::from_secs(1),
+            manager.lease_for_agent(config.clone(), &cancel),
+        )
+        .await
+        .expect("matching config should be admitted beside the first turn")
+        .unwrap();
+        assert_eq!(first.port, second.port);
+
+        let mut other_config = config;
+        other_config.model_path = "other-model.gguf".into();
+        let cancel_waiter = Arc::new(AtomicBool::new(false));
+        let mut cancelled_switch = Box::pin(manager.lease_for_agent(other_config.clone(), &cancel_waiter));
+        assert!(futures_util::poll!(cancelled_switch.as_mut()).is_pending());
+        cancel_waiter.store(true, Ordering::SeqCst);
+        assert!(matches!(cancelled_switch.await, Err(err) if err == "__CANCELLED__"));
+
+        let mut switch = Box::pin(manager.lease_for_agent(other_config, &cancel));
+        assert!(futures_util::poll!(switch.as_mut()).is_pending());
+        drop(first);
+        assert!(futures_util::poll!(switch.as_mut()).is_pending());
+        drop(second);
+        let result = tokio::time::timeout(Duration::from_secs(2), switch)
+            .await
+            .expect("reload should proceed once both leases are released");
+        assert!(result.is_err(), "the replacement binary is intentionally missing");
+        assert!(manager.active.lock().await.is_none());
+    }
 }

@@ -300,6 +300,7 @@ export interface ModelTuningProfile {
   seed: number;
   mmprojPath: string;
   effectiveContextSize?: number;
+  autoContextSize?: number;
 }
 
 export interface AgentToolCallRecord {
@@ -438,6 +439,14 @@ export type AgentChatEvent =
       preview: string;
     }
   | {
+      type: "context_usage";
+      session_id: string;
+      model_path: string;
+      used_tokens: number;
+      max_tokens: number;
+      compact_at_tokens: number;
+    }
+  | {
       type: "turn_finished";
       session_id: string;
       status: string;
@@ -447,6 +456,7 @@ export type AgentChatEvent =
     };
 
 export interface BrowserFrameEvent {
+  session_id: string;
   url: string;
   title: string;
   action: string;

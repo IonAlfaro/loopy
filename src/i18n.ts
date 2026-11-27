@@ -55,8 +55,8 @@ const TRANSLATIONS = {
     "agent.noBrowserDesc": "The live view will appear here when the agent browses or interacts with a web page.",
     "agent.heroTitle": "What are we working on?",
     "agent.chooseOtherFolder": "+ Choose another folder…",
-    "agent.composerPlaceholder": "Write a message, drag files (PDF, Word, Excel, code, images) or paste screenshots with Ctrl+V…",
-    "agent.composerQueuePlaceholder": "Write another message to queue it… (Enter to queue)",
+    "agent.composerPlaceholder": "Write a message…",
+    "agent.composerQueuePlaceholder": "Queue a message…",
     "agent.chooseModel": "Choose model…",
     "agent.searchModel": "Search model or quantization…",
     "agent.noModelsYet": "No local models or active APIs yet.",
@@ -123,7 +123,7 @@ const TRANSLATIONS = {
 
     // Architect Chat
     "architect.subtitle": "Visual harness designer (.loors.json)",
-    "architect.placeholder": "Describe the harness, drag files/images or paste with Ctrl+V…",
+    "architect.placeholder": "Describe the harness…",
     "architect.queuePlaceholder": "Write another message to queue it… (Enter to queue)",
     "architect.emptyIntro": "Ask me to design a harness from scratch or improve the current canvas. You can attach files, folders, or screenshots.",
     "architect.p1": "Improve this harness and add a Devil's Advocate reviewer before the Judge.",
@@ -218,8 +218,8 @@ const TRANSLATIONS = {
     "agent.noBrowserDesc": "La vista en vivo se mostrará aquí cuando el agente navegue o interactúe con una página web.",
     "agent.heroTitle": "¿En qué trabajamos?",
     "agent.chooseOtherFolder": "+ Elegir otra carpeta…",
-    "agent.composerPlaceholder": "Escribe tu mensaje, arrastra archivos (PDF, Word, Excel, código, imágenes) o pega capturas con Ctrl+V…",
-    "agent.composerQueuePlaceholder": "Escribe otro mensaje para encolarlo… (Enter para encolar)",
+    "agent.composerPlaceholder": "Escribe un mensaje…",
+    "agent.composerQueuePlaceholder": "Añade un mensaje a la cola…",
     "agent.chooseModel": "Elegir modelo…",
     "agent.searchModel": "Buscar modelo o cuantización…",
     "agent.noModelsYet": "No hay modelos descargados ni APIs activas todavía.",
@@ -286,7 +286,7 @@ const TRANSLATIONS = {
 
     // Architect Chat
     "architect.subtitle": "Diseñador de arneses .loors.json",
-    "architect.placeholder": "Describe el arnés, arrastra archivos/imágenes o pega con Ctrl+V…",
+    "architect.placeholder": "Describe el arnés…",
     "architect.queuePlaceholder": "Escribe otro mensaje para encolarlo… (Enter para encolar)",
     "architect.emptyIntro": "Pídeme que diseñe un arnés desde cero o que mejore el arnés actual del lienzo. Puedes adjuntar archivos, carpetas o capturas.",
     "architect.p1": "Mejora este arnés y añade un nodo Refutador (Devil's Advocate) antes del Judge.",

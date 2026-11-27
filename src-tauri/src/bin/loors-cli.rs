@@ -6,6 +6,8 @@ use loors_lib::headless::{
 use serde_json::json;
 use std::path::PathBuf;
 
+mod agent_command;
+
 fn print_help() {
     println!(
         r#"loors-cli v{} — Headless AI Agent & Cyclic Harness CLI / Server
@@ -14,6 +16,9 @@ USAGE:
   loors-cli <COMMAND> [OPTIONS]
 
 COMMANDS:
+  agent [--worktree] <prompt>     Run an agent turn and save the desktop session
+      --help                       Show agent options
+
   run <workflow.loors.json|name>   Run a harness headlessly (CI/CD, cron, SSH)
       --workspace <dir>            Override workspace folder
       --prompt <text>              Override initial prompt
@@ -63,6 +68,19 @@ async fn main() {
     }
 
     match args[0].as_str() {
+        "agent" => {
+            if matches!(args.get(1).map(String::as_str), Some("--help" | "-h")) {
+                println!("{}", agent_command::HELP);
+                return;
+            }
+            match agent_command::run(&args[1..]).await {
+                Ok(code) => std::process::exit(code),
+                Err(err) => {
+                    eprintln!("error: {err}");
+                    std::process::exit(1);
+                }
+            }
+        }
         "run" => {
             if args.len() < 2 {
                 eprintln!("error: missing workflow path or library name.\nUsage: loors-cli run <workflow.loors.json|name> [options]");

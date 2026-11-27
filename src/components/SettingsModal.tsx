@@ -1,3 +1,4 @@
+import { ModalBackdrop } from "./ModalBackdrop";
 import { useEffect, useState } from "react";
 import {
   ArrowDownToLine,
@@ -46,15 +47,6 @@ export function SettingsModal({
       setTab(initialTab);
     }
   }, [open, initialTab]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -113,7 +105,7 @@ export function SettingsModal({
   ];
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <ModalBackdrop label={locale === "es" ? "Configuración" : "Settings"} onClose={onClose}>
       <div
         className="modal-card settings-modal-shell"
         onClick={(e) => e.stopPropagation()}
@@ -296,6 +288,6 @@ export function SettingsModal({
           </div>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

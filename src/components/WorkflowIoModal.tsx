@@ -1,4 +1,5 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { ModalBackdrop } from "./ModalBackdrop";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardCopy,
   Download,
@@ -23,16 +24,16 @@ interface SavedWorkflowEntry {
 interface WorkflowIoModalProps {
   open: boolean;
   onClose: () => void;
+  onSave: () => Promise<{ name: string; path: string } | false>;
   onNotice: (msg: string) => void;
 }
 
-export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProps) {
+export function WorkflowIoModal({ open, onClose, onNotice, onSave }: WorkflowIoModalProps) {
   const { locale, t } = useI18n();
   const L = (en: string, es: string) => (locale === "es" ? es : en);
   const workflowName = useGraphStore((s) => s.workflowName);
   const exportWorkflow = useGraphStore((s) => s.exportWorkflow);
   const importWorkflow = useGraphStore((s) => s.importWorkflow);
-  const markSaved = useGraphStore((s) => s.markSaved);
   const loadTemplate = useGraphStore((s) => s.loadTemplate);
 
   const [tab, setTab] = useState<"library" | "templates" | "json">("library");
@@ -81,26 +82,21 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
 
   const handleSaveLibrary = async () => {
     setErrorMsg(null);
-    const data = exportWorkflow();
-    const content = JSON.stringify(data, null, 2);
+    setStatusMsg(null);
     try {
-      const savedPath = await invoke<string>("save_workflow_to_library", {
-        name: data.name || "workflow",
-        content,
-      });
-      markSaved(data.name);
-      setStatusMsg(L(`Saved to library: ${savedPath}`, `Guardado en biblioteca: ${savedPath}`));
-      onNotice(L(`Saved: ${data.name}`, `Guardado: ${data.name}`));
+      const saved = await onSave();
+      if (!saved) {
+        setErrorMsg(L(
+          "The harness changed during saving. Save again to keep the latest changes.",
+          "El arnés cambió mientras se guardaba. Vuelve a guardar los últimos cambios."
+        ));
+        return;
+      }
+      setStatusMsg(L(`Saved to library: ${saved.path}`, `Guardado en biblioteca: ${saved.path}`));
+      onNotice(L(`Saved: ${saved.name}`, `Guardado: ${saved.name}`));
       refreshLibrary();
-    } catch (err) {
-      setErrorMsg(
-        typeof err === "string"
-          ? err
-          : L(
-              "Local library is available in desktop mode (use Export JSON in browser).",
-              "Biblioteca local disponible en modo escritorio (usa Exportar JSON en navegador)."
-            )
-      );
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -196,10 +192,9 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <ModalBackdrop label={t("library.title")} onClose={onClose}>
       <div
-        className="modal-card modal-wide"
-        style={{ height: "min(680px, calc(100vh - 48px))" }}
+        className="modal-card modal-wide workflow-library-dialog"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header">
@@ -429,6 +424,6 @@ export function WorkflowIoModal({ open, onClose, onNotice }: WorkflowIoModalProp
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

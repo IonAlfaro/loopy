@@ -978,6 +978,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     };
     set({
       nodes: [...get().nodes, newNode],
+      dirty: true,
       selectedNodeId: id,
     });
   },
@@ -1035,6 +1036,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     set({
       nodes: [...state.nodes, newNode],
       edges: [...state.edges, newEdge],
+      dirty: true,
       selectedNodeId: id,
     });
   },
@@ -1373,6 +1375,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
 
     set({
       edges: addEdge(nextEdge, get().edges),
+      dirty: true,
     });
   },
 

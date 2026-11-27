@@ -1,4 +1,5 @@
-﻿import { useState } from "react";
+﻿import { ModalBackdrop } from "./ModalBackdrop";
+import { useState } from "react";
 import { Check, MessageSquareWarning, ShieldAlert } from "lucide-react";
 import { invoke } from "../lib/bridge";
 import { useGraphStore } from "../store/useGraphStore";
@@ -30,7 +31,7 @@ export function HumanGateModal() {
   };
 
   return (
-    <div className="modal-backdrop">
+    <ModalBackdrop label={pendingGate.nodeTitle}>
       <div className="modal-card modal-wide">
         <div className="modal-header">
           <div className="modal-title">
@@ -83,6 +84,6 @@ export function HumanGateModal() {
           </div>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

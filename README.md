@@ -83,6 +83,9 @@ Manage local GGUF models, dynamic Hugging Face downloads, MCP servers, `llama.cp
 Loors ships with a dedicated headless binary (`loors-cli`) for servers, SSH, cron jobs, and CI/CD pipelines:
 
 ```bash
+# Start an agent in an isolated worktree from the repository's committed HEAD
+loors-cli agent --worktree --model /path/to/model.gguf --context 16384 "Fix the failing test"
+
 # Run a harness once (with optional overrides & structured JSONL output)
 loors-cli run ./my-harness.loors.json --workspace ./repo --prompt "Fix failing tests" --jsonl
 
@@ -101,6 +104,8 @@ loors-cli workflows
 loors-cli models
 ```
 
+The agent asks before running commands or editing files. It prints the session ID and workspace path, and saves the session in Agent Mode for desktop review. With `--worktree`, Loors keeps the worktree so you can inspect the diff after the CLI exits. You can set `LOORS_MODEL` to reuse a model across runs.
+
 | Exit Code | Meaning |
 | :--- | :--- |
 | `0` | Harness completed successfully |
@@ -117,6 +122,8 @@ Download the latest installer for your operating system from [**GitHub Releases*
 - **Windows**: `Loors_*_x64-setup.exe` (branded NSIS installer) or `.msi`
 - **macOS**: `Loors_*_aarch64.dmg`
 - **Linux**: `Loors_*.AppImage` or `.deb`
+
+> **Windows signing notice:** The current Windows installers and Loors executable are unsigned. Microsoft Defender SmartScreen may show an unknown publisher warning, and Smart App Control on Windows 11 may block installation or launch.
 
 On first launch, choose either:
 1. **100% Local AI** — Click **"Install llama.cpp automatically (1 click)"** to detect your GPU and download the inference engine, then download or reuse any GGUF model.
@@ -208,7 +215,6 @@ loors/
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) to get started with pull requests.
 - Please follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 - To report a security issue or review our privacy & signing policy, see [SECURITY.md](SECURITY.md).
-- Free Windows code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 
 ## License
 

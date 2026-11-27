@@ -1,0 +1,734 @@
+: connected
+
+: ping
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Starting llama-server for Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.ggufÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":10,"stage":"starting"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (19%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":19,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (25%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":25,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (28%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":28,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (30%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":30,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (33%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":33,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (35%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":35,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (38%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":38,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (68%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":68,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (82%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":82,"stage":"loading"}}
+
+: ping
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" wants","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" me","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" to","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" fix","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" failing","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" test","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" by","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" editing","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"sum","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".c","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"js","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`.","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" Let","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" me","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":":","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\n1","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" First","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" run","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"node","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" test","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".c","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"js","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" to","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" reproduce","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" the","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" failure","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\n2","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" Read","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"sum","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".c","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"js","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" to","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" understand","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" the","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" code","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\n3","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" Fix","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" the","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" issue","type":"token"}}
+
+: ping
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" in","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"sum","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".c","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"js","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\n4","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" Run","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"node","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" test","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".c","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"js","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" again","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" to","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" verify","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\n","type":"token"}}
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\n[Preparando llamada a herramienta: read_file...]\n","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\n[Preparando llamada a herramienta: read_file...]\n","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"call":{"addedLines":0,"argsJson":"{\"command\":\"cd \\\"C:\\\\Users\\\\ional\\\\Documents\\\\GitHub\\\\loopy\\\\.loors-acceptance\\\\agent-worktree\\\" && node test.cjs\"}","cursorX":null,"cursorY":null,"diffPreview":null,"durationMs":0,"fileExisted":false,"filePath":null,"id":"uEdtaTfyEBNv9DMQiRPqyDvSnUBmFTh6","name":"run_cmd","outputPreview":"","previousContent":null,"removedLines":0,"screenshotPath":null,"status":"running","undone":false},"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","type":"tool_started"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"call_id":"uEdtaTfyEBNv9DMQiRPqyDvSnUBmFTh6","message_id":"a-1795791472932","preview":"{\"command\":\"cd \\\"C:\\\\Users\\\\ional\\\\Documents\\\\GitHub\\\\loopy\\\\.loors-acceptance\\\\agent-worktree\\\" && node test.cjs\"}","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","summary":"Ejecutar run_cmd","tool_name":"run_cmd","type":"permission_requested"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"call":{"addedLines":0,"argsJson":"{\"command\":\"cd \\\"C:\\\\Users\\\\ional\\\\Documents\\\\GitHub\\\\loopy\\\\.loors-acceptance\\\\agent-worktree\\\" && node test.cjs\"}","cursorX":null,"cursorY":null,"diffPreview":null,"durationMs":1108,"fileExisted":false,"filePath":null,"id":"uEdtaTfyEBNv9DMQiRPqyDvSnUBmFTh6","name":"run_cmd","outputPreview":"El usuario rechaz+â-¦ ejecutar 'run_cmd' ({\"command\":\"cd \\\"C:\\\\Users\\\\ional\\\\Documents\\\\GitHub\\\\loopy\\\\.loors-acceptance\\\\agent-worktree\\\" && node test.cjs\"}). Busca una alternativa o pregunta c+â-¦mo proceder.","previousContent":null,"removedLines":0,"screenshotPath":null,"status":"denied","undone":false},"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","type":"tool_finished"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"call":{"addedLines":0,"argsJson":"{\"path\":\"sum.cjs\"}","cursorX":null,"cursorY":null,"diffPreview":null,"durationMs":0,"fileExisted":false,"filePath":null,"id":"8zBIIkIA1jK7NytXpcEVv3keyi7tUnj1","name":"read_file","outputPreview":"","previousContent":null,"removedLines":0,"screenshotPath":null,"status":"running","undone":false},"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","type":"tool_started"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"call":{"addedLines":0,"argsJson":"{\"path\":\"sum.cjs\"}","cursorX":null,"cursorY":null,"diffPreview":null,"durationMs":19,"fileExisted":false,"filePath":null,"id":"8zBIIkIA1jK7NytXpcEVv3keyi7tUnj1","name":"read_file","outputPreview":"   1 | module.exports = (a,b) => a-b;","previousContent":null,"removedLines":0,"screenshotPath":null,"status":"success","undone":false},"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","type":"tool_finished"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"call":{"addedLines":0,"argsJson":"{\"path\":\"test.cjs\"}","cursorX":null,"cursorY":null,"diffPreview":null,"durationMs":0,"fileExisted":false,"filePath":null,"id":"nUpul0JjmP1HA65Ff4muiicjNQlUPEMo","name":"read_file","outputPreview":"","previousContent":null,"removedLines":0,"screenshotPath":null,"status":"running","undone":false},"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","type":"tool_started"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"call":{"addedLines":0,"argsJson":"{\"path\":\"test.cjs\"}","cursorX":null,"cursorY":null,"diffPreview":null,"durationMs":36,"fileExisted":false,"filePath":null,"id":"nUpul0JjmP1HA65Ff4muiicjNQlUPEMo","name":"read_file","outputPreview":"   1 | const assert = require(\"node:assert/strict\"); assert.equal(require(\"./sum.cjs\")(2,3),5); console.log(JSON.stringify({passed:true}));","previousContent":null,"removedLines":0,"screenshotPath":null,"status":"success","undone":false},"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","type":"tool_finished"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"compact_at_tokens":6144,"max_tokens":8192,"model_path":"C:\\Users\\ional\\AppData\\Local\\loors\\models\\Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","type":"context_usage","used_tokens":6242}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"El","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" archivo","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"sum","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".c","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"js","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" tiene","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"module","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".exports","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" =","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" (","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":",b","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":")","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" =>","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"-b","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":";","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" que","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" resta","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" -","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" b","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`,","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" pero","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" el","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" test","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" espera","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" que","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"sum","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"(","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"2","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":",","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" ","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"3","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":")`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" sumar","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" (`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" +","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" b","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`)","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" en","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" lugar","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" de","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" rest","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"ar","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\n","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\nV","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"oy","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" editar","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"sum","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".c","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"js","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" para","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" correg","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"ir","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" esto","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"El","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" problema","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" es","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" claro","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":":","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"sum","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".c","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"js","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" exporta","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `(","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":",","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" b","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":")","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" =>","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" -","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" b","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" (","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"resta","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"),","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" pero","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" el","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" test","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" espera","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" que","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"sum","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"(","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"2","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":",","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" ","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"3","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":")`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" dev","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"uelva","type":"token"}}
+
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"5","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" (","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"suma","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":").","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" Voy","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" correg","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"irlo","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\n[Preparando llamada a herramienta: edit_file...]\n","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"call":{"addedLines":0,"argsJson":"{\"new_text\":\"module.exports = (a,b) => a+b;\",\"old_text\":\"module.exports = (a,b) => a-b;\",\"path\":\"sum.cjs\"}","cursorX":null,"cursorY":null,"diffPreview":null,"durationMs":0,"fileExisted":false,"filePath":null,"id":"ClLcs9ibKxHl0pSv8yO5ZkN9zMDBueto","name":"edit_file","outputPreview":"","previousContent":null,"removedLines":0,"screenshotPath":null,"status":"running","undone":false},"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","type":"tool_started"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"call_id":"ClLcs9ibKxHl0pSv8yO5ZkN9zMDBueto","message_id":"a-1795791472932","preview":"{\"new_text\":\"module.exports = (a,b) => a+b;\",\"old_text\":\"module.exports = (a,b) => a-b;\",\"path\":\"sum.cjs\"}","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","summary":"Ejecutar edit_file","tool_name":"edit_file","type":"permission_requested"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"call":{"addedLines":1,"argsJson":"{\"new_text\":\"module.exports = (a,b) => a+b;\",\"old_text\":\"module.exports = (a,b) => a-b;\",\"path\":\"sum.cjs\"}","cursorX":null,"cursorY":null,"diffPreview":"--- a/sum.cjs\n+++ b/sum.cjs\n- module.exports = (a,b) => a-b;\n+ module.exports = (a,b) => a+b;","durationMs":865,"fileExisted":true,"filePath":"sum.cjs","id":"ClLcs9ibKxHl0pSv8yO5ZkN9zMDBueto","name":"edit_file","outputPreview":"Archivo 'sum.cjs' editado correctamente.\nL+¡neas actualizadas (1..1):\n   1 | module.exports = (a,b) => a+b;","previousContent":"module.exports = (a,b) => a-b;\r\n","removedLines":1,"screenshotPath":null,"status":"success","undone":false},"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","type":"tool_finished"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"compact_at_tokens":6144,"max_tokens":8192,"model_path":"C:\\Users\\ional\\AppData\\Local\\loors\\models\\Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","type":"context_usage","used_tokens":6428}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"Ah","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"ora","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" voy","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" ejecutar","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" el","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" test","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" para","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" confirmar","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" que","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" pasa","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\n[Preparando llamada a herramienta: run_cmd...]\n","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"call":{"addedLines":0,"argsJson":"{\"command\":\"node test.cjs\"}","cursorX":null,"cursorY":null,"diffPreview":null,"durationMs":0,"fileExisted":false,"filePath":null,"id":"TAtVCYhSnd6G05KXjpVdEZre6X4EMYn8","name":"run_cmd","outputPreview":"","previousContent":null,"removedLines":0,"screenshotPath":null,"status":"running","undone":false},"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","type":"tool_started"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"call_id":"TAtVCYhSnd6G05KXjpVdEZre6X4EMYn8","message_id":"a-1795791472932","preview":"{\"command\":\"node test.cjs\"}","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","summary":"Ejecutar run_cmd","tool_name":"run_cmd","type":"permission_requested"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"call":{"addedLines":0,"argsJson":"{\"command\":\"node test.cjs\"}","cursorX":null,"cursorY":null,"diffPreview":null,"durationMs":533,"fileExisted":false,"filePath":null,"id":"TAtVCYhSnd6G05KXjpVdEZre6X4EMYn8","name":"run_cmd","outputPreview":"exit_code: 0\nstdout:\n{\"passed\":true}\n\nstderr:\n","previousContent":null,"removedLines":0,"screenshotPath":null,"status":"success","undone":false},"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","type":"tool_finished"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"compact_at_tokens":6144,"max_tokens":8192,"model_path":"C:\\Users\\ional\\AppData\\Local\\loors\\models\\Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","type":"context_usage","used_tokens":6505}}
+
+: ping
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"El","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" test","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" ahora","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" pasa","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" El","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" problema","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" era","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" que","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"sum","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".c","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"js","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" ten+¡a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" una","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" resta","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" (`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" -","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" b","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`)","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" en","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" lugar","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" de","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" una","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" suma","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" (`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" +","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" b","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":true,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`).","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\n\n","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"##","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" Result","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"ado","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\n\n**","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"C","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"aus","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" del","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" fallo","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":":**","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"sum","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".c","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"js","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" export","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"aba","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `(","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":",","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" b","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":")","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" =>","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" -","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" b","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" (","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"resta","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"),","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" pero","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" el","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" test","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" esperaba","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"sum","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"(","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"2","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":",","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" ","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"3","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":")","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" ===","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" ","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"5","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" (","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"suma","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":").","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\n\n**","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"Cor","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"re","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"cci+¦n","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":":**","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" Se","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" camb","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"i+¦","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"-b","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" por","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"a","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"+b","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" en","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"sum","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".c","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"js","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`.","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\n\n**","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"Resultado","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" tras","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" la","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" corre","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":":**","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" El","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" test","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" pasa","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" correctamente","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" ÔÇö","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"node","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" test","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".c","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"js","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" devuelve","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" `","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"{\"","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"passed","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"\":","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"true","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"}`","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" con","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" exit","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" code","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":" ","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":"0","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"is_thinking":false,"message_id":"a-1795791472932","session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","token":".","type":"token"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"context_max_tokens":8192,"context_used_chars":1833,"session_id":"0bbdfbaf-44b2-4c01-bc26-6233de8b5a2b","status":"completed","summary":"","type":"turn_finished"}}
+

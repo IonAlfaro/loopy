@@ -1,3 +1,5 @@
+import { AgentDiff } from "./AgentDiff";
+import { PanelResizer } from "./PanelResizer";
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
@@ -11,6 +13,7 @@ import {
   Copy,
   Download,
   Eye,
+  EyeOff,
   FileText,
   Folder,
   FolderOpen,
@@ -46,7 +49,7 @@ import {
   ModelLoadInlineBar,
   ReasoningEffortSelect,
   ThinkingDisclosure,
-  ToolActivityRow,
+  ToolCallGroup,
   WorkspaceFileTree,
   type QueuedMessageItem,
 } from "./ChatActivity";
@@ -60,7 +63,6 @@ import {
   type AgentSession,
   type AgentSessionSummary,
   type AgentTodoItem,
-  type AgentToolCallRecord,
   type PendingAgentQuestion,
   type BrowserFrameEvent,
   type CloudProviderConfig,
@@ -79,7 +81,17 @@ function makeSessionId(): string {
 }
 
 function normWs(p: string): string {
-  return p.trim().replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const path = p.trim().replace(/\\/g, "/").replace(/^\/\/\?\/UNC\//i, "//").replace(/^\/\/\?\//, "");
+  const windows = /^[a-z]:\//i.test(path) || path.startsWith("//");
+  const root = path.startsWith("//") ? "//" : path.startsWith("/") ? "/" : "";
+  const parts = path.split("/").filter((part) => part && part !== ".");
+  const normalized = root + parts.join("/");
+  return windows ? normalized.toLowerCase() : normalized;
+}
+
+function summarizeSession(session: AgentSession): AgentSessionSummary {
+  const { id, title, workspace, updatedAt, permissionMode, pinned, messages } = session;
+  return { id, title, workspace, updatedAt, permissionMode, pinned, messageCount: messages.length };
 }
 
 function displaySessionTitle(title: string, locale: string): string {
@@ -102,22 +114,27 @@ function formatRelativeAge(epochSecs: number, locale: string): string {
   return `${Math.floor(diff / 86400)}d`;
 }
 
-function loadStoredProjects(): string[] {
+function loadStoredProjects(storageKey = "loors_agent_projects"): string[] {
   try {
-    const raw = localStorage.getItem("loors_agent_projects");
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? parsed.filter((x): x is string => typeof x === "string" && x.trim() !== "" && x.trim() !== ".")
-      : [];
+    if (!Array.isArray(parsed)) return [];
+    const unique = new Map<string, string>();
+    for (const path of parsed) {
+      if (typeof path !== "string" || !normWs(path)) continue;
+      const key = normWs(path);
+      if (!unique.has(key)) unique.set(key, path);
+    }
+    return [...unique.values()];
   } catch {
     return [];
   }
 }
 
-function saveStoredProjects(list: string[]) {
+function saveStoredProjects(list: string[], storageKey = "loors_agent_projects") {
   try {
-    localStorage.setItem("loors_agent_projects", JSON.stringify(list));
+    localStorage.setItem(storageKey, JSON.stringify(list));
   } catch {
     // ignore
   }
@@ -138,27 +155,6 @@ function getAttachmentBadge(pathOrName: string): { tag: string; cls: string } {
   };
 }
 
-function DiffLines({ diff }: { diff: string }) {
-  return (
-    <pre className="diff-code-box">
-      {diff.split("\n").map((line, i) => {
-        const cls = line.startsWith("+ ")
-          ? "diff-add"
-          : line.startsWith("- ")
-            ? "diff-del"
-            : line.startsWith("---") || line.startsWith("+++")
-              ? "diff-hdr"
-              : "diff-ctx";
-        return (
-          <div key={i} className={cls}>
-            {line}
-          </div>
-        );
-      })}
-    </pre>
-  );
-}
-
 export function AgentWorkspaceView() {
   const { locale, t } = useI18n();
   const nodes = useGraphStore((s) => s.nodes);
@@ -167,7 +163,6 @@ export function AgentWorkspaceView() {
   const openTuningModal = useGraphStore((s) => s.openTuningModal);
   const activeModelPath = useGraphStore((s) => s.activeModelPath);
   const setActiveModelPath = useGraphStore((s) => s.setActiveModelPath);
-  const loadedContextSize = useGraphStore((s) => s.loadedContextSize);
   const modelLoadProgress = useGraphStore((s) => s.modelLoadProgress);
   const setAgentStatus = useGraphStore((s) => s.setAgentStatus);
 
@@ -194,31 +189,6 @@ export function AgentWorkspaceView() {
     return Number.isFinite(saved) && saved >= 260 && saved <= 680 ? saved : 390;
   });
 
-  const startAgentResize = (side: "left" | "right", startX: number) => {
-    const initial = side === "left" ? sidebarWidth : rightPanelWidth;
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    const onMove = (ev: MouseEvent) => {
-      const dx = ev.clientX - startX;
-      if (side === "left") {
-        const next = Math.min(420, Math.max(190, initial + dx));
-        setSidebarWidth(next);
-        localStorage.setItem("loors_agent_left_w", String(next));
-      } else {
-        const next = Math.min(680, Math.max(260, initial - dx));
-        setRightPanelWidth(next);
-        localStorage.setItem("loors_agent_right_w", String(next));
-      }
-    };
-    const onUp = () => {
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
   const [projects, setProjects] = useState<string[]>(() => loadStoredProjects());
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
   const [sessions, setSessions] = useState<AgentSessionSummary[]>([]);
@@ -232,7 +202,16 @@ export function AgentWorkspaceView() {
   const [permMenuOpen, setPermMenuOpen] = useState(false);
   const [todoItems, setTodoItems] = useState<AgentTodoItem[]>([]);
   const [todoCollapsed, setTodoCollapsed] = useState(false);
-  const [pendingQuestion, setPendingQuestion] = useState<PendingAgentQuestion | null>(null);
+  const [questions, setQuestions] = useState<Record<string, PendingAgentQuestion>>({});
+  const setPendingQuestion = (question: PendingAgentQuestion | null, id = activeSessionIdRef.current) => {
+    setQuestions((prev) => {
+      if (question) return { ...prev, [id]: question };
+      if (!prev[id]) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
   const [selectedQuestionOpts, setSelectedQuestionOpts] = useState<string[]>([]);
   const [customQuestionAnswer, setCustomQuestionAnswer] = useState("");
   const [activeArtifact, setActiveArtifact] = useState<AgentArtifactPreview | null>(null);
@@ -261,8 +240,30 @@ export function AgentWorkspaceView() {
   }));
 
   const [input, setInput] = useState("");
-  const [running, setRunning] = useState(false);
-  const [messageQueue, setMessageQueue] = useState<QueuedMessageItem[]>([]);
+  const runningTurns = useRef(new Map<string, AgentSession>());
+  const [runningSessionIds, setRunningSessionIds] = useState<string[]>([]);
+  const running = runningSessionIds.length > 0;
+  const isCurrentRunning = runningSessionIds.includes(session.id);
+  const [queuedMessages, setMessageQueue] = useState<(QueuedMessageItem & { sessionId: string })[]>([]);
+  const messageQueue = queuedMessages.filter((message) => message.sessionId === session.id);
+  const [pinnedModels, setPinnedModels] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem("loors_pinned_models");
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [hiddenModels, setHiddenModels] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem("loors_hidden_models");
+      return raw ? (JSON.parse(raw) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showHiddenModels, setShowHiddenModels] = useState(false);
+  const [collapsedModelGroups, setCollapsedModelGroups] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [gpuBusyPrompt, setGpuBusyPrompt] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -276,23 +277,37 @@ export function AgentWorkspaceView() {
   const [selectedPreviewFile, setSelectedPreviewFile] = useState<string | null>(null);
   const [selectedPreviewContent, setSelectedPreviewContent] = useState<string>("");
   const [gitDiffText, setGitDiffText] = useState("");
-  const [contextUsage, setContextUsage] = useState<{ usedChars: number; maxTokens: number }>({
-    usedChars: 0,
-    maxTokens: 32768,
-  });
-  const [modelDefaultCompact, setModelDefaultCompact] = useState<number>(0);
+  const [contextUsage, setContextUsage] = useState<
+    Record<string, Extract<AgentChatEvent, { type: "context_usage" }>>
+  >({});
+  const [contextProfile, setContextProfile] = useState<{
+    modelPath: string;
+    profile: ModelTuningProfile;
+  } | null>(null);
   const [liveBrowserFrame, setLiveBrowserFrame] = useState<BrowserFrameEvent | null>(null);
   const [browserExpanded, setBrowserExpanded] = useState(false);
   const [chatMenuId, setChatMenuId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renamingDraft, setRenamingDraft] = useState("");
   const [savedShots, setSavedShots] = useState<Record<string, string>>({});
-  const [permissionReq, setPermissionReq] = useState<{
+  type PermissionRequest = {
     callId: string;
     toolName: string;
     summary: string;
     preview: string;
-  } | null>(null);
+  };
+  const [permissions, setPermissions] = useState<Record<string, PermissionRequest>>({});
+  const pendingQuestion = questions[session.id];
+  const permissionReq = permissions[session.id];
+  const setPermissionReq = (request: PermissionRequest | null, id = activeSessionIdRef.current) => {
+    setPermissions((prev) => {
+      if (request) return { ...prev, [id]: request };
+      if (!prev[id]) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
 
   const feedRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -305,23 +320,53 @@ export function AgentWorkspaceView() {
   activeSessionIdRef.current = session.id;
   const sessionRef = useRef(session);
   sessionRef.current = session;
-  const manualStopRef = useRef(false);
+  const pausedQueues = useRef(new Set<string>());
+  const completedTurns = useRef(new Map<string, AgentSession>());
+  const turnErrors = useRef(new Map<string, string>());
+  const drafts = useRef(new Map<string, { text: string; attachments: string[] }>());
+  if (input || pendingAttachments.length) drafts.current.set(session.id, { text: input, attachments: pendingAttachments });
+  else drafts.current.delete(session.id);
+  const sessionSelection = useRef(0);
+  const sessionRefresh = useRef(0);
+  const [hiddenProjects] = useState(() => new Set(loadStoredProjects("loors_hidden_agent_projects")));
 
-  const registerProject = useCallback((wsPath: string) => {
+  const showSession = (next: AgentSession) => {
+    const previousId = activeSessionIdRef.current;
+    if (next.id !== previousId) {
+      const nextDraft = drafts.current.get(next.id);
+      setInput(nextDraft?.text ?? "");
+      setPendingAttachments(nextDraft?.attachments ?? []);
+      setTodoItems([]);
+      setActiveArtifact(null);
+      setGpuBusyPrompt(null);
+    }
+    activeSessionIdRef.current = next.id;
+    sessionRef.current = next;
+    setSession(next);
+  };
+
+  const registerProject = useCallback((wsPath: string, reopen = false) => {
     const trimmed = wsPath.trim();
     if (!trimmed || trimmed === ".") return;
     const key = normWs(trimmed);
+    if (hiddenProjects.has(key)) {
+      if (!reopen) return;
+      hiddenProjects.delete(key);
+      saveStoredProjects([...hiddenProjects], "loors_hidden_agent_projects");
+    }
     setProjects((prev) => {
       if (prev.some((p) => normWs(p) === key)) return prev;
       const next = [...prev, trimmed];
       saveStoredProjects(next);
       return next;
     });
-  }, []);
+  }, [hiddenProjects]);
 
   const refreshSessions = useCallback(() => {
+    const request = ++sessionRefresh.current;
     invoke<AgentSessionSummary[]>("list_agent_sessions")
       .then((list) => {
+        if (request !== sessionRefresh.current) return;
         setSessions(list);
         for (const s of list) {
           if (s.workspace && s.workspace.trim() !== "" && s.workspace.trim() !== ".") {
@@ -381,9 +426,11 @@ export function AgentWorkspaceView() {
     refreshCloudProviders();
     const onModelsChanged = () => refreshLocalModels();
     const onProvidersChanged = () => refreshCloudProviders();
+    window.addEventListener("focus", refreshSessions);
     window.addEventListener("loors:models-changed", onModelsChanged);
     window.addEventListener("loors:providers-changed", onProvidersChanged);
     return () => {
+      window.removeEventListener("focus", refreshSessions);
       window.removeEventListener("loors:models-changed", onModelsChanged);
       window.removeEventListener("loors:providers-changed", onProvidersChanged);
     };
@@ -461,45 +508,30 @@ export function AgentWorkspaceView() {
   }, [activeModelPath]);
 
   useEffect(() => {
-    const syncFromProfile = (prof: ModelTuningProfile) => {
-      setModelDefaultCompact(prof.compactAtTokens ?? 0);
-      const resolvedCtx =
-        prof.contextSize > 0
-          ? prof.contextSize
-          : loadedContextSize && loadedContextSize > 0
-            ? loadedContextSize
-            : prof.effectiveContextSize && prof.effectiveContextSize > 0
-              ? prof.effectiveContextSize
-              : 32768;
-      setContextUsage((prev) => ({
-        ...prev,
-        maxTokens: resolvedCtx,
-      }));
-    };
-
-    if (session.modelPath) {
-      invoke<ModelTuningProfile>("get_model_profile", {
-        modelPath: session.modelPath,
+    const modelPath = session.modelPath;
+    if (!modelPath || modelPath.startsWith("cloud::")) return;
+    let current = true;
+    invoke<ModelTuningProfile>("get_model_profile", { modelPath, agentMode: true })
+      .then((profile) => {
+        if (current) setContextProfile({ modelPath, profile });
       })
-        .then(syncFromProfile)
-        .catch(() => {});
-    } else if (loadedContextSize && loadedContextSize > 0) {
-      setContextUsage((prev) => ({ ...prev, maxTokens: loadedContextSize }));
-    }
+      .catch(() => {});
 
     const onProfileUpdated = (ev: Event) => {
       const detail = (
         ev as CustomEvent<{ modelPath?: string; profile?: ModelTuningProfile }>
       ).detail;
-      if (!detail?.profile) return;
-      if (!session.modelPath || detail.modelPath === session.modelPath) {
-        syncFromProfile(detail.profile);
+      if (detail?.profile && detail.modelPath === modelPath) {
+        current = false;
+        setContextProfile({ modelPath, profile: detail.profile });
       }
     };
     window.addEventListener("loors:model-profile-updated", onProfileUpdated);
-    return () =>
+    return () => {
+      current = false;
       window.removeEventListener("loors:model-profile-updated", onProfileUpdated);
-  }, [session.modelPath, loadedContextSize]);
+    };
+  }, [session.modelPath]);
 
   useEffect(() => {
     if (!modelPickerOpen) return;
@@ -625,19 +657,50 @@ export function AgentWorkspaceView() {
     listen<AgentChatEvent>("loors://agent-chat-event", (ev) => {
       if (cancelled) return;
       const p = ev.payload;
-      if (p.session_id !== activeSessionIdRef.current) return;
-
-      if (p.type === "todo_updated") {
-        setTodoItems(p.items);
-      } else if (p.type === "question_requested") {
+      if (p.type === "context_usage") {
+        setContextUsage((prev) => ({ ...prev, [p.session_id]: p }));
+        return;
+      }
+      const visible = p.session_id === activeSessionIdRef.current;
+      if (p.type === "permission_requested") {
+        setPermissionReq({
+          callId: p.call_id,
+          toolName: p.tool_name,
+          summary: p.summary,
+          preview: p.preview,
+        }, p.session_id);
+        return;
+      }
+      if (p.type === "question_requested") {
         setPendingQuestion({
           callId: p.call_id,
           question: p.question,
           options: p.options,
           allowMultiple: p.allow_multiple,
-        });
-        setSelectedQuestionOpts([]);
-        setCustomQuestionAnswer("");
+        }, p.session_id);
+        if (visible) {
+          setSelectedQuestionOpts([]);
+          setCustomQuestionAnswer("");
+        }
+        return;
+      }
+      if (p.type === "tool_finished" || p.type === "turn_finished") {
+        setPermissionReq(null, p.session_id);
+        setPendingQuestion(null, p.session_id);
+      }
+
+      const updateTurn = (update: (session: AgentSession) => AgentSession) => {
+        const current = runningTurns.current.get(p.session_id);
+        if (!current) return;
+        const next = update(current);
+        runningTurns.current.set(p.session_id, next);
+        if (visible) showSession(next);
+      };
+
+      if (!visible && p.type !== "token" && p.type !== "tool_started" && p.type !== "tool_finished") return;
+
+      if (p.type === "todo_updated") {
+        setTodoItems(p.items);
       } else if (p.type === "artifact_updated") {
         setActiveArtifact({
           title: p.title,
@@ -647,7 +710,7 @@ export function AgentWorkspaceView() {
         });
         setArtifactExpanded(false);
       } else if (p.type === "token") {
-        setSession((prev) => {
+        updateTurn((prev) => {
           const msgs = [...prev.messages];
           let idx = msgs.findIndex((m) => m.id === p.message_id);
           if (idx === -1) {
@@ -668,7 +731,7 @@ export function AgentWorkspaceView() {
           return { ...prev, messages: msgs };
         });
       } else if (p.type === "tool_started") {
-        setSession((prev) => {
+        updateTurn((prev) => {
           const msgs = [...prev.messages];
           const idx = msgs.findIndex((m) => m.id === p.message_id);
           if (idx === -1) return prev;
@@ -678,8 +741,7 @@ export function AgentWorkspaceView() {
           return { ...prev, messages: msgs };
         });
       } else if (p.type === "tool_finished") {
-        setPermissionReq(null);
-        setSession((prev) => {
+        updateTurn((prev) => {
           const msgs = [...prev.messages];
           const idx = msgs.findIndex((m) => m.id === p.message_id);
           if (idx === -1) return prev;
@@ -695,6 +757,7 @@ export function AgentWorkspaceView() {
           msgs[idx] = target;
           return { ...prev, messages: msgs };
         });
+        if (!visible) return;
         if (p.call.screenshotPath) {
           const shotPath = p.call.screenshotPath;
           invoke<string>("read_screenshot_base64", { path: shotPath })
@@ -716,19 +779,6 @@ export function AgentWorkspaceView() {
           setRightPanelOpen(true);
           setRightPanelTab("browser");
         }
-      } else if (p.type === "permission_requested") {
-        setPermissionReq({
-          callId: p.call_id,
-          toolName: p.tool_name,
-          summary: p.summary,
-          preview: p.preview,
-        });
-      } else if (p.type === "turn_finished") {
-        setPermissionReq(null);
-        setContextUsage({
-          usedChars: p.context_used_chars,
-          maxTokens: p.context_max_tokens,
-        });
       }
     })
       .then((fn) => {
@@ -738,7 +788,7 @@ export function AgentWorkspaceView() {
       .catch(() => {});
 
     listen<BrowserFrameEvent>("loors://browser-frame", (ev) => {
-      if (!cancelled) {
+      if (!cancelled && ev.payload.session_id === activeSessionIdRef.current) {
         setLiveBrowserFrame(ev.payload);
         setRightPanelOpen(true);
         setRightPanelTab("browser");
@@ -766,25 +816,71 @@ export function AgentWorkspaceView() {
 
   const persistSession = useCallback(
     async (next: AgentSession) => {
+      if (runningTurns.current.has(next.id)) {
+        setError(locale === "es" ? "Espera a que termine la respuesta para guardar los cambios." : "Wait for the response to finish before saving changes.");
+        return;
+      }
       setSession(next);
       try {
         await invoke("save_agent_session", { session: next });
         refreshSessions();
-      } catch {
-        // ignore save error on transient state
+      } catch (err) {
+        if (activeSessionIdRef.current === next.id) setError(String(err));
       }
     },
-    [refreshSessions]
+    [locale, refreshSessions]
   );
 
+  const togglePinModel = useCallback((modelKey: string) => {
+    setPinnedModels((prev) => {
+      const next = prev.includes(modelKey)
+        ? prev.filter((k) => k !== modelKey)
+        : [modelKey, ...prev];
+      try {
+        localStorage.setItem("loors_pinned_models", JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleHideModel = useCallback((modelKey: string) => {
+    setHiddenModels((prev) => {
+      const hiding = !prev.includes(modelKey);
+      const next = hiding
+        ? [...prev, modelKey]
+        : prev.filter((k) => k !== modelKey);
+      try {
+        localStorage.setItem("loors_hidden_models", JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      if (hiding) {
+        setPinnedModels((pins) => {
+          if (!pins.includes(modelKey)) return pins;
+          const nextPins = pins.filter((k) => k !== modelKey);
+          try {
+            localStorage.setItem("loors_pinned_models", JSON.stringify(nextPins));
+          } catch {
+            // ignore
+          }
+          return nextPins;
+        });
+      }
+      return next;
+    });
+  }, []);
+
   const handleNewSession = (targetWorkspace?: string) => {
-    if (running) return;
     const ws = targetWorkspace ?? (session.workspace || defaultHarnessWorkspace);
     if (ws && ws !== ".") registerProject(ws);
     setError(null);
     setLiveBrowserFrame(null);
-    setPermissionReq(null);
-    setSession({
+    ++sessionSelection.current;
+    setSelectedQuestionOpts([]);
+    setCustomQuestionAnswer("");
+    showSession({
       id: makeSessionId(),
       title: ws
         ? locale === "es"
@@ -808,17 +904,22 @@ export function AgentWorkspaceView() {
   };
 
   const handleSelectSession = async (id: string) => {
-    if (running) return;
+    if (id === activeSessionIdRef.current) {
+      ++sessionSelection.current;
+      return;
+    }
+    const request = ++sessionSelection.current;
     try {
-      const loaded = await invoke<AgentSession>("load_agent_session", { id });
-      setSession(loaded);
-      if (loaded.workspace && loaded.workspace !== ".") {
-        registerProject(loaded.workspace);
-      }
-      setError(null);
-      setPermissionReq(null);
+      const loaded = runningTurns.current.get(id)
+        ?? await invoke<AgentSession>("load_agent_session", { id });
+      if (request !== sessionSelection.current) return;
+      showSession(runningTurns.current.get(id) ?? loaded);
+      setError(turnErrors.current.get(id) ?? null);
+      setSelectedQuestionOpts([]);
+      setCustomQuestionAnswer("");
+      setLiveBrowserFrame(null);
     } catch (err) {
-      setError(String(err));
+      if (request === sessionSelection.current) setError(String(err));
     }
   };
 
@@ -826,12 +927,18 @@ export function AgentWorkspaceView() {
     e.stopPropagation();
     try {
       await invoke("delete_agent_session", { id });
+      setSessions((prev) => prev.filter((summary) => summary.id !== id));
       refreshSessions();
-      if (session.id === id) {
-        handleNewSession(session.workspace);
+      setMessageQueue((prev) => prev.filter((message) => message.sessionId !== id));
+      completedTurns.current.delete(id);
+      pausedQueues.current.delete(id);
+      turnErrors.current.delete(id);
+      drafts.current.delete(id);
+      if (activeSessionIdRef.current === id) {
+        handleNewSession(sessionRef.current.workspace);
       }
-    } catch {
-      // ignore
+    } catch (err) {
+      setError(String(err));
     }
   };
 
@@ -851,12 +958,12 @@ export function AgentWorkspaceView() {
           : await invoke<AgentSession>("load_agent_session", { id });
       const updated: AgentSession = { ...target, pinned: !target.pinned };
       await invoke("save_agent_session", { session: updated });
-      if (id === session.id) {
-        setSession(updated);
+      if (id === activeSessionIdRef.current) {
+        showSession(updated);
       }
       refreshSessions();
-    } catch {
-      // ignore if unsaved draft
+    } catch (err) {
+      setError(String(err));
     }
   };
 
@@ -877,14 +984,10 @@ export function AgentWorkspaceView() {
           : await invoke<AgentSession>("load_agent_session", { id });
       const updated: AgentSession = { ...target, title: trimmed };
       await invoke("save_agent_session", { session: updated });
-      if (id === session.id) {
-        setSession(updated);
-      }
+      if (id === activeSessionIdRef.current) showSession(updated);
       refreshSessions();
-    } catch {
-      if (id === session.id) {
-        setSession((prev) => ({ ...prev, title: trimmed }));
-      }
+    } catch (err) {
+      setError(String(err));
     }
   };
 
@@ -894,7 +997,7 @@ export function AgentWorkspaceView() {
         initialDir: session.workspace && session.workspace !== "." ? session.workspace : null,
       });
       if (picked) {
-        registerProject(picked);
+        registerProject(picked, true);
         handleNewSession(picked);
       }
     } catch (err) {
@@ -905,6 +1008,8 @@ export function AgentWorkspaceView() {
   const handleRemoveProject = (e: React.MouseEvent, projPath: string) => {
     e.stopPropagation();
     const key = normWs(projPath);
+    hiddenProjects.add(key);
+    saveStoredProjects([...hiddenProjects], "loors_hidden_agent_projects");
     setConfirmRemoveProj(null);
     setProjects((prev) => {
       const next = prev.filter((p) => normWs(p) !== key);
@@ -919,7 +1024,7 @@ export function AgentWorkspaceView() {
         initialDir: session.workspace && session.workspace !== "." ? session.workspace : null,
       });
       if (picked) {
-        registerProject(picked);
+        registerProject(picked, true);
         await persistSession({ ...session, workspace: picked, pinnedFiles: [] });
       }
     } catch (err) {
@@ -1007,46 +1112,46 @@ export function AgentWorkspaceView() {
   const sendTurn = async (
     promptText: string,
     forceStopHarness = false,
-    explicitAttachments?: string[]
+    explicitAttachments?: string[],
+    queuedSession?: AgentSession,
   ) => {
     const trimmed = promptText.trim();
     const attachmentsToSend = explicitAttachments ?? pendingAttachments;
     if (!trimmed && attachmentsToSend.length === 0) return;
 
-    if (running) {
+    const curSession = queuedSession ?? sessionRef.current;
+    const id = curSession.id;
+    if (runningTurns.current.has(id)) {
       setMessageQueue((prev) => [
         ...prev,
         {
-          id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+          id: makeSessionId(),
           text: trimmed,
           attachments: attachmentsToSend.length > 0 ? [...attachmentsToSend] : undefined,
+          sessionId: id,
         },
       ]);
-      setInput("");
-      if (!explicitAttachments) setPendingAttachments([]);
+      if (!explicitAttachments) {
+        setInput("");
+        setPendingAttachments([]);
+      }
       return;
     }
 
-    manualStopRef.current = false;
-    setError(null);
-    setGpuBusyPrompt(null);
+    pausedQueues.current.delete(id);
+    completedTurns.current.delete(id);
+    turnErrors.current.delete(id);
+    if (id === activeSessionIdRef.current) {
+      setError(null);
+      setGpuBusyPrompt(null);
+    }
 
-    const curSession = sessionRef.current;
     const activeWs =
       curSession.workspace && curSession.workspace.trim() !== "."
         ? curSession.workspace.trim()
         : "";
     if (activeWs) {
       registerProject(activeWs);
-    }
-
-    if (forceStopHarness) {
-      try {
-        await invoke("stop_workflow");
-        await new Promise((r) => setTimeout(r, 250));
-      } catch {
-        // ignore
-      }
     }
 
     const titleFallback =
@@ -1075,14 +1180,20 @@ export function AgentWorkspaceView() {
       updatedAt: Math.floor(Date.now() / 1000),
     };
 
-    setSession(nextSession);
-    stickToBottomRef.current = true;
-    setInput("");
-    if (!explicitAttachments) setPendingAttachments([]);
-    setRunning(true);
+    runningTurns.current.set(id, nextSession);
+    setRunningSessionIds([...runningTurns.current.keys()]);
     setAgentStatus(true, nextSession.title);
+    if (id === activeSessionIdRef.current) {
+      showSession(nextSession);
+      stickToBottomRef.current = true;
+      if (!explicitAttachments) {
+        setInput("");
+        setPendingAttachments([]);
+      }
+    }
 
     try {
+      if (forceStopHarness) await invoke("stop_workflow");
       const updated = await invoke<AgentSession>("run_agent_turn", {
         backend: selectedBackend,
         session: { ...curSession, workspace: activeWs, title: nextSession.title },
@@ -1090,48 +1201,76 @@ export function AgentWorkspaceView() {
         overrideCtx: null,
         attachments: attachmentsToSend,
       });
-      setSession(updated);
-      refreshSessions();
+      completedTurns.current.set(id, updated);
+      setSessions((prev) => [summarizeSession(updated), ...prev.filter((summary) => summary.id !== id)]);
+      if (activeSessionIdRef.current === id) showSession(updated);
     } catch (err) {
-      const msg = typeof err === "string" ? err : String(err);
-      if (msg.includes("__GPU_BUSY_HARNESS__")) {
-        setSession(curSession);
-        setInput(trimmed);
-        if (!explicitAttachments) setPendingAttachments(attachmentsToSend);
-        setGpuBusyPrompt(trimmed);
-      } else {
-        setError(msg);
+      const msg = String(err);
+      pausedQueues.current.add(id);
+      const persisted = await invoke<AgentSession>("load_agent_session", { id }).catch(() => curSession);
+      completedTurns.current.set(id, persisted);
+      const needsRetry = persisted.messages.length === curSession.messages.length;
+      if (needsRetry && !drafts.current.has(id)) {
+        drafts.current.set(id, { text: trimmed, attachments: attachmentsToSend });
       }
+      if (activeSessionIdRef.current === id) {
+        showSession(persisted);
+        const draft = drafts.current.get(id);
+        if (needsRetry && draft) {
+          setInput(draft.text);
+          setPendingAttachments(draft.attachments);
+        }
+        if (msg.includes("__GPU_BUSY_HARNESS__")) {
+          setGpuBusyPrompt(trimmed);
+        } else {
+          setError(msg);
+        }
+      }
+      turnErrors.current.set(id, msg);
     } finally {
-      setRunning(false);
-      setAgentStatus(false, null);
-      setPermissionReq(null);
+      runningTurns.current.delete(id);
+      setRunningSessionIds([...runningTurns.current.keys()]);
+      const otherTurn = runningTurns.current.values().next().value;
+      setAgentStatus(Boolean(otherTurn), otherTurn?.title ?? null);
+      setPermissionReq(null, id);
+      setPendingQuestion(null, id);
+      refreshSessions();
     }
   };
 
   useEffect(() => {
-    if (!running && !manualStopRef.current && messageQueue.length > 0) {
-      const [next, ...rest] = messageQueue;
-      setMessageQueue(rest);
-      void sendTurn(next.text, false, next.attachments ?? []);
+    const waiting = new Set(queuedMessages.map((message) => message.sessionId));
+    for (const [id, completed] of completedTurns.current) {
+      if (!waiting.has(id)) {
+        completedTurns.current.delete(id);
+      } else if (!pausedQueues.current.has(id) && !runningTurns.current.has(id)) {
+        const next = queuedMessages.find((message) => message.sessionId === id);
+        if (!next) continue;
+        setMessageQueue((prev) => prev.filter((message) => message.id !== next.id));
+        const target = id === activeSessionIdRef.current ? sessionRef.current : completed;
+        void sendTurn(next.text, false, next.attachments ?? [], target);
+      }
     }
-  }, [running, messageQueue]);
+  }, [runningSessionIds, queuedMessages]);
 
   const handleStop = async () => {
-    manualStopRef.current = true;
+    const id = activeSessionIdRef.current;
+    pausedQueues.current.add(id);
     try {
-      await invoke("stop_agent_turn");
-    } catch {
-      // ignore
+      await invoke("stop_agent_turn", { sessionId: id });
+    } catch (err) {
+      if (id === activeSessionIdRef.current) setError(String(err));
     }
   };
 
   const handlePermission = async (approved: boolean, alwaysAllowTool = false) => {
+    const id = session.id;
     try {
       await invoke("resolve_agent_permission", {
+        sessionId: id,
         decision: { approved, alwaysAllowTool },
       });
-      if (approved && alwaysAllowTool && permissionReq) {
+      if (approved && alwaysAllowTool && permissionReq && id === activeSessionIdRef.current) {
         setSession((prev) => ({
           ...prev,
           allowedSessionTools: prev.allowedSessionTools.includes(permissionReq.toolName)
@@ -1139,9 +1278,14 @@ export function AgentWorkspaceView() {
             : [...prev.allowedSessionTools, permissionReq.toolName],
         }));
       }
-      setPermissionReq(null);
+      setPermissions((prev) => {
+        if (!prev[id] || prev[id].callId !== permissionReq?.callId) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
     } catch (err) {
-      setError(String(err));
+      if (id === activeSessionIdRef.current) setError(String(err));
     }
   };
 
@@ -1152,9 +1296,9 @@ export function AgentWorkspaceView() {
         messageId,
         callId,
       });
-      setSession(updated);
+      if (activeSessionIdRef.current === updated.id) showSession(updated);
     } catch (err) {
-      setError(String(err));
+      if (activeSessionIdRef.current === session.id) setError(String(err));
     }
   };
 
@@ -1203,36 +1347,25 @@ export function AgentWorkspaceView() {
     setTimeout(() => setCopiedId(null), 1500);
   };
 
-  const liveSessionChars = useMemo(() => {
-    if (session.messages.length === 0) return 0;
-    let total = 2400; // base system prompt + tool schemas overhead
-    for (const m of session.messages) {
-      total += (m.content?.length ?? 0) + (m.thinking?.length ?? 0);
-      for (const tc of m.toolCalls ?? []) {
-        total += (tc.argsJson?.length ?? 0) + (tc.outputPreview?.length ?? 0);
-      }
-    }
-    return total;
-  }, [session.messages]);
-
-  const effectiveUsedChars = Math.max(contextUsage.usedChars, liveSessionChars);
-  const estTokensUsed = Math.round(effectiveUsedChars / 3.2);
-  const effectiveMaxTokens = Math.max(4096, contextUsage.maxTokens || 32768);
-  const activeCompactSetting =
-    (session.compactAtTokens ?? 0) > 0
-      ? Math.min(effectiveMaxTokens, session.compactAtTokens ?? 0)
-      : modelDefaultCompact > 0
-        ? Math.min(effectiveMaxTokens, modelDefaultCompact)
-        : 0;
-  const effectiveCompactTokens =
-    activeCompactSetting > 0
-      ? activeCompactSetting
-      : Math.round(effectiveMaxTokens * 0.75);
-  const compactPct = Math.min(
-    100,
-    Math.round((effectiveCompactTokens / effectiveMaxTokens) * 100)
+  const lastUsage = contextUsage[session.id];
+  const usage = lastUsage?.model_path === session.modelPath ? lastUsage : null;
+  const profile = contextProfile?.modelPath === session.modelPath ? contextProfile.profile : null;
+  const cloudContext = session.modelPath.startsWith("cloud::");
+  const effectiveMaxTokens = (isCurrentRunning ? usage?.max_tokens : undefined)
+    ?? (cloudContext ? 128000 : profile?.effectiveContextSize || usage?.max_tokens || 0);
+  const modelDefaultCompact = profile?.compactAtTokens ?? 0;
+  const inheritedCompact = !session.compactAtTokens;
+  const configuredCompactTokens = Math.min(
+    effectiveMaxTokens,
+    session.compactAtTokens || modelDefaultCompact || Math.round(effectiveMaxTokens * 0.75),
   );
-  const maxCtxLabel = `${Math.round(effectiveMaxTokens / 1024)}K`;
+  const effectiveCompactTokens = (isCurrentRunning ? usage?.compact_at_tokens : undefined)
+    ?? configuredCompactTokens;
+  const compactPct = effectiveMaxTokens ? (effectiveCompactTokens / effectiveMaxTokens) * 100 : 0;
+  const usedPct = effectiveMaxTokens && usage ? (usage.used_tokens / effectiveMaxTokens) * 100 : 0;
+  const formatTokens = (tokens: number) => tokens.toLocaleString(locale);
+  const contextLabel = locale === "es" ? "Contexto" : "Context";
+  const compactLabel = locale === "es" ? "Umbral de compactación" : "Compaction threshold";
   useEffect(() => {
     if (!wsMenuOpen) return;
     const onDown = (e: MouseEvent) => {
@@ -1262,17 +1395,42 @@ export function AgentWorkspaceView() {
     };
   }, [permMenuOpen]);
 
+  const projectLabels = useMemo(() => {
+    const parts = projects.map((path) => path.split(/[\\/]/).filter(Boolean));
+    return new Map(projects.map((path, index) => {
+      const segments = parts[index];
+      for (let count = 1; count <= segments.length; count += 1) {
+        const label = segments.slice(-count).join("/");
+        if (!parts.some((other, i) => i !== index &&
+          other.slice(-count).join("/").toLowerCase() === label.toLowerCase())) {
+          return [path, label];
+        }
+      }
+      return [path, path];
+    }));
+  }, [projects]);
+
   const activeWsShort =
     !session.workspace || session.workspace === "."
       ? t("agent.noProject")
-      : session.workspace.split(/[\\/]/).filter(Boolean).pop() ?? session.workspace;
+      : projectLabels.get(session.workspace) ?? session.workspace.split(/[\\/]/).filter(Boolean).pop() ?? session.workspace;
+
+  const sidebarSessions = useMemo(() => {
+    const byId = new Map(sessions.map((summary) => [summary.id, summary]));
+    for (const id of runningSessionIds) {
+      if (byId.has(id)) continue;
+      const turn = runningTurns.current.get(id);
+      if (turn) byId.set(id, summarizeSession(turn));
+    }
+    return [...byId.values()];
+  }, [sessions, runningSessionIds]);
 
   const orphanSessions = useMemo(() => {
     const knownKeys = new Set(projects.map((p) => normWs(p)));
-    return sessions.filter(
+    return sidebarSessions.filter(
       (s) => !s.workspace || s.workspace === "." || !knownKeys.has(normWs(s.workspace))
     );
-  }, [projects, sessions]);
+  }, [projects, sidebarSessions]);
 
   const lastUserMsgIndex = useMemo(() => {
     for (let i = session.messages.length - 1; i >= 0; i--) {
@@ -1293,7 +1451,6 @@ export function AgentWorkspaceView() {
             <button
               type="button"
               className="sidebar-new-conv-btn"
-              disabled={running}
               onClick={() => handleNewSession("")}
             >
               <Plus size={14} />
@@ -1306,7 +1463,7 @@ export function AgentWorkspaceView() {
               <div className="standalone-chats-block">
                 {orphanSessions.map((s) => {
                   const isCurrent = s.id === session.id;
-                  const isLive = isCurrent && running;
+                  const isLive = runningSessionIds.includes(s.id);
                   const isRenaming = renamingId === s.id;
                   const isMenuOpen = chatMenuId === s.id;
                   return (
@@ -1340,9 +1497,9 @@ export function AgentWorkspaceView() {
                           }}
                         />
                       ) : (
-                        <span className="project-chat-title truncate-text">
+                        <button type="button" aria-current={isCurrent ? "true" : undefined} className="project-chat-title truncate-text">
                           {displaySessionTitle(s.title, locale)}
-                        </span>
+                        </button>
                       )}
                       <span className="project-chat-right">
                         {isLive ? (
@@ -1416,7 +1573,6 @@ export function AgentWorkspaceView() {
                 type="button"
                 className="icon-btn"
                 title="Añadir carpeta de proyecto"
-                disabled={running}
                 onClick={() => void handleAddProject()}
               >
                 <FolderPlus size={14} />
@@ -1441,7 +1597,7 @@ export function AgentWorkspaceView() {
                 const isActiveProj = normWs(session.workspace) === key;
                 const isProjCollapsed = Boolean(collapsedProjects[key]);
 
-                const savedChats = sessions.filter(
+                const savedChats = sidebarSessions.filter(
                   (s) => normWs(s.workspace) === key
                 );
                 const hasCurrentInSaved = savedChats.some(
@@ -1480,14 +1636,13 @@ export function AgentWorkspaceView() {
                         {isActiveProj ? <FolderOpen size={14} /> : <Folder size={14} />}
                       </span>
                       <span className="project-group-name truncate-text">
-                        {projName}
+                        {projectLabels.get(projPath) ?? projName}
                       </span>
                       <div className="project-group-actions">
                         <button
                           type="button"
                           className="icon-btn"
                           title={`Nueva conversación en ${projName}`}
-                          disabled={running}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleNewSession(projPath);
@@ -1548,7 +1703,6 @@ export function AgentWorkspaceView() {
                           <button
                             type="button"
                             className="project-empty-chats"
-                            disabled={running}
                             onClick={() => handleNewSession(projPath)}
                           >
                             {locale === "es"
@@ -1558,7 +1712,7 @@ export function AgentWorkspaceView() {
                         ) : (
                           chatList.map((s) => {
                             const isCurrent = s.id === session.id;
-                            const isLive = isCurrent && running;
+                            const isLive = runningSessionIds.includes(s.id);
                             const isRenaming = renamingId === s.id;
                             const isMenuOpen = chatMenuId === s.id;
                             const isSaved = savedChats.some((saved) => saved.id === s.id);
@@ -1593,9 +1747,9 @@ export function AgentWorkspaceView() {
                                     }}
                                   />
                                 ) : (
-                                  <span className="project-chat-title truncate-text">
+                                  <button type="button" aria-current={isCurrent ? "true" : undefined} className="project-chat-title truncate-text">
                                     {displaySessionTitle(s.title, locale)}
-                                  </span>
+                                  </button>
                                 )}
                                 <span className="project-chat-right">
                                   {isLive ? (
@@ -1669,19 +1823,15 @@ export function AgentWorkspaceView() {
             )}
           </div>
           </aside>
-          <div
-            className="panel-resizer"
-            role="separator"
-            aria-orientation="vertical"
-            title="Drag to resize (double-click to reset)"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              startAgentResize("left", e.clientX);
-            }}
-            onDoubleClick={() => {
-              setSidebarWidth(252);
-              localStorage.setItem("loors_agent_left_w", "252");
-            }}
+          <PanelResizer
+            label={locale === "es" ? "Ajustar panel izquierdo" : "Resize left panel"}
+            side="left"
+            width={sidebarWidth}
+            min={190}
+            max={420}
+            defaultWidth={252}
+            storageKey="loors_agent_left_w"
+            onResize={setSidebarWidth}
           />
         </>
       )}
@@ -1823,7 +1973,7 @@ export function AgentWorkspaceView() {
                         {msg.content && (
                           <div className="agent-msg-text">{msg.content}</div>
                         )}
-                        {idx === lastUserMsgIndex && !running && (
+                        {idx === lastUserMsgIndex && !isCurrentRunning && (
                           <button
                             type="button"
                             className="micro-action-btn"
@@ -1841,7 +1991,7 @@ export function AgentWorkspaceView() {
 
                 const isLastMsg = idx === session.messages.length - 1;
                 const isThinkingLive =
-                  running &&
+                  isCurrentRunning &&
                   isLastMsg &&
                   !msg.content &&
                   !msg.toolCalls.some((t) => t.status === "running");
@@ -1880,28 +2030,19 @@ export function AgentWorkspaceView() {
                     )}
 
                     {msg.toolCalls.length > 0 && (
-                      <div className="codex-tool-list">
-                        {msg.toolCalls.map((call: AgentToolCallRecord) => {
-                          const isOpen =
-                            expandedTools[call.id] ?? Boolean(call.diffPreview);
-                          const shotB64 = call.screenshotPath
+                      <ToolCallGroup
+                        calls={msg.toolCalls}
+                        expandedTools={expandedTools}
+                        onToggleTool={(id, next) =>
+                          setExpandedTools((p) => ({ ...p, [id]: next }))
+                        }
+                        extras={(call) => ({
+                          shotB64: call.screenshotPath
                             ? savedShots[call.screenshotPath]
-                            : undefined;
-
-                          return (
-                            <ToolActivityRow
-                              key={call.id}
-                              call={call}
-                              open={isOpen}
-                              shotB64={shotB64}
-                              onToggle={() =>
-                                setExpandedTools((p) => ({ ...p, [call.id]: !isOpen }))
-                              }
-                              onUndo={() => void handleUndoToolCall(msg.id, call.id)}
-                            />
-                          );
+                            : undefined,
+                          onUndo: () => void handleUndoToolCall(msg.id, call.id),
                         })}
-                      </div>
+                      />
                     )}
 
                     {msg.content ? (
@@ -1909,7 +2050,7 @@ export function AgentWorkspaceView() {
                         <MarkdownContent text={msg.content} />
                       </div>
                     ) : (
-                      running &&
+                      isCurrentRunning &&
                       idx === session.messages.length - 1 && (
                         modelLoadProgress &&
                         (modelLoadProgress.stage === "unloading" ||
@@ -2015,7 +2156,7 @@ export function AgentWorkspaceView() {
                     title="Dismiss"
                     onClick={() => {
                       setPendingQuestion(null);
-                      void invoke("resolve_agent_question", { decision: { answers: [] } });
+                      void invoke("resolve_agent_question", { sessionId: session.id, decision: { answers: [] } });
                     }}
                   >
                     <X size={13} />
@@ -2032,7 +2173,7 @@ export function AgentWorkspaceView() {
                         onClick={() => {
                           if (!pendingQuestion.allowMultiple) {
                             setPendingQuestion(null);
-                            void invoke("resolve_agent_question", { decision: { answers: [opt] } });
+                            void invoke("resolve_agent_question", { sessionId: session.id, decision: { answers: [opt] } });
                           } else {
                             setSelectedQuestionOpts((prev) =>
                               prev.includes(opt) ? prev.filter((x) => x !== opt) : [...prev, opt]
@@ -2058,7 +2199,7 @@ export function AgentWorkspaceView() {
                           ...(customQuestionAnswer.trim() ? [customQuestionAnswer.trim()] : []),
                         ];
                         setPendingQuestion(null);
-                        void invoke("resolve_agent_question", { decision: { answers } });
+                        void invoke("resolve_agent_question", { sessionId: session.id, decision: { answers } });
                       }
                     }}
                     style={{ flex: 1, fontSize: 12, padding: "5px 8px", borderRadius: 6, background: "var(--bg-surface-2)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)" }}
@@ -2073,7 +2214,7 @@ export function AgentWorkspaceView() {
                         ...(customQuestionAnswer.trim() ? [customQuestionAnswer.trim()] : []),
                       ];
                       setPendingQuestion(null);
-                      void invoke("resolve_agent_question", { decision: { answers } });
+                      void invoke("resolve_agent_question", { sessionId: session.id, decision: { answers } });
                     }}
                   >
                     Send
@@ -2248,14 +2389,14 @@ export function AgentWorkspaceView() {
             <div className="floating-composer">
               <MessageQueueTray
                 items={messageQueue}
-                isBusy={running}
+                isBusy={isCurrentRunning}
                 onRemove={(id) =>
                   setMessageQueue((prev) => prev.filter((q) => q.id !== id))
                 }
                 onRunNext={() => {
                   if (messageQueue.length === 0) return;
-                  const [next, ...rest] = messageQueue;
-                  setMessageQueue(rest);
+                  const [next] = messageQueue;
+                  setMessageQueue((prev) => prev.filter((item) => item.id !== next.id));
                   void sendTurn(next.text, false, next.attachments ?? []);
                 }}
               />
@@ -2310,8 +2451,9 @@ export function AgentWorkspaceView() {
 
               <textarea
                 rows={2}
+                aria-label={t("agent.composerPlaceholder")}
                 placeholder={
-                  running
+                  isCurrentRunning
                     ? t("agent.composerQueuePlaceholder")
                     : t("agent.composerPlaceholder")
                 }
@@ -2337,7 +2479,9 @@ export function AgentWorkspaceView() {
                   <button
                     type="button"
                     className={`composer-plus-btn ${attachMenuOpen ? "active" : ""}`}
-                    title="Adjuntar archivos, imágenes o fijar archivo del proyecto"
+                    aria-label={locale === "es" ? "Adjuntar archivos" : "Attach files"}
+                    title={locale === "es" ? "Adjuntar archivos" : "Attach files"}
+                    aria-expanded={attachMenuOpen}
                     onClick={() => setAttachMenuOpen((v) => !v)}
                   >
                     <Plus size={14} />
@@ -2356,10 +2500,15 @@ export function AgentWorkspaceView() {
                         <Paperclip size={13} />
                         <span>
                           {locale === "es"
-                            ? "Adjuntar archivos, PDFs o imágenes…"
-                            : "Attach files, PDFs, or images…"}
+                            ? "Elegir archivos…"
+                            : "Choose files…"}
                         </span>
                       </button>
+                      <p className="attachment-help">
+                        {locale === "es"
+                          ? "Arrastra archivos al chat o pega una captura con Ctrl+V."
+                          : "Drop files into the chat or paste a screenshot with Ctrl+V."}
+                      </p>
                       <div className="model-pop-search">
                         <Search size={13} />
                         <input
@@ -2410,7 +2559,8 @@ export function AgentWorkspaceView() {
                     <button
                       type="button"
                       className="composer-model-btn"
-                      title={session.modelPath || "Elegir modelo GGUF"}
+                      title={session.modelPath || t("agent.chooseModel")}
+                      aria-expanded={modelPickerOpen}
                       onClick={() => setModelPickerOpen((prev) => !prev)}
                     >
                       {isCloudModelPath(session.modelPath) ? (
@@ -2472,54 +2622,312 @@ export function AgentWorkspaceView() {
                               <X size={11} />
                             </button>
                           )}
+                          {hiddenModels.length > 0 && (
+                            <button
+                              type="button"
+                              className={`model-pop-hidden-toggle ${showHiddenModels ? "active" : ""}`}
+                              title={
+                                showHiddenModels
+                                  ? locale === "es"
+                                    ? "Ocultar modelos escondidos"
+                                    : "Hide hidden models"
+                                  : locale === "es"
+                                    ? `Mostrar ${hiddenModels.length} ocultos`
+                                    : `Show ${hiddenModels.length} hidden`
+                              }
+                              onClick={() => setShowHiddenModels((v) => !v)}
+                            >
+                              {showHiddenModels ? <Eye size={11} /> : <EyeOff size={11} />}
+                              <span>{hiddenModels.length}</span>
+                            </button>
+                          )}
                         </div>
 
                         <div className="model-pop-list">
+                          {(() => {
+                            const q = modelPickerQuery.trim().toLowerCase();
+                            const pinnedCloudItems: {
+                              key: string;
+                              label: string;
+                              badge: string;
+                            }[] = [];
+                            for (const prov of cloudProviders) {
+                              if (!prov.enabled) continue;
+                              for (const mid of prov.models) {
+                                const uri = `cloud::${prov.id}::${mid}`;
+                                if (!pinnedModels.includes(uri)) continue;
+                                if (hiddenModels.includes(uri) && !showHiddenModels) continue;
+                                if (
+                                  q &&
+                                  !mid.toLowerCase().includes(q) &&
+                                  !prov.name.toLowerCase().includes(q)
+                                ) {
+                                  continue;
+                                }
+                                pinnedCloudItems.push({
+                                  key: uri,
+                                  label: mid,
+                                  badge: prov.name.split(" ")[0] || prov.id,
+                                });
+                              }
+                            }
+                            const pinnedLocalItems = localModels
+                              .filter((f) => {
+                                if (!pinnedModels.includes(f.path)) return false;
+                                if (hiddenModels.includes(f.path) && !showHiddenModels) return false;
+                                if (!q) return true;
+                                const meta = parseGgufMetadata(f.name);
+                                return (
+                                  meta.baseName.toLowerCase().includes(q) ||
+                                  meta.quant.toLowerCase().includes(q) ||
+                                  f.name.toLowerCase().includes(q)
+                                );
+                              })
+                              .map((f) => ({ file: f, meta: parseGgufMetadata(f.name) }));
+
+                            if (pinnedCloudItems.length === 0 && pinnedLocalItems.length === 0) {
+                              return null;
+                            }
+
+                            return (
+                              <div className="model-pop-group">
+                                <div className="model-pop-group-head">
+                                  <span className="truncate-text" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                                    <Pin size={11} style={{ color: "#a78bfa" }} />
+                                    {locale === "es" ? "Fijados" : "Pinned"}
+                                  </span>
+                                  <span className="composer-model-quant">
+                                    {pinnedCloudItems.length + pinnedLocalItems.length}
+                                  </span>
+                                </div>
+                                {pinnedCloudItems.map((item) => {
+                                  const isActive = session.modelPath === item.key;
+                                  const isHidden = hiddenModels.includes(item.key);
+                                  return (
+                                    <div
+                                      key={`pin-${item.key}`}
+                                      className={`model-pop-row ${isActive ? "active" : ""} ${isHidden ? "is-hidden-model" : ""}`}
+                                      onClick={() => {
+                                        setActiveModelPath(item.key);
+                                        void persistSession({
+                                          ...session,
+                                          modelPath: item.key,
+                                        });
+                                        setModelPickerOpen(false);
+                                      }}
+                                    >
+                                      <Cloud size={11} style={{ color: "#a78bfa", flexShrink: 0 }} />
+                                      <span className="model-pop-quality truncate-text" style={{ flex: 1, color: "#e2e8f0" }}>
+                                        {item.label}
+                                      </span>
+                                      <span className="composer-model-quant">{item.badge}</span>
+                                      <div className="model-pop-row-actions has-pinned">
+                                        <button
+                                          type="button"
+                                          className="model-pop-action-btn pinned"
+                                          title={locale === "es" ? "Desfijar modelo" : "Unpin model"}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            togglePinModel(item.key);
+                                          }}
+                                        >
+                                          <PinOff size={11} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="model-pop-action-btn"
+                                          title={
+                                            isHidden
+                                              ? locale === "es"
+                                                ? "Mostrar modelo"
+                                                : "Unhide model"
+                                              : locale === "es"
+                                                ? "Ocultar modelo"
+                                                : "Hide model"
+                                          }
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleHideModel(item.key);
+                                          }}
+                                        >
+                                          {isHidden ? <Eye size={11} /> : <EyeOff size={11} />}
+                                        </button>
+                                      </div>
+                                      {isActive && <Check size={13} style={{ flexShrink: 0 }} />}
+                                    </div>
+                                  );
+                                })}
+                                {pinnedLocalItems.map(({ file, meta }) => {
+                                  const isActive = session.modelPath === file.path;
+                                  const isHidden = hiddenModels.includes(file.path);
+                                  const gb = file.size_mb / 1024;
+                                  return (
+                                    <div
+                                      key={`pin-${file.path}`}
+                                      className={`model-pop-row ${isActive ? "active" : ""} ${isHidden ? "is-hidden-model" : ""}`}
+                                      onClick={() => {
+                                        setActiveModelPath(file.path);
+                                        void persistSession({
+                                          ...session,
+                                          modelPath: file.path,
+                                        });
+                                        setModelPickerOpen(false);
+                                      }}
+                                    >
+                                      <span className="composer-model-quant">{meta.quant}</span>
+                                      <span className="model-pop-quality truncate-text" style={{ color: "#e2e8f0" }}>
+                                        {meta.baseName}
+                                      </span>
+                                      <span className="model-pop-size tabular-nums">
+                                        {gb >= 1 ? `${gb.toFixed(1)} GB` : `${file.size_mb} MB`}
+                                      </span>
+                                      <div className="model-pop-row-actions has-pinned">
+                                        <button
+                                          type="button"
+                                          className="model-pop-action-btn pinned"
+                                          title={locale === "es" ? "Desfijar modelo" : "Unpin model"}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            togglePinModel(file.path);
+                                          }}
+                                        >
+                                          <PinOff size={11} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="model-pop-action-btn"
+                                          title={
+                                            isHidden
+                                              ? locale === "es"
+                                                ? "Mostrar modelo"
+                                                : "Unhide model"
+                                              : locale === "es"
+                                                ? "Ocultar modelo"
+                                                : "Hide model"
+                                          }
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleHideModel(file.path);
+                                          }}
+                                        >
+                                          {isHidden ? <Eye size={11} /> : <EyeOff size={11} />}
+                                        </button>
+                                      </div>
+                                      {isActive && <Check size={13} style={{ flexShrink: 0 }} />}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+
                           {cloudProviders
                             .filter((p) => p.enabled && p.models.length > 0)
                             .map((prov) => {
                               const q = modelPickerQuery.trim().toLowerCase();
-                              const matchingModels = prov.models.filter(
-                                (m) =>
+                              const matchingModels = prov.models.filter((m) => {
+                                const uri = `cloud::${prov.id}::${m}`;
+                                if (hiddenModels.includes(uri) && !showHiddenModels) return false;
+                                return (
                                   !q ||
                                   m.toLowerCase().includes(q) ||
                                   prov.name.toLowerCase().includes(q)
-                              );
+                                );
+                              });
                               if (matchingModels.length === 0) return null;
+                              const groupKey = `cloud:${prov.id}`;
+                              const isCollapsed = !q && Boolean(collapsedModelGroups[groupKey]);
                               return (
                                 <div key={prov.id} className="model-pop-group">
-                                  <div className="model-pop-group-head">
-                                    <span className="truncate-text" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                                  <div
+                                    className="model-pop-group-head clickable"
+                                    onClick={() =>
+                                      setCollapsedModelGroups((prev) => ({
+                                        ...prev,
+                                        [groupKey]: !prev[groupKey],
+                                      }))
+                                    }
+                                  >
+                                    {isCollapsed ? (
+                                      <ChevronRight size={12} style={{ color: "var(--muted)", flexShrink: 0 }} />
+                                    ) : (
+                                      <ChevronDown size={12} style={{ color: "var(--muted)", flexShrink: 0 }} />
+                                    )}
+                                    <span className="truncate-text" style={{ display: "inline-flex", alignItems: "center", gap: 5, flex: 1 }}>
                                       <Cloud size={11} style={{ color: "#a78bfa" }} />
                                       {prov.name}
                                     </span>
+                                    <span className="composer-model-quant">{matchingModels.length}</span>
                                     <span className="composer-model-quant">API</span>
                                   </div>
-                                  {matchingModels.map((mid) => {
-                                    const uri = `cloud::${prov.id}::${mid}`;
-                                    const isActive = session.modelPath === uri;
-                                    return (
-                                      <div
-                                        key={uri}
-                                        className={`model-pop-row ${isActive ? "active" : ""}`}
-                                        onClick={() => {
-                                          setActiveModelPath(uri);
-                                          void persistSession({
-                                            ...session,
-                                            modelPath: uri,
-                                          });
-                                          setModelPickerOpen(false);
-                                        }}
-                                      >
-                                        <span className="model-pop-quality truncate-text" style={{ flex: 1, color: "#e2e8f0" }}>
-                                          {mid}
-                                        </span>
-                                        {isActive && (
-                                          <Check size={13} style={{ flexShrink: 0 }} />
-                                        )}
-                                      </div>
-                                    );
-                                  })}
+                                  {!isCollapsed &&
+                                    matchingModels.map((mid) => {
+                                      const uri = `cloud::${prov.id}::${mid}`;
+                                      const isActive = session.modelPath === uri;
+                                      const isPinned = pinnedModels.includes(uri);
+                                      const isHidden = hiddenModels.includes(uri);
+                                      return (
+                                        <div
+                                          key={uri}
+                                          className={`model-pop-row ${isActive ? "active" : ""} ${isHidden ? "is-hidden-model" : ""}`}
+                                          onClick={() => {
+                                            setActiveModelPath(uri);
+                                            void persistSession({
+                                              ...session,
+                                              modelPath: uri,
+                                            });
+                                            setModelPickerOpen(false);
+                                          }}
+                                        >
+                                          <span className="model-pop-quality truncate-text" style={{ flex: 1, color: "#e2e8f0" }}>
+                                            {mid}
+                                          </span>
+                                          <div className={`model-pop-row-actions ${isPinned ? "has-pinned" : ""}`}>
+                                            <button
+                                              type="button"
+                                              className={`model-pop-action-btn ${isPinned ? "pinned" : ""}`}
+                                              title={
+                                                isPinned
+                                                  ? locale === "es"
+                                                    ? "Desfijar modelo"
+                                                    : "Unpin model"
+                                                  : locale === "es"
+                                                    ? "Fijar modelo"
+                                                    : "Pin model"
+                                              }
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                togglePinModel(uri);
+                                              }}
+                                            >
+                                              {isPinned ? <PinOff size={11} /> : <Pin size={11} />}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="model-pop-action-btn"
+                                              title={
+                                                isHidden
+                                                  ? locale === "es"
+                                                    ? "Mostrar modelo"
+                                                    : "Unhide model"
+                                                  : locale === "es"
+                                                    ? "Ocultar modelo"
+                                                    : "Hide model"
+                                              }
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                toggleHideModel(uri);
+                                              }}
+                                            >
+                                              {isHidden ? <Eye size={11} /> : <EyeOff size={11} />}
+                                            </button>
+                                          </div>
+                                          {isActive && (
+                                            <Check size={13} style={{ flexShrink: 0 }} />
+                                          )}
+                                        </div>
+                                      );
+                                    })}
                                 </div>
                               );
                             })}
@@ -2533,50 +2941,115 @@ export function AgentWorkspaceView() {
                               </div>
                             )
                           ) : (
-                            groupedPickerModels.map((grp) => (
-                              <div
-                                key={`${grp.family}-${grp.baseName}`}
-                                className="model-pop-group"
-                              >
-                                <div className="model-pop-group-head">
-                                  <span className="truncate-text">{grp.baseName}</span>
-                                  {grp.params && (
-                                    <span className="composer-model-quant">{grp.params}</span>
-                                  )}
+                            groupedPickerModels.map((grp) => {
+                              const visibleItems = grp.items.filter(
+                                ({ file }) => showHiddenModels || !hiddenModels.includes(file.path)
+                              );
+                              if (visibleItems.length === 0) return null;
+                              const groupKey = `local:${grp.family}-${grp.baseName}`;
+                              const q = modelPickerQuery.trim();
+                              const isCollapsed = !q && Boolean(collapsedModelGroups[groupKey]);
+                              return (
+                                <div
+                                  key={`${grp.family}-${grp.baseName}`}
+                                  className="model-pop-group"
+                                >
+                                  <div
+                                    className="model-pop-group-head clickable"
+                                    onClick={() =>
+                                      setCollapsedModelGroups((prev) => ({
+                                        ...prev,
+                                        [groupKey]: !prev[groupKey],
+                                      }))
+                                    }
+                                  >
+                                    {isCollapsed ? (
+                                      <ChevronRight size={12} style={{ color: "var(--muted)", flexShrink: 0 }} />
+                                    ) : (
+                                      <ChevronDown size={12} style={{ color: "var(--muted)", flexShrink: 0 }} />
+                                    )}
+                                    <span className="truncate-text" style={{ flex: 1 }}>{grp.baseName}</span>
+                                    {grp.params && (
+                                      <span className="composer-model-quant">{grp.params}</span>
+                                    )}
+                                  </div>
+                                  {!isCollapsed &&
+                                    visibleItems.map(({ file, meta }) => {
+                                      const isActive = session.modelPath === file.path;
+                                      const isPinned = pinnedModels.includes(file.path);
+                                      const isHidden = hiddenModels.includes(file.path);
+                                      const gb = file.size_mb / 1024;
+                                      return (
+                                        <div
+                                          key={file.path}
+                                          className={`model-pop-row ${isActive ? "active" : ""} ${isHidden ? "is-hidden-model" : ""}`}
+                                          onClick={() => {
+                                            setActiveModelPath(file.path);
+                                            void persistSession({
+                                              ...session,
+                                              modelPath: file.path,
+                                            });
+                                            setModelPickerOpen(false);
+                                          }}
+                                        >
+                                          <span className="composer-model-quant">
+                                            {meta.quant}
+                                          </span>
+                                          <span className="model-pop-quality truncate-text">
+                                            {meta.quantQuality}
+                                          </span>
+                                          <span className="model-pop-size tabular-nums">
+                                            {gb >= 1 ? `${gb.toFixed(1)} GB` : `${file.size_mb} MB`}
+                                          </span>
+                                          <div className={`model-pop-row-actions ${isPinned ? "has-pinned" : ""}`}>
+                                            <button
+                                              type="button"
+                                              className={`model-pop-action-btn ${isPinned ? "pinned" : ""}`}
+                                              title={
+                                                isPinned
+                                                  ? locale === "es"
+                                                    ? "Desfijar modelo"
+                                                    : "Unpin model"
+                                                  : locale === "es"
+                                                    ? "Fijar modelo"
+                                                    : "Pin model"
+                                              }
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                togglePinModel(file.path);
+                                              }}
+                                            >
+                                              {isPinned ? <PinOff size={11} /> : <Pin size={11} />}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              className="model-pop-action-btn"
+                                              title={
+                                                isHidden
+                                                  ? locale === "es"
+                                                    ? "Mostrar modelo"
+                                                    : "Unhide model"
+                                                  : locale === "es"
+                                                    ? "Ocultar modelo"
+                                                    : "Hide model"
+                                              }
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                toggleHideModel(file.path);
+                                              }}
+                                            >
+                                              {isHidden ? <Eye size={11} /> : <EyeOff size={11} />}
+                                            </button>
+                                          </div>
+                                          {isActive && (
+                                            <Check size={13} style={{ flexShrink: 0 }} />
+                                          )}
+                                        </div>
+                                      );
+                                    })}
                                 </div>
-                                {grp.items.map(({ file, meta }) => {
-                                  const isActive = session.modelPath === file.path;
-                                  const gb = file.size_mb / 1024;
-                                  return (
-                                    <div
-                                      key={file.path}
-                                      className={`model-pop-row ${isActive ? "active" : ""}`}
-                                      onClick={() => {
-                                        setActiveModelPath(file.path);
-                                        void persistSession({
-                                          ...session,
-                                          modelPath: file.path,
-                                        });
-                                        setModelPickerOpen(false);
-                                      }}
-                                    >
-                                      <span className="composer-model-quant">
-                                        {meta.quant}
-                                      </span>
-                                      <span className="model-pop-quality truncate-text">
-                                        {meta.quantQuality}
-                                      </span>
-                                      <span className="model-pop-size tabular-nums">
-                                        {gb >= 1 ? `${gb.toFixed(1)} GB` : `${file.size_mb} MB`}
-                                      </span>
-                                      {isActive && (
-                                        <Check size={13} style={{ flexShrink: 0 }} />
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            ))
+                              );
+                            })
                           )}
                         </div>
 
@@ -2604,6 +3077,19 @@ export function AgentWorkspaceView() {
                           </div>
                         </div>
 
+                        {session.modelPath && !isCloudModelPath(session.modelPath) && (
+                          <button
+                            type="button"
+                            className="model-pop-tuning"
+                            onClick={() => {
+                              setModelPickerOpen(false);
+                              openTuningModal(session.modelPath);
+                            }}
+                          >
+                            <Settings size={14} />
+                            {locale === "es" ? "Ajustes de inferencia" : "Inference settings"}
+                          </button>
+                        )}
                         <div className="model-pop-footer" style={{ display: "flex", gap: 6 }}>
                           <button
                             type="button"
@@ -2638,16 +3124,6 @@ export function AgentWorkspaceView() {
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    title="Opciones del modelo"
-                    disabled={!session.modelPath}
-                    onClick={() => openTuningModal(session.modelPath)}
-                  >
-                    <Settings size={14} />
-                  </button>
-
                   <ReasoningEffortSelect
                     value={session.reasoningEffort ?? "medium"}
                     modelPath={session.modelPath}
@@ -2659,7 +3135,7 @@ export function AgentWorkspaceView() {
 
                 <div className="composer-right">
                   <div className="composer-action-group">
-                    {running && (
+                    {isCurrentRunning && (
                       <button
                         type="button"
                         className="composer-send-btn is-stop"
@@ -2669,13 +3145,13 @@ export function AgentWorkspaceView() {
                         <Square size={12} fill="currentColor" />
                       </button>
                     )}
-                    {(!running ||
+                    {(!isCurrentRunning ||
                       input.trim().length > 0 ||
                       pendingAttachments.length > 0) && (
                       <button
                         type="button"
                         className="composer-send-btn"
-                        title={running ? "Encolar mensaje" : "Enviar"}
+                        title={isCurrentRunning ? "Encolar mensaje" : "Enviar"}
                         disabled={
                           (!input.trim() && pendingAttachments.length === 0) ||
                           !session.modelPath
@@ -2879,54 +3355,83 @@ export function AgentWorkspaceView() {
                   <button
                     type="button"
                     className={`ctx-trigger-btn tabular-nums ${compactPopoverOpen ? "active" : ""}`}
-                    title={`Contexto: ${Math.round(estTokensUsed / 1024)}K / ${maxCtxLabel} · Compactación: ${Math.round(effectiveCompactTokens / 1024)}K (${compactPct}%)`}
+                    aria-expanded={compactPopoverOpen}
+                    aria-label={usage ? `${contextLabel} · ≈ ${formatTokens(usage.used_tokens)} tokens` : contextLabel}
+                    title={usage ? `${contextLabel} · ≈ ${formatTokens(usage.used_tokens)} / ${formatTokens(effectiveMaxTokens)} tokens` : contextLabel}
                     onClick={() => setCompactPopoverOpen((v) => !v)}
                   >
-                    {Math.round(estTokensUsed / 1024)}K / {maxCtxLabel}
+                    <span className="context-gauge" aria-hidden="true" style={{
+                      background: `conic-gradient(var(--context-accent) ${Math.min(100, usedPct)}%, var(--border-strong) 0)`,
+                    }} />
+                    {usage && effectiveMaxTokens ? `${Math.round(usedPct)}%` : contextLabel}
                   </button>
 
                   {compactPopoverOpen && (
                     <div className="compact-popover">
-                      <div className="sheet-row-top">
-                        <span className="sheet-label">
-                          {locale === "es" ? "Compactar historial a" : "Compact history at"}
-                        </span>
-                        <div className="sheet-inline-val">
-                          <button
-                            type="button"
-                            className={`sheet-pill-toggle ${(session.compactAtTokens ?? 0) === 0 && modelDefaultCompact === 0 ? "active" : ""}`}
-                            onClick={() =>
-                              void persistSession({ ...session, compactAtTokens: 0 })
-                            }
-                          >
-                            Auto
-                          </button>
+                      <div className="context-card">
+                        <div className="sheet-row-top">
+                          <strong>{contextLabel}</strong>
                           <span className="sheet-readout tabular-nums">
-                            {Math.round(effectiveCompactTokens / 1024)}K ({compactPct}%)
+                            {usage ? `≈ ${formatTokens(usage.used_tokens)}` : "—"}
+                            {effectiveMaxTokens > 0 && ` / ${formatTokens(effectiveMaxTokens)}`} tokens
                           </span>
                         </div>
+                        <div className="context-track" aria-hidden="true">
+                          <span className="context-fill" style={{ width: `${Math.min(100, usedPct)}%` }} />
+                          {effectiveMaxTokens > 0 && (
+                            <span className="context-marker" style={{ left: `${compactPct}%` }} />
+                          )}
+                        </div>
+                        <p className="context-hint">
+                          {cloudContext
+                            ? (locale === "es" ? "Entrada estimada · Límite de referencia para la API." : "Estimated input · Reference limit for the API.")
+                            : (locale === "es" ? "Entrada estimada de la última solicitud." : "Estimated input for the latest request.")}
+                        </p>
                       </div>
-                      <input
-                        type="range"
-                        className="clean-slider"
-                        min="4096"
-                        max={effectiveMaxTokens}
-                        step="2048"
-                        value={effectiveCompactTokens}
-                        onChange={(e) =>
-                          void persistSession({
-                            ...session,
-                            compactAtTokens: Number(e.target.value),
-                          })
-                        }
-                      />
-                      <div className="compact-popover-foot">
-                        <span>
-                          {locale === "es"
-                            ? `Contexto cargado del modelo: ${maxCtxLabel}`
-                            : `Loaded model context: ${maxCtxLabel}`}
-                        </span>
-                      </div>
+                      {effectiveMaxTokens > 0 && (
+                        <div className="context-card">
+                          <div className="sheet-row-top">
+                            <label className="sheet-label" htmlFor="session-compaction">{compactLabel}</label>
+                            <span className="sheet-readout tabular-nums">{Math.round(compactPct)}%</span>
+                          </div>
+                          <div className="context-setting">
+                            <input
+                              id="session-compaction"
+                              key={`${session.id}:${session.modelPath}:${effectiveCompactTokens}`}
+                              type="number"
+                              min="1"
+                              max={effectiveMaxTokens}
+                              defaultValue={effectiveCompactTokens}
+                              disabled={isCurrentRunning}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  e.currentTarget.blur();
+                                }
+                              }}
+                              onBlur={(e) => {
+                                const value = e.currentTarget.valueAsNumber;
+                                const tokens = Number.isFinite(value)
+                                  ? Math.min(effectiveMaxTokens, Math.max(1, Math.round(value)))
+                                  : effectiveCompactTokens;
+                                e.currentTarget.value = String(tokens);
+                                if (tokens !== effectiveCompactTokens) {
+                                  void persistSession({ ...session, compactAtTokens: tokens });
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className={`sheet-pill-toggle ${inheritedCompact ? "active" : ""}`}
+                              aria-pressed={inheritedCompact}
+                              disabled={isCurrentRunning}
+                              onClick={() => void persistSession({ ...session, compactAtTokens: 0 })}
+                            >
+                              {modelDefaultCompact ? (locale === "es" ? "Del modelo" : "Model default") : "Auto · 75%"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       <div className="sheet-divider" />
 
@@ -2976,19 +3481,15 @@ export function AgentWorkspaceView() {
           {rightPanelOpen && (
             <>
               {!(rightPanelTab === "browser" && browserExpanded) && (
-              <div
-                className="panel-resizer"
-                role="separator"
-                aria-orientation="vertical"
-                title="Drag to resize (double-click to reset)"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  startAgentResize("right", e.clientX);
-                }}
-                onDoubleClick={() => {
-                  setRightPanelWidth(390);
-                  localStorage.setItem("loors_agent_right_w", "390");
-                }}
+              <PanelResizer
+                label={locale === "es" ? "Ajustar panel derecho" : "Resize right panel"}
+                side="right"
+                width={rightPanelWidth}
+                min={260}
+                max={680}
+                defaultWidth={390}
+                storageKey="loors_agent_right_w"
+                onResize={setRightPanelWidth}
               />
               )}
               <aside
@@ -3144,7 +3645,7 @@ export function AgentWorkspaceView() {
                   </div>
                   <div className="agent-diff-body">
                     {gitDiffText.trim() ? (
-                      <DiffLines diff={gitDiffText} />
+                      <AgentDiff diff={gitDiffText} locale={locale} />
                     ) : (
                       <div className="muted-empty" style={{ padding: 14 }}>
                         {locale === "es"

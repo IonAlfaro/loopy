@@ -1,5 +1,7 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { ModalBackdrop } from "./ModalBackdrop";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Trash2, X } from "lucide-react";
+import { useI18n } from "../i18n";
 import { invoke } from "../lib/bridge";
 import { useGraphStore } from "../store/useGraphStore";
 import {
@@ -48,6 +50,8 @@ function kvFactor(kind: string): number {
 }
 
 export function ModelTuningModal() {
+  const { locale } = useI18n();
+  const L = (en: string, es: string) => locale === "es" ? es : en;
   const modelPath = useGraphStore((s) => s.tuningModalModelPath);
   const openTuningModal = useGraphStore((s) => s.openTuningModal);
   const selectedBackend = useGraphStore((s) => s.selectedBackend);
@@ -60,6 +64,7 @@ export function ModelTuningModal() {
   const [hw, setHw] = useState<HardwareProfile | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [loadedProfilePath, setLoadedProfilePath] = useState("");
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
   useEffect(() => {
@@ -77,9 +82,18 @@ export function ModelTuningModal() {
 
   useEffect(() => {
     if (!modelPath || !activePath) return;
+    let current = true;
+    setLoadedProfilePath("");
     invoke<ModelTuningProfile>("get_model_profile", { modelPath: activePath })
-      .then((loaded) => setProfile({ ...DEFAULT_PROFILE, ...loaded }))
-      .catch(() => setProfile(DEFAULT_PROFILE));
+      .then((loaded) => {
+        if (!current) return;
+        setProfile({ ...DEFAULT_PROFILE, ...loaded });
+        setLoadedProfilePath(activePath);
+      })
+      .catch((err) => {
+        if (current) setStatusMsg(`Error: ${String(err)}`);
+      });
+    return () => { current = false; };
   }, [modelPath, activePath]);
 
   const currentModelInfo = models.find((m) => m.path === activePath);
@@ -111,13 +125,6 @@ export function ModelTuningModal() {
       if (merged.cacheTypeV !== "f16") {
         merged.flashAttn = true;
       }
-      if (
-        next.contextSize !== undefined &&
-        next.contextSize > 0 &&
-        (merged.compactAtTokens ?? 0) > next.contextSize
-      ) {
-        merged.compactAtTokens = next.contextSize;
-      }
       return merged;
     });
   };
@@ -125,9 +132,8 @@ export function ModelTuningModal() {
   const maxModelCtx =
     profile.contextSize > 0
       ? profile.contextSize
-      : profile.effectiveContextSize && profile.effectiveContextSize > 0
-        ? profile.effectiveContextSize
-        : 32768;
+      : profile.autoContextSize || 32768;
+  const profileReady = loadedProfilePath === activePath && !!activePath;
 
   const compactTokens =
     (profile.compactAtTokens ?? 0) > 0
@@ -146,9 +152,9 @@ export function ModelTuningModal() {
   const vForcedFa = profile.cacheTypeV !== "f16";
 
   const handleSave = async (reload: boolean) => {
-    if (!activePath) return;
+    if (!profileReady) return;
     setSaving(true);
-    setStatusMsg(reload ? "Recargando modelo en llama.cpp…" : null);
+    setStatusMsg(reload ? L("Reloading the model in llama.cpp…", "Recargando modelo en llama.cpp…") : null);
     try {
       if (reload) {
         await invoke("reload_model_with_profile", {
@@ -174,7 +180,7 @@ export function ModelTuningModal() {
       if (reload) {
         openTuningModal(null);
       } else {
-        setStatusMsg("Configuración guardada.");
+        setStatusMsg(L("Profile saved.", "Perfil guardado."));
       }
     } catch (err) {
       setStatusMsg(`Error: ${String(err)}`);
@@ -186,7 +192,7 @@ export function ModelTuningModal() {
   const handleDeleteModel = async () => {
     if (!activePath) return;
     const shortName = activePath.split(/[\\/]/).pop() ?? activePath;
-    if (!window.confirm(`¿Eliminar permanentemente "${shortName}" del disco?`)) {
+    if (!window.confirm(L(`Permanently delete "${shortName}" from disk?`, `¿Eliminar permanentemente "${shortName}" del disco?`))) {
       return;
     }
     setSaving(true);
@@ -205,15 +211,11 @@ export function ModelTuningModal() {
   };
 
   return (
-    <div
-      className="modal-backdrop"
-      style={{ zIndex: 120 }}
-      onClick={() => openTuningModal(null)}
-    >
+    <ModalBackdrop label={L("Model options", "Opciones del modelo")} onClose={saving ? undefined : () => openTuningModal(null)}>
       <div className="sheet-modal" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-header">
           <div className="sheet-title-col">
-            <h3>Opciones del modelo</h3>
+            <h3>{L("Model options", "Opciones del modelo")}</h3>
             <span className="sheet-subtitle truncate-text">
               {modelMeta
                 ? `${modelMeta.baseName} · ${modelMeta.quant}${
@@ -225,6 +227,8 @@ export function ModelTuningModal() {
           <button
             type="button"
             className="icon-btn"
+            aria-label={L("Close", "Cerrar")}
+            disabled={saving}
             onClick={() => openTuningModal(null)}
           >
             <X size={16} />
@@ -235,10 +239,12 @@ export function ModelTuningModal() {
           {/* Model Switcher if multiple */}
           {mainModels.length > 1 && (
             <div className="sheet-row">
-              <span className="sheet-label">Modelo</span>
+              <label className="sheet-label" htmlFor="tuning-model">{L("Model", "Modelo")}</label>
               <select
+                id="tuning-model"
                 className="sheet-control"
                 value={activePath}
+                disabled={saving}
                 onChange={(e) => setActivePath(e.target.value)}
               >
                 {mainModels.map((m) => (
@@ -253,10 +259,10 @@ export function ModelTuningModal() {
           {/* Slim Memory Estimate */}
           <div className="sheet-mem">
             <div className="sheet-mem-head tabular-nums">
-              <span>Memoria estimada</span>
+              <span>{L("Estimated memory", "Memoria estimada")}</span>
               <span>
-                {(weightsGb + estimatedKvGb).toFixed(1)} GB usados ·{" "}
-                {freeGb.toFixed(1)} GB libres
+                {(weightsGb + estimatedKvGb).toFixed(1)} GB {L("used", "usados")} ·{" "}
+                {freeGb.toFixed(1)} GB {L("free", "libres")}
               </span>
             </div>
             <div className="vram-bar-track">
@@ -267,65 +273,76 @@ export function ModelTuningModal() {
 
           <div className="sheet-divider" />
 
-          {/* Context Size (-c) */}
-          <div className="sheet-row-stack">
-            <div className="sheet-row-top">
-              <span className="sheet-label">Contexto llama.cpp (-c)</span>
-              <div className="sheet-inline-val">
-                <button
-                  type="button"
-                  className={`sheet-pill-toggle ${profile.contextSize === 0 ? "active" : ""}`}
-                  onClick={() => patch({ contextSize: profile.contextSize === 0 ? maxModelCtx : 0 })}
-                >
-                  Auto
-                </button>
-                <span className="sheet-readout tabular-nums">
-                  {Math.round(maxModelCtx / 1024)}K ({maxModelCtx.toLocaleString()})
-                </span>
+          <div className="context-card context-tuning-card">
+            <div className="sheet-row-stack">
+              <div className="sheet-row-top">
+                <label className="sheet-label" htmlFor="model-context-size">{L("Context window", "Ventana de contexto")}</label>
+                <div className="sheet-inline-val">
+                  <button
+                    type="button"
+                    className={`sheet-pill-toggle ${profile.contextSize === 0 ? "active" : ""}`}
+                    aria-pressed={profile.contextSize === 0}
+                    disabled={!profileReady || saving}
+                    onClick={() => patch({ contextSize: profile.contextSize === 0 ? maxModelCtx : 0 })}
+                  >
+                    Auto
+                  </button>
+                  <span className="sheet-readout tabular-nums">
+                    {profileReady ? `${maxModelCtx.toLocaleString(locale)} tokens` : "—"}
+                  </span>
+                </div>
               </div>
+              <input
+                type="range"
+                id="model-context-size"
+                className="clean-slider"
+                min={Math.min(4096, maxModelCtx)}
+                max={Math.max(262144, maxModelCtx)}
+                step="1"
+                value={maxModelCtx}
+                disabled={!profileReady || saving}
+                onChange={(e) => patch({ contextSize: Number(e.target.value) })}
+              />
+              <p className="context-hint">{L("Total llama.cpp capacity for input and output. Auto sets the size based on RAM.", "Capacidad total de entrada y respuesta de llama.cpp. Auto ajusta el tamaño según la RAM.")}</p>
             </div>
-            <input
-              type="range"
-              className="clean-slider"
-              min="4096"
-              max="262144"
-              step="4096"
-              value={maxModelCtx}
-              onChange={(e) => patch({ contextSize: Number(e.target.value) })}
-            />
-          </div>
 
-          {/* Compaction Threshold Slider */}
-          <div className="sheet-row-stack">
-            <div className="sheet-row-top">
-              <span className="sheet-label">Compactar historial a</span>
-              <div className="sheet-inline-val">
-                <button
-                  type="button"
-                  className={`sheet-pill-toggle ${(profile.compactAtTokens ?? 0) === 0 ? "active" : ""}`}
-                  onClick={() =>
-                    patch({
-                      compactAtTokens:
-                        (profile.compactAtTokens ?? 0) === 0 ? compactTokens : 0,
-                    })
-                  }
-                >
-                  Auto (75%)
-                </button>
-                <span className="sheet-readout tabular-nums">
-                  {Math.round(compactTokens / 1024)}K / {Math.round(maxModelCtx / 1024)}K ({compactPct}%)
-                </span>
+            {/* Compaction Threshold Slider */}
+            <div className="sheet-row-stack">
+              <div className="sheet-row-top">
+                <label className="sheet-label" htmlFor="model-compaction">{L("Compaction threshold", "Umbral de compactación")}</label>
+                <div className="sheet-inline-val">
+                  <button
+                    type="button"
+                    className={`sheet-pill-toggle ${(profile.compactAtTokens ?? 0) === 0 ? "active" : ""}`}
+                    aria-pressed={!profile.compactAtTokens}
+                    disabled={!profileReady || saving}
+                    onClick={() =>
+                      patch({
+                        compactAtTokens:
+                          (profile.compactAtTokens ?? 0) === 0 ? compactTokens : 0,
+                      })
+                    }
+                  >
+                    Auto · 75%
+                  </button>
+                  <span className="sheet-readout tabular-nums">
+                    {profileReady ? `${compactTokens.toLocaleString(locale)} tokens · ${compactPct}%` : "—"}
+                  </span>
+                </div>
               </div>
+              <input
+                type="range"
+                id="model-compaction"
+                className="clean-slider"
+                min="1"
+                max={maxModelCtx}
+                step="1"
+                value={compactTokens}
+                disabled={!profileReady || saving}
+                onChange={(e) => patch({ compactAtTokens: Number(e.target.value) })}
+              />
+              <p className="context-hint">{L("When estimated usage exceeds this threshold, tool output is shortened to free space.", "Al superar este uso estimado, se acortan salidas de herramientas para liberar espacio.")}</p>
             </div>
-            <input
-              type="range"
-              className="clean-slider"
-              min="4096"
-              max={maxModelCtx}
-              step="2048"
-              value={compactTokens}
-              onChange={(e) => patch({ compactAtTokens: Number(e.target.value) })}
-            />
           </div>
 
           {/* KV Cache K / V */}
@@ -366,12 +383,13 @@ export function ModelTuningModal() {
             <div>
               <span className="sheet-label">Flash Attention</span>
               {vForcedFa && (
-                <span className="sheet-hint">Necesario con Cache V cuantizado</span>
+                <span className="sheet-hint">{L("Required with quantized V cache", "Necesario con Cache V cuantizado")}</span>
               )}
             </div>
             <input
               type="checkbox"
               className="clean-checkbox"
+              aria-label="Flash Attention"
               checked={profile.flashAttn}
               disabled={vForcedFa}
               onChange={(e) => patch({ flashAttn: e.target.checked })}
@@ -381,22 +399,23 @@ export function ModelTuningModal() {
           {/* GPU Layers */}
           <div className="sheet-row-stack">
             <div className="sheet-row-top">
-              <span className="sheet-label">Capas en GPU (-ngl)</span>
+              <label className="sheet-label" htmlFor="model-gpu-layers">{L("GPU layers (-ngl)", "Capas en GPU (-ngl)")}</label>
               <div className="sheet-inline-val">
                 <button
                   type="button"
                   className={`sheet-pill-toggle ${profile.gpuLayers < 0 ? "active" : ""}`}
                   onClick={() => patch({ gpuLayers: profile.gpuLayers < 0 ? 64 : -1 })}
                 >
-                  Todas
+                  {L("All", "Todas")}
                 </button>
                 <span className="sheet-readout tabular-nums">
-                  {profile.gpuLayers < 0 ? "Todas (-1)" : profile.gpuLayers}
+                  {profile.gpuLayers < 0 ? L("All (-1)", "Todas (-1)") : profile.gpuLayers}
                 </span>
               </div>
             </div>
             <input
               type="range"
+              id="model-gpu-layers"
               className="clean-slider"
               min="0"
               max="128"
@@ -409,13 +428,14 @@ export function ModelTuningModal() {
           {/* Temperature */}
           <div className="sheet-row-stack">
             <div className="sheet-row-top">
-              <span className="sheet-label">Temperatura</span>
+              <label className="sheet-label" htmlFor="model-temperature">{L("Temperature", "Temperatura")}</label>
               <span className="sheet-readout tabular-nums">
                 {profile.temperature.toFixed(2)}
               </span>
             </div>
             <input
               type="range"
+              id="model-temperature"
               className="clean-slider"
               min="0"
               max="1.5"
@@ -429,16 +449,17 @@ export function ModelTuningModal() {
           <button
             type="button"
             className="sheet-advanced-toggle"
+            aria-expanded={advancedOpen}
             onClick={() => setAdvancedOpen((v) => !v)}
           >
             {advancedOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            <span>Parámetros avanzados</span>
+            <span>{L("Advanced parameters", "Parámetros avanzados")}</span>
           </button>
 
           {advancedOpen && (
             <div className="sheet-advanced-grid">
               <label className="sheet-field">
-                <span>Max tokens salida</span>
+                <span>{L("Max output tokens", "Max tokens salida")}</span>
                 <input
                   type="number"
                   step="512"
@@ -501,7 +522,7 @@ export function ModelTuningModal() {
                 />
               </label>
               <label className="sheet-field">
-                <span>Hilos CPU (-t)</span>
+                <span>{L("CPU threads (-t)", "Hilos CPU (-t)")}</span>
                 <input
                   type="number"
                   min="0"
@@ -510,7 +531,7 @@ export function ModelTuningModal() {
                 />
               </label>
               <label className="sheet-field">
-                <span>Semilla (-1 = azar)</span>
+                <span>{L("Seed (-1 = random)", "Semilla (-1 = azar)")}</span>
                 <input
                   type="number"
                   step="1"
@@ -519,12 +540,12 @@ export function ModelTuningModal() {
                 />
               </label>
               <label className="sheet-field sheet-span-2">
-                <span>Proyector Visión (mmproj)</span>
+                <span>{L("Vision projector (mmproj)", "Proyector Visión (mmproj)")}</span>
                 <select
                   value={profile.mmprojPath}
                   onChange={(e) => patch({ mmprojPath: e.target.value })}
                 >
-                  <option value="">Ninguno</option>
+                  <option value="">{L("None", "Ninguno")}</option>
                   {mmprojFiles.map((m) => (
                     <option key={m.path} value={m.path}>
                       {m.name} ({m.size_mb} MB)
@@ -533,7 +554,7 @@ export function ModelTuningModal() {
                 </select>
               </label>
               <label className="sheet-field sheet-span-2">
-                <span>Flags CLI adicionales</span>
+                <span>{L("Additional CLI flags", "Flags CLI adicionales")}</span>
                 <input
                   type="text"
                   placeholder="--rope-scaling linear"
@@ -547,7 +568,7 @@ export function ModelTuningModal() {
                   checked={profile.mlock}
                   onChange={(e) => patch({ mlock: e.target.checked })}
                 />
-                <span>Bloquear en RAM (--mlock)</span>
+                <span>{L("Lock in RAM (--mlock)", "Bloquear en RAM (--mlock)")}</span>
               </label>
               <label className="check-inline">
                 <input
@@ -555,12 +576,12 @@ export function ModelTuningModal() {
                   checked={profile.noMmap}
                   onChange={(e) => patch({ noMmap: e.target.checked })}
                 />
-                <span>Desactivar mmap (--no-mmap)</span>
+                <span>{L("Disable mmap (--no-mmap)", "Desactivar mmap (--no-mmap)")}</span>
               </label>
             </div>
           )}
 
-          {statusMsg && <div className="sheet-status">{statusMsg}</div>}
+          {statusMsg && <div className="sheet-status" role="status">{statusMsg}</div>}
         </div>
 
         <div className="sheet-footer">
@@ -571,37 +592,37 @@ export function ModelTuningModal() {
             onClick={() => void handleDeleteModel()}
           >
             <Trash2 size={13} />
-            <span>Eliminar modelo</span>
+            <span>{L("Delete model", "Eliminar modelo")}</span>
           </button>
 
-          <div style={{ display: "flex", gap: 8 }}>
+          <div className="sheet-footer-actions">
             <button
               type="button"
               className="btn-secondary"
               disabled={saving}
               onClick={() => openTuningModal(null)}
             >
-              Cerrar
+              {L("Close", "Cerrar")}
             </button>
             <button
               type="button"
               className="btn-secondary"
-              disabled={saving}
+              disabled={saving || !profileReady}
               onClick={() => void handleSave(false)}
             >
-              Guardar
+              {L("Save profile", "Guardar")}
             </button>
             <button
               type="button"
               className="btn-primary"
-              disabled={saving}
+              disabled={saving || !profileReady}
               onClick={() => void handleSave(true)}
             >
-              Aplicar y recargar
+              {L("Save and reload model", "Aplicar y recargar")}
             </button>
           </div>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

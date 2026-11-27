@@ -1,4 +1,5 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { ModalBackdrop } from "./ModalBackdrop";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Boxes,
   Check,
@@ -97,9 +98,18 @@ const DEFAULT_CLOUD_PROVIDERS: CloudProviderConfig[] = [
   },
   {
     id: "openrouter",
-    name: "OpenRouter / OpenCode",
+    name: "OpenRouter",
     kind: "openai_compat",
     baseUrl: "https://openrouter.ai/api/v1",
+    apiKey: "",
+    models: [],
+    enabled: false,
+  },
+  {
+    id: "opencode",
+    name: "OpenCode",
+    kind: "openai_compat",
+    baseUrl: "https://opencode.ai/zen/v1",
     apiKey: "",
     models: [],
     enabled: false,
@@ -167,6 +177,14 @@ const PROVIDER_BRAND: Record<
     descEn: "Unified gateway for 200+ cloud models",
     descEs: "Pasarela unificada para +200 modelos cloud",
     keyUrl: "https://openrouter.ai/keys",
+  },
+  opencode: {
+    badge: "OC",
+    color: "#38bdf8",
+    bg: "rgba(56, 189, 248, 0.16)",
+    descEn: "OpenCode Zen curated models API",
+    descEs: "API de modelos curados OpenCode Zen",
+    keyUrl: "https://opencode.ai/auth",
   },
   lmstudio: {
     badge: "LM",
@@ -737,7 +755,7 @@ export function ModelsModal({
 
               <div className="cloud-provider-list">
                 {cloudProviders.map((prov, idx) => {
-                  const isCustom = !["openai", "anthropic", "gemini", "github", "openrouter", "lmstudio", "ollama"].includes(prov.id);
+                  const isCustom = !["openai", "anthropic", "gemini", "github", "openrouter", "opencode", "lmstudio", "ollama"].includes(prov.id);
                   const isLocalApi = prov.id === "ollama" || prov.id === "lmstudio";
                   const isFetching = fetchingProviderId === prov.id;
                   const provErr = providerErrors[prov.id];
@@ -1098,58 +1116,10 @@ export function ModelsModal({
                     return (
                     <div
                       key={`${grp.family}-${grp.baseName}`}
-                      className="model-family-card"
+                      className="model-family-card local-model-card"
                     >
                       <div className="model-family-head">
-                        <div className="model-family-meta">
-                          <div className="model-badges-row">
-                            <span className="model-family-tag">{grp.family}</span>
-                            {grp.params && (
-                              <span className="model-param-tag">{grp.params}</span>
-                            )}
-                            <span className="model-source-tag">
-                              {grp.sourceLabel}
-                            </span>
-                            {caps.text && (
-                              <span className="cap-badge cap-text" title="Text / Chat">
-                                Text
-                              </span>
-                            )}
-                            {caps.vision && (
-                              <span
-                                className="cap-badge cap-vision"
-                                title={
-                                  hasLocalMmproj
-                                    ? "Supports images (mmproj detected)"
-                                    : "Vision model (download matching mmproj for image input)"
-                                }
-                              >
-                                Images
-                              </span>
-                            )}
-                            {caps.thinking && (
-                              <span className="cap-badge cap-thinking" title="Reasoning / Thinking">
-                                Thinking
-                              </span>
-                            )}
-                            {caps.tools && (
-                              <span className="cap-badge cap-tools" title="Function / Tool calling">
-                                Tools
-                              </span>
-                            )}
-                          </div>
-                          <h4 className="model-family-title">{grp.baseName}</h4>
-                        </div>
-                        <span className="model-quant-count tabular-nums">
-                          {grp.items.length}{" "}
-                          {locale === "es"
-                            ? grp.items.length === 1
-                              ? "cuantización"
-                              : "cuantizaciones"
-                            : grp.items.length === 1
-                              ? "quantization"
-                              : "quantizations"}
-                        </span>
+                        <h4 className="model-family-title">{grp.baseName}</h4>
                       </div>
 
                       <div className="quant-table">
@@ -1166,68 +1136,70 @@ export function ModelsModal({
                                 <span className={`quant-pill ${meta.quantColor}`}>
                                   {meta.quant}
                                 </span>
-                                <div className="quant-desc-col">
-                                  <div className="quant-quality-line">
-                                    <span>{meta.quantQuality}</span>
-                                    {meta.recommended && !isSelected && (
-                                      <span className="rec-badge">
-                                        {locale === "es" ? "★ Recomendado" : "★ Recommended"}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div
-                                    className="quant-path-sub truncate-text"
-                                    title={file.path}
-                                  >
-                                    {file.path}
-                                  </div>
-                                </div>
+                                <span className="quant-size tabular-nums">
+                                  {sizeGb >= 1 ? `${sizeGb.toFixed(2)} GB` : `${file.size_mb} MB`}
+                                </span>
+                                <span className={`local-model-fit ${fit.cls}`}>{fit.label}</span>
                               </div>
 
                               <div className="quant-row-actions">
-                                <span className={`fit-badge ${fit.cls}`}>
-                                  {fit.label}
-                                </span>
-                                <span className="quant-size tabular-nums">
-                                  {sizeGb >= 1
-                                    ? `${sizeGb.toFixed(2)} GB`
-                                    : `${file.size_mb} MB`}
-                                </span>
                                 {!meta.isMmproj && (
                                   <button
                                     type="button"
-                                    className="btn-secondary"
-                                    title="Configurar opciones del modelo (KV Cache, Flash Attention, Compactación, Contexto...)"
+                                    className="icon-btn"
+                                    title={locale === "es" ? "Ajustes de inferencia" : "Inference settings"}
+                                    aria-label={locale === "es" ? "Ajustes de inferencia" : "Inference settings"}
                                     onClick={() => openTuningModal(file.path)}
                                   >
-                                    <Settings size={13} />
-                                    <span>{locale === "es" ? "Opciones" : "Options"}</span>
+                                    <Settings size={15} />
                                   </button>
                                 )}
-                                <button
-                                  type="button"
-                                  className="icon-btn danger"
-                                  title={`Eliminar ${file.name} del disco`}
-                                  onClick={() => void handleDeleteLocalModel(file)}
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className={isSelected ? "btn-mini active-select" : "btn-primary"}
-                                  onClick={() => selectModel(file.path)}
-                                >
-                                  {isSelected ? (
-                                    <>
-                                      <Check size={13} />
-                                      <span>Activo</span>
-                                    </>
-                                  ) : (
-                                    <span>{locale === "es" ? "Seleccionar" : "Select"}</span>
-                                  )}
-                                </button>
+                                {isSelected ? (
+                                  <span className="local-model-active">
+                                    <Check size={13} />
+                                    {locale === "es" ? "Activo" : "Active"}
+                                  </span>
+                                ) : (
+                                  <button type="button" className="btn-primary" onClick={() => selectModel(file.path)}>
+                                    {locale === "es" ? "Seleccionar" : "Select"}
+                                  </button>
+                                )}
                               </div>
+                              <details className="model-family-details inspector-disclosure">
+                        <summary>{locale === "es" ? "Detalles del modelo" : "Model details"}</summary>
+                        <p>
+                          {[
+                            grp.family,
+                            grp.params,
+                            grp.sourceLabel,
+                            caps.text && (locale === "es" ? "Texto" : "Text"),
+                            caps.vision && (hasLocalMmproj
+                              ? locale === "es" ? "Imágenes" : "Images"
+                              : locale === "es" ? "Imágenes (requiere mmproj)" : "Images (requires mmproj)"),
+                            caps.thinking && (locale === "es" ? "Razonamiento" : "Reasoning"),
+                            caps.tools && (locale === "es" ? "Herramientas" : "Tools"),
+                          ].filter(Boolean).join(" · ")}
+                        </p>
+                        {grp.items.map(({ file, meta }) => (
+                          <div className="local-model-file" key={file.path}>
+                            <div>
+                              <p>{meta.quant} · {meta.quantQuality}{meta.recommended
+                                ? locale === "es" ? " · Recomendado" : " · Recommended"
+                                : ""}</p>
+                              <code>{file.path}</code>
                             </div>
+                            <button
+                              type="button"
+                              className="icon-btn danger"
+                              title={locale === "es" ? `Eliminar ${file.name} del disco` : `Delete ${file.name} from disk`}
+                              onClick={() => void handleDeleteLocalModel(file)}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </details>
+                    </div>
                           );
                         })}
                       </div>
@@ -1545,13 +1517,13 @@ export function ModelsModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <ModalBackdrop label={locale === "es" ? "Modelos e IA" : "Models & AI"} onClose={onClose}>
       <div
         className="modal-card modal-hub"
         onClick={(e) => e.stopPropagation()}
       >
         {content}
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

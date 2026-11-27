@@ -63,9 +63,18 @@ pub fn default_providers() -> Vec<CloudProviderConfig> {
         },
         CloudProviderConfig {
             id: "openrouter".to_string(),
-            name: "OpenRouter / OpenCode".to_string(),
+            name: "OpenRouter".to_string(),
             kind: "openai_compat".to_string(),
             base_url: "https://openrouter.ai/api/v1".to_string(),
+            api_key: String::new(),
+            models: Vec::new(),
+            enabled: false,
+        },
+        CloudProviderConfig {
+            id: "opencode".to_string(),
+            name: "OpenCode".to_string(),
+            kind: "openai_compat".to_string(),
+            base_url: "https://opencode.ai/zen/v1".to_string(),
             api_key: String::new(),
             models: Vec::new(),
             enabled: false,
@@ -109,6 +118,18 @@ pub fn load_cloud_providers_from(path: &Path) -> Vec<CloudProviderConfig> {
                 for p in &mut list {
                     if p.id == "ollama" && p.name.contains("LM Studio") {
                         p.name = "Ollama".to_string();
+                    }
+                    if p.id == "openrouter" && p.name == "OpenRouter / OpenCode" {
+                        p.name = "OpenRouter".to_string();
+                    }
+                }
+                if !list.iter().any(|p| p.id == "opencode") {
+                    if let Some(oc) = default_providers().into_iter().find(|p| p.id == "opencode") {
+                        if let Some(or_idx) = list.iter().position(|p| p.id == "openrouter") {
+                            list.insert(or_idx + 1, oc);
+                        } else {
+                            list.push(oc);
+                        }
                     }
                 }
                 if !list.iter().any(|p| p.id == "lmstudio") {

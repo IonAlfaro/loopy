@@ -54,6 +54,11 @@ pub struct HeadlessState {
 }
 
 impl HeadlessState {
+    pub async fn shutdown_agent_runtime(&self) {
+        self.engine.llama.shutdown().await;
+        shutdown_browser().await;
+    }
+
     pub fn new(auth_token: Option<String>, dist_dir: Option<PathBuf>) -> Arc<Self> {
         let (events_tx, _) = broadcast::channel(512);
         let state = Arc::new(Self {
@@ -453,7 +458,9 @@ pub async fn dispatch_rpc(
         }
         "get_model_profile" => {
             let model_path = get_str(&args, &["modelPath", "model_path"]);
-            Ok(json!(inference::load_model_profile(&model_path)))
+            let agent_mode = args.get("agentMode").or_else(|| args.get("agent_mode"))
+                .and_then(Value::as_bool).unwrap_or(false);
+            Ok(json!(inference::load_model_profile_for_ui(&model_path, agent_mode)))
         }
         "save_model_tuning_profile" => {
             let model_path = get_str(&args, &["modelPath", "model_path"]);
@@ -636,18 +643,15 @@ pub async fn dispatch_rpc(
             let session: AgentSession =
                 serde_json::from_value(args.get("session").cloned().unwrap_or(Value::Null))
                     .map_err(|e| format!("Invalid session: {e}"))?;
-            save_session_in(&sessions_dir(), &session)?;
+            state.agent.with_idle_session(&session.id, || save_session_in(&sessions_dir(), &session))?;
             Ok(json!(null))
         }
         "delete_agent_session" => {
             let id = get_str(&args, &["id"]);
-            delete_session_in(&sessions_dir(), &id)?;
+            state.agent.with_idle_session(&id, || delete_session_in(&sessions_dir(), &id))?;
             Ok(json!(null))
         }
         "run_agent_turn" => {
-            if state.engine.is_running() {
-                return Err("__GPU_BUSY_HARNESS__".to_string());
-            }
             let session: AgentSession =
                 serde_json::from_value(args.get("session").cloned().unwrap_or(Value::Null))
                     .map_err(|e| format!("Invalid session: {e}"))?;
@@ -664,6 +668,9 @@ pub async fn dispatch_rpc(
                 .unwrap_or_default();
 
             let is_cloud = inference::cloud::is_cloud_model(&session.model_path);
+            if !is_cloud && state.engine.is_running() {
+                return Err("__GPU_BUSY_HARNESS__".to_string());
+            }
             let binary_path = if is_cloud {
                 let model_short = inference::cloud::parse_cloud_model(&session.model_path)
                     .map(|(p, m)| format!("{p}/{m}"))
@@ -700,28 +707,33 @@ pub async fn dispatch_rpc(
             Ok(json!(updated))
         }
         "stop_agent_turn" => {
-            state.agent.stop_turn();
+            let id = get_str(&args, &["sessionId", "session_id"]);
+            state.agent.stop_turn((!id.is_empty()).then_some(id.as_str()));
             Ok(json!(null))
         }
         "resolve_agent_permission" => {
             let decision: PermissionDecision =
                 serde_json::from_value(args.get("decision").cloned().unwrap_or(Value::Null))
                     .map_err(|e| format!("Invalid permission decision: {e}"))?;
-            state.agent.resolve_permission(decision)?;
+            let id = get_str(&args, &["sessionId", "session_id"]);
+            state.agent.resolve_permission((!id.is_empty()).then_some(id.as_str()), decision)?;
             Ok(json!(null))
         }
         "resolve_agent_question" => {
             let decision: QuestionDecision =
                 serde_json::from_value(args.get("decision").cloned().unwrap_or(Value::Null))
                     .map_err(|e| format!("Invalid question decision: {e}"))?;
-            state.agent.resolve_question(decision)?;
+            let id = get_str(&args, &["sessionId", "session_id"]);
+            state.agent.resolve_question((!id.is_empty()).then_some(id.as_str()), decision)?;
             Ok(json!(null))
         }
         "undo_agent_tool_call" => {
             let session_id = get_str(&args, &["sessionId", "session_id"]);
             let message_id = get_str(&args, &["messageId", "message_id"]);
             let call_id = get_str(&args, &["callId", "call_id"]);
-            let updated = undo_tool_call_in_dir(&sessions_dir(), &session_id, &message_id, &call_id)?;
+            let updated = state.agent.with_idle_session(&session_id, || {
+                undo_tool_call_in_dir(&sessions_dir(), &session_id, &message_id, &call_id)
+            })?;
             Ok(json!(updated))
         }
         "read_workspace_memory_files" => {
@@ -922,7 +934,7 @@ pub async fn run_headless_server(cfg: HeadlessServerConfig) -> Result<(), String
             _ = tokio::signal::ctrl_c() => {
                 println!("\n[loors-server] Shutting down cleanly...");
                 let _ = shutdown_state.engine.stop_run();
-                shutdown_state.agent.stop_turn();
+                shutdown_state.agent.stop_turn(None);
                 shutdown_state.engine.llama.shutdown().await;
                 shutdown_browser().await;
                 break;

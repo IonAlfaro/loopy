@@ -196,6 +196,12 @@ pub struct ModelTuningProfile {
     pub mmproj_path: String,
     #[serde(default)]
     pub effective_context_size: u32,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub auto_context_size: u32,
+}
+
+fn is_zero(value: &u32) -> bool {
+    *value == 0
 }
 
 impl Default for ModelTuningProfile {
@@ -221,6 +227,7 @@ impl Default for ModelTuningProfile {
             seed: -1,
             mmproj_path: String::new(),
             effective_context_size: 0,
+            auto_context_size: 0,
         }
     }
 }
@@ -267,6 +274,7 @@ pub fn save_model_profile_to(
         .unwrap_or_default();
     let mut normalized = profile.clone();
     normalized.effective_context_size = 0;
+    normalized.auto_context_size = 0;
     if normalized.cache_type_v != "f16" && !normalized.cache_type_v.trim().is_empty() {
         normalized.flash_attn = true;
     }
@@ -290,6 +298,19 @@ pub fn load_model_profile(model_path: &str) -> ModelTuningProfile {
         32768
     };
     prof
+}
+
+pub fn load_model_profile_for_ui(model_path: &str, agent_mode: bool) -> ModelTuningProfile {
+    let mut profile = load_model_profile(model_path);
+    profile.auto_context_size = if profile.context_size == 0 {
+        profile.effective_context_size
+    } else {
+        compute_auto_context_size(model_path)
+    };
+    if agent_mode {
+        profile.effective_context_size = llama_cpp::agent_slot_context(profile.effective_context_size);
+    }
+    profile
 }
 
 pub fn save_model_profile(model_path: &str, profile: &ModelTuningProfile) -> Result<(), String> {

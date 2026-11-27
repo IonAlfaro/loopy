@@ -1,0 +1,35 @@
+: connected
+
+: ping
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Starting llama-server for Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.ggufÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":10,"stage":"starting"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (19%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":19,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (25%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":25,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (28%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":28,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (30%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":30,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (33%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":33,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (35%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":35,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (38%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":38,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (68%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":68,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Loading tensors to GPU (82%)ÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":82,"stage":"loading"}}
+
+: ping
+: ping
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Finalizing initializationÔÇª","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":97,"stage":"loading"}}
+
+data: {"event":"loors://model-load-progress","payload":{"message":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf ready","model_name":"Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","percent":100,"stage":"ready"}}
+
+data: {"event":"loors://agent-chat-event","payload":{"compact_at_tokens":3072,"max_tokens":4096,"model_path":"C:\\Users\\ional\\AppData\\Local\\loors\\models\\Huihui-Qwen3.6-35B-A3B-abliterated-ggml-model-Q6_K.gguf","session_id":"1103e778-09c8-473a-a498-d894c8658009","type":"context_usage","used_tokens":5900}}
+
+data: {"event":"loors://agent-chat-event","payload":{"context_max_tokens":4096,"context_used_chars":1153,"session_id":"1103e778-09c8-473a-a498-d894c8658009","status":"error","summary":"llama-server devolvi+¦ HTTP 400 Bad Request: {\"error\":{\"code\":400,\"message\":\"request (4495 tokens) exceeds the available context size (4096 tokens), try increasing it\",\"type\":\"exceed_context_size_error\",\"n_prompt_tokens\":4495,\"n_ctx\":4096}}","type":"turn_finished"}}
+

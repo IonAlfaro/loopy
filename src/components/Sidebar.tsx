@@ -16,6 +16,7 @@ import {
 } from "../types/graph";
 import { useGraphStore } from "../store/useGraphStore";
 import { getNodeDescription, getNodeLabel, useI18n, type TranslationKey } from "../i18n";
+import { NodeIcon } from "./nodes/LoorsNode";
 import { CustomNodeModal } from "./CustomNodeModal";
 
 const NODE_SECTIONS: { id: string; titleKey: TranslationKey; kinds: LoorsNodeKind[] }[] = [
@@ -48,9 +49,21 @@ const NODE_SECTIONS: { id: string; titleKey: TranslationKey; kinds: LoorsNodeKin
   },
 ];
 
+const NODE_SEARCH_TERMS: Partial<Record<LoorsNodeKind, string>> = {
+  agent: "chat prompt instrucciones",
+  llm_judge: "judge review evaluación revisión aprobado reintento",
+  local_model: "modelo model gguf api proveedor",
+  loop_guard: "loop bucle reintento retry iteración",
+};
+
+function normalizeNodeSearch(value: string) {
+  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+}
+
 export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
   const { locale, t } = useI18n();
   const nodes = useGraphStore((s) => s.nodes);
+  const setRightPanelTab = useGraphStore((s) => s.setRightPanelTab);
   const addNode = useGraphStore((s) => s.addNode);
   const customNodes = useGraphStore((s) => s.customNodes);
   const setCustomNodes = useGraphStore((s) => s.setCustomNodes);
@@ -93,14 +106,13 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
     }
   };
 
-  const q = filter.trim().toLowerCase();
+  const q = normalizeNodeSearch(filter.trim());
 
   const filteredCustom = useMemo(() => {
     if (!q) return customNodes;
     return customNodes.filter(
       (d) =>
-        d.label.toLowerCase().includes(q) ||
-        d.description.toLowerCase().includes(q)
+        normalizeNodeSearch(d.label + " " + d.description).includes(q)
     );
   }, [customNodes, q]);
 
@@ -122,10 +134,10 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
         const matched = sec.kinds.filter((kind) => {
           if (!q) return true;
           const bp = NODE_BLUEPRINTS[kind];
-          return (
-            bp.label.toLowerCase().includes(q) ||
-            bp.description.toLowerCase().includes(q)
-          );
+          return normalizeNodeSearch([
+            getNodeLabel(kind, locale), getNodeDescription(kind, locale),
+            bp.label, NODE_SEARCH_TERMS[kind],
+          ].join(" ")).includes(q);
         });
         if (matched.length === 0) return null;
         const isCollapsed = !q && Boolean(collapsedSections[sec.id]);
@@ -157,12 +169,14 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
                       }}
                       className="palette-item compact-row"
                       title={`${getNodeDescription(kind, locale)}\n(${locale === "es" ? "Haz clic o arrastra al lienzo" : "Click or drag to canvas"})`}
-                      onClick={() => addNode(kind)}
+                      onClick={() => {
+                        addNode(kind);
+                        setRightPanelTab("inspector");
+                      }}
                     >
-                      <span
-                        className="palette-dot"
-                        style={{ background: bp.accent }}
-                      />
+                      <span className="palette-node-icon" style={{ color: bp.accent }}>
+                        <NodeIcon kind={kind} />
+                      </span>
                       <span className="palette-name">{getNodeLabel(kind, locale)}</span>
                       <Plus size={12} className="palette-plus" />
                     </button>
