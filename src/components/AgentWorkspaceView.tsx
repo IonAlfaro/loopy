@@ -1,3 +1,4 @@
+import { AgentModelPickerTrigger } from "./AgentModelPickerTrigger";
 import { AgentComposerActions } from "./AgentComposerActions";
 import { AgentComposerAttachments } from "./AgentComposerAttachments";
 import { AgentComposerInput } from "./AgentComposerInput";
@@ -2427,45 +2428,7 @@ export function AgentWorkspaceView() {
 
                   <span className="composer-sep" aria-hidden="true" />
                   <div className="composer-model-wrap" ref={modelPickerRef}>
-                    <button
-                      type="button"
-                      className="composer-model-btn"
-                      title={session.modelPath || t("agent.chooseModel")}
-                      aria-expanded={modelPickerOpen}
-                      onClick={() => setModelPickerOpen((prev) => !prev)}
-                    >
-                      {isCloudModelPath(session.modelPath) ? (
-                        (() => {
-                          const parsed = parseCloudModelPath(session.modelPath);
-                          const prov = cloudProviders.find(
-                            (p) => p.id === parsed?.providerId
-                          );
-                          return (
-                            <>
-                              <Cloud size={12} style={{ color: "#a78bfa", flexShrink: 0 }} />
-                              <span className="composer-model-title truncate-text">
-                                {parsed?.modelId ?? session.modelPath}
-                              </span>
-                              <span className="composer-model-quant">
-                                {prov?.name.split(" ")[0] ?? parsed?.providerId ?? "API"}
-                              </span>
-                            </>
-                          );
-                        })()
-                      ) : activeModelMeta ? (
-                        <>
-                          <span className="composer-model-title truncate-text">
-                            {activeModelMeta.baseName}
-                          </span>
-                          <span className="composer-model-quant">
-                            {activeModelMeta.quant}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="composer-model-title">{t("agent.chooseModel")}</span>
-                      )}
-                      <ChevronUp size={12} style={{ color: "var(--muted)", flexShrink: 0 }} />
-                    </button>
+                    <AgentModelPickerTrigger modelPath={session.modelPath} cloudProviders={cloudProviders} activeModelMeta={activeModelMeta} chooseLabel={t("agent.chooseModel")} modelPickerOpen={modelPickerOpen} onToggle={() => setModelPickerOpen(prev => !prev)} />
 
                     {modelPickerOpen && (
                       <div className="model-popover">
