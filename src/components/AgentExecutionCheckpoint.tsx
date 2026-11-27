@@ -20,6 +20,12 @@ export function AgentExecutionCheckpoint({ checkpoint, workspace, locale, disabl
   const done = tasks.filter(task => task?.status === "done").length;
   const approval = data.awaitingApproval === true;
   const es = locale === "es";
+  const telemetry = object(data.telemetry);
+  const counters = [
+    [es ? "Inferencias" : "Inferences", telemetry?.inferences, telemetry?.inferenceLimit],
+    [es ? "Iteraciones" : "Iterations", telemetry?.iterations, telemetry?.iterationLimit],
+    [es ? "Recuperaciones" : "Recoveries", telemetry?.recoveries, telemetry?.recoveryLimit],
+  ] as const;
   return (
     <section aria-label={es ? "Plan de ejecución" : "Execution plan"} style={{ padding: 12, border: "1px solid var(--border)", borderRadius: 8, marginBottom: 8 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
@@ -30,6 +36,11 @@ export function AgentExecutionCheckpoint({ checkpoint, workspace, locale, disabl
         </button>}
       </div>
       <progress value={done} max={tasks.length} aria-label={es ? "Progreso" : "Progress"} style={{ width: "100%" }} />
+      {telemetry && <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 12 }}>
+        {counters.map(([label, used, limit]) => typeof used === "number" && typeof limit === "number"
+          && Number.isFinite(used) && Number.isFinite(limit)
+          ? <span key={label}>{label}: {used}/{limit}</span> : null)}
+      </div>}
       <details open={approval}>
         <summary>{es ? "Tareas y criterios" : "Tasks and criteria"}</summary>
         <ol style={{ maxHeight: 220, overflowY: "auto", paddingLeft: 24 }}>
