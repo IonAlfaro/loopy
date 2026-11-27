@@ -1418,6 +1418,8 @@ where
     tool_defs.retain(|tool| tool["function"]["name"].as_str().map_or(false, |name| work_mode.allows_tool(name)));
     let tool_bytes = chat_tool_bytes(&tool_defs);
 
+    let mut observed_results: HashMap<u64, usize> = HashMap::new();
+    let mut stagnant = false;
     let mut last_call_sig = String::new();
     let mut repeat_count: u32 = 0;
     // A turn is only completed after an explicit non-truncated final response.
@@ -1426,6 +1428,11 @@ where
     let mut final_summary = format!("Iteration budget exhausted ({max_steps}); work may be incomplete.");
 
     for _step in 1..=max_steps {
+        if stagnant {
+            execution.finish(TurnOutcome::Incomplete);
+            final_summary = "Repeated identical tool results without apparent progress. Execution paused; inspect the blocker and resume with a different strategy.".into();
+            break;
+        }
         if !execution.begin_iteration() { break; }
         if cancel.load(Ordering::SeqCst) {
             execution.finish(TurnOutcome::Cancelled);
@@ -1975,6 +1982,20 @@ where
                 }
             }
 
+            // Compare actual tool results, not merely repeated tool names.
+            if record.name != "set_execution_plan" && record.name != "update_todo_list" {
+                use std::hash::{Hash, Hasher};
+                let mut hash = std::collections::hash_map::DefaultHasher::new();
+                record.task_id.hash(&mut hash);
+                record.name.hash(&mut hash);
+                record.args_json.hash(&mut hash);
+                tool_output.hash(&mut hash);
+                let count = observed_results.entry(hash.finish()).or_default();
+                *count += 1;
+                if *count >= 4 {
+                    stagnant = true;
+                }
+            }
             if let Some(last) = session.messages.last_mut() {
                 last.tool_calls.push(record.clone());
             }
