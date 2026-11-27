@@ -512,6 +512,77 @@ fn is_image_attachment(path: &str) -> bool {
         || lower.ends_with(".bmp")
 }
 
+// Structured plans are validated independently of model output.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum PlanTaskStatus { Pending, InProgress, Done, Failed }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PlanTask {
+    id: String,
+    title: String,
+    #[serde(default)]
+    depends_on: Vec<String>,
+    acceptance: Vec<String>,
+    status: PlanTaskStatus,
+    #[serde(default)]
+    evidence: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ExecutionPlan {
+    tasks: Vec<PlanTask>,
+}
+
+impl ExecutionPlan {
+    fn validate(&self) -> Result<(), String> {
+        if self.tasks.is_empty() || self.tasks.len() > 64 {
+            return Err("A plan must contain 1 to 64 tasks.".into());
+        }
+        let mut ids = std::collections::HashSet::new();
+        for task in &self.tasks {
+            if task.id.trim().is_empty() || !ids.insert(task.id.as_str()) {
+                return Err("Task IDs must be nonempty and unique.".into());
+            }
+            if task.title.trim().is_empty() || task.acceptance.is_empty()
+                || task.acceptance.iter().any(|criterion| criterion.trim().is_empty()) {
+                return Err(format!("Task {} requires a title and acceptance criteria.", task.id));
+            }
+            if task.status == PlanTaskStatus::Done && !task.evidence.iter().any(|e| !e.trim().is_empty()) {
+                return Err(format!("Task {} requires completion evidence.", task.id));
+            }
+        }
+        let mut visited = std::collections::HashSet::new();
+        while visited.len() < self.tasks.len() {
+            let before = visited.len();
+            for task in &self.tasks {
+                if task.depends_on.iter().all(|dep| visited.contains(dep.as_str())) {
+                    visited.insert(task.id.as_str());
+                }
+            }
+            if visited.len() == before {
+                return Err("Plan contains cyclic or unknown dependencies.".into());
+            }
+        }
+        for task in &self.tasks {
+            if matches!(task.status, PlanTaskStatus::InProgress | PlanTaskStatus::Done)
+                && task.depends_on.iter().any(|dep| !self.tasks.iter().any(|t| &t.id == dep && t.status == PlanTaskStatus::Done)) {
+                return Err(format!("Task {} has unfinished dependencies.", task.id));
+            }
+        }
+        Ok(())
+    }
+
+    fn next_ready(&self) -> Option<&PlanTask> {
+        self.tasks.iter().find(|task| task.status == PlanTaskStatus::Pending
+            && task.depends_on.iter().all(|dep| self.tasks.iter().any(|t| &t.id == dep && t.status == PlanTaskStatus::Done)))
+    }
+
+    fn is_complete(&self) -> bool {
+        !self.tasks.is_empty() && self.tasks.iter().all(|task| task.status == PlanTaskStatus::Done)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TurnOutcome { Completed, Incomplete, StepLimit, Cancelled, Error }
 
@@ -922,6 +993,27 @@ where
             }
         }));
     }
+
+    // Structured planning is opt-in for this stage; the legacy checklist remains available.
+    tool_defs.push(json!({
+        "type": "function",
+        "function": {
+            "name": "set_execution_plan",
+            "description": "Create or update a structured plan for complex work. Include all tasks, dependencies, acceptance criteria and evidence for completed tasks.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tasks": {"type": "array", "items": {"type": "object", "properties": {
+                        "id": {"type": "string"}, "title": {"type": "string"},
+                        "depends_on": {"type": "array", "items": {"type": "string"}},
+                        "acceptance": {"type": "array", "items": {"type": "string"}},
+                        "status": {"type": "string", "enum": ["pending", "in_progress", "done", "failed"]},
+                        "evidence": {"type": "array", "items": {"type": "string"}}
+                    }, "required": ["id", "title", "acceptance", "status"]}}
+                }, "required": ["tasks"]
+            }
+        }
+    }));
 
     // Live task checklist tool (available in all modes)
     tool_defs.push(json!({
@@ -1946,6 +2038,30 @@ where
         }
         let reports = futures_util::future::join_all(futs).await;
         return reports.join("\n\n---\n\n");
+    }
+
+    if name == "set_execution_plan" {
+        let plan: ExecutionPlan = match serde_json::from_value(parsed_args.clone()) {
+            Ok(plan) => plan,
+            Err(err) => { record.status = "error".into(); return format!("Invalid plan: {err}"); }
+        };
+        if let Err(err) = plan.validate() {
+            record.status = "error".into();
+            return err;
+        }
+        let items = plan.tasks.iter().map(|task| AgentTodoItem {
+            title: task.title.clone(),
+            status: match task.status {
+                PlanTaskStatus::Pending => "pending",
+                PlanTaskStatus::InProgress => "in_progress",
+                PlanTaskStatus::Done => "done",
+                PlanTaskStatus::Failed => "failed",
+            }.into(),
+        }).collect();
+        emit(AgentChatEvent::TodoUpdated { session_id: session_id.to_string(), items });
+        return if plan.is_complete() { "Plan reports all tasks complete.".into() }
+            else if let Some(task) = plan.next_ready() { format!("Next ready task: {} — {}", task.id, task.title) }
+            else { "No pending task is ready; inspect active or failed tasks.".into() };
     }
 
     if name == "update_todo_list" {
