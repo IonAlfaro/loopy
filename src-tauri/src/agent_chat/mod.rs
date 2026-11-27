@@ -637,6 +637,11 @@ impl ExecutionPlan {
         for old in &previous.tasks {
             let new = self.tasks.iter().find(|task| task.id == old.id)
                 .ok_or_else(|| format!("Cannot remove active task {}.", old.id))?;
+            // Existing task scope is immutable. Recovery may add follow-up tasks,
+            // but must not weaken the original acceptance contract.
+            if new.title != old.title || new.acceptance != old.acceptance || new.depends_on != old.depends_on {
+                return Err(format!("Task {} scope and acceptance criteria are immutable; add a follow-up task instead.", old.id));
+            }
             if old.status == PlanTaskStatus::Done &&
                 (new.status != old.status || new.title != old.title ||
                  new.depends_on != old.depends_on || new.acceptance != old.acceptance ||
@@ -781,6 +786,24 @@ mod harness_plan_tests {
         let mut changed = next.clone();
         changed.tasks[0].acceptance.clear();
         assert!(changed.validate_transition(&next).is_err());
+    }
+
+    #[test]
+    fn existing_task_contract_cannot_be_weakened() {
+        let original = ExecutionPlan { tasks: vec![task("a", &[]), task("b", &["a"])] };
+        let mut changed = original.clone();
+        changed.tasks[1].acceptance = vec!["Always pass".into()];
+        assert!(changed.validate_transition(&original).is_err());
+        changed = original.clone();
+        changed.tasks[1].depends_on.clear();
+        assert!(changed.validate_transition(&original).is_err());
+        changed = original.clone();
+        changed.tasks[0].title = "Different objective".into();
+        assert!(changed.validate_transition(&original).is_err());
+        changed = original.clone();
+        changed.tasks.push(task("repair", &[]));
+        assert!(changed.validate().is_ok());
+        assert!(changed.validate_transition(&original).is_ok());
     }
 
     #[test]
