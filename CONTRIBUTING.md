@@ -36,3 +36,6 @@ cargo clippy --manifest-path src-tauri/Cargo.toml
 
 ## Reporting Issues
 Use the [Bug Report](.github/ISSUE_TEMPLATE/bug_report.md) or [Feature Request](.github/ISSUE_TEMPLATE/feature_request.md) templates and include your OS, GPU/backend (or API provider), and reproduction steps.
+
+## License & Contributions
+Loors is licensed under the [FSL-1.1-MIT](LICENSE). By submitting a pull request or contribution, you agree that your contribution will be licensed under the project's license and that the project maintainer may distribute and relicense it (including under commercial licenses).

@@ -7,7 +7,7 @@
   </p>
 
   <p>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License" /></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-FSL--1.1--MIT-blue.svg" alt="FSL-1.1-MIT License" /></a>
     <img src="https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri&logoColor=white" alt="Tauri v2" />
     <img src="https://img.shields.io/badge/Rust-Backend-orange?logo=rust&logoColor=white" alt="Rust" />
     <img src="https://img.shields.io/badge/React-TypeScript-61DAFB?logo=react&logoColor=black" alt="React + TypeScript" />
@@ -212,4 +212,6 @@ loors/
 
 ## License
 
-Loors is open-source software licensed under the [MIT License](LICENSE).
+Loors is licensed under the [Functional Source License, Version 1.1, MIT Future License (FSL-1.1-MIT)](LICENSE).
+
+You are free to use, modify, and self-host Loors for personal, internal business, educational, and non-competing purposes. Offering Loors (or a derivative) as a competing commercial product or hosted service requires a commercial license. Each version automatically converts to the MIT License two years after its release.
