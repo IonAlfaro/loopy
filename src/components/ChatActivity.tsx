@@ -624,11 +624,16 @@ export function MessageQueueTray({
 
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
   const [copied, setCopied] = useState(false);
+  const [wrap, setWrap] = useState(false);
   const { locale } = useI18n();
   return (
     <div className="md-code-wrap">
       <div className="md-code-head">
         <span className="md-code-lang">{lang || "code"}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <button type="button" className="md-code-copy" aria-pressed={wrap} onClick={() => setWrap((v) => !v)}>
+          {locale === "es" ? "Ajustar líneas" : "Wrap lines"}
+        </button>
         <button
           type="button"
           className="md-code-copy"
@@ -643,8 +648,9 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
           {copied ? <Check size={11} /> : <Copy size={11} />}
           <span>{copied ? (locale === "es" ? "Copiado" : "Copied") : (locale === "es" ? "Copiar" : "Copy")}</span>
         </button>
+        </div>
       </div>
-      <pre className="md-code-pre">
+      <pre className="md-code-pre" style={wrap ? { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } : undefined}>
         <code>{code}</code>
       </pre>
     </div>
@@ -837,7 +843,7 @@ export const MarkdownContent = memo(function MarkdownContent({ text }: { text: s
       blocks.push(
         <ul key={`b-${keyIdx++}`} className="md-list">
           {items.map((it, idx) => (
-            <li key={idx}>{renderInlineMarkdown(it)}</li>
+            <li key={idx}>{/^\[[ xX]\]\s/.test(it) ? <><input type="checkbox" checked={it[1].toLowerCase() === "x"} disabled aria-label={it.slice(4)} /> {renderInlineMarkdown(it.slice(4))}</> : renderInlineMarkdown(it)}</li>
           ))}
         </ul>
       );
