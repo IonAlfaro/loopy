@@ -1,3 +1,4 @@
+import { AgentComposerInput } from "./AgentComposerInput";
 import { AgentHistory } from "./AgentHistory";
 import { getAttachmentBadge } from "./AgentUserMessage";
 import { AgentDiff } from "./AgentDiff";
@@ -2386,29 +2387,7 @@ export function AgentWorkspaceView() {
                 </div>
               )}
 
-              <textarea
-                rows={2}
-                aria-label={t("agent.composerPlaceholder")}
-                placeholder={
-                  isCurrentRunning
-                    ? t("agent.composerQueuePlaceholder")
-                    : t("agent.composerPlaceholder")
-                }
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onPaste={(e) => {
-                  if (e.clipboardData?.files && e.clipboardData.files.length > 0) {
-                    e.preventDefault();
-                    void stageExternalFiles(e.clipboardData.files);
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    void sendTurn(input);
-                  }
-                }}
-              />
+              <AgentComposerInput value={input} placeholder={isCurrentRunning ? t("agent.composerQueuePlaceholder") : t("agent.composerPlaceholder")} label={t("agent.composerPlaceholder")} onChange={setInput} onFiles={(files) => void stageExternalFiles(files)} onSend={() => void sendTurn(input)} />
 
               <div className="composer-bar">
                 <div className="composer-left">
