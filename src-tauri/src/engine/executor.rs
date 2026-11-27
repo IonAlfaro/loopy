@@ -2680,6 +2680,160 @@ async fn run_node(
             NodeStepOutcome::Continue("merged".to_string())
         }
 
+        "swarm" => {
+            let iter = ctx.iteration;
+            let node_ws = effective_workspace(graph, node_map, node, ctx);
+            let connected_model = find_connected_model_node(graph, node_map, &node.id);
+            let default_model_path = connected_model
+                .map(|m| config_str(m, "modelPath", ""))
+                .unwrap_or_default();
+
+            let raw_objective = config_str(node, "objectiveTemplate", "{{current_prompt}}");
+            let rendered_objective = ctx.render_template(&raw_objective);
+            let raw_coord_prompt = config_str(
+                node,
+                "coordinatorPrompt",
+                "Eres el coordinador del enjambre. Descompón el objetivo, asigna tareas claras con @worker, revisa sus entregas y llama a swarm_finish con la síntesis final.",
+            );
+            let rendered_coord_prompt = ctx.render_template(&raw_coord_prompt);
+
+            let swarm_cfg = crate::engine::swarm::parse_swarm_config(
+                &node.data.config,
+                rendered_objective,
+                rendered_coord_prompt,
+            );
+
+            if default_model_path.trim().is_empty()
+                && swarm_cfg
+                    .workers
+                    .iter()
+                    .all(|w| w.model_path.trim().is_empty())
+            {
+                let msg = "El nodo Swarm necesita un nodo 'local_model' conectado al puerto 'model_ref' (o un modelo configurado en sus workers).".to_string();
+                log(iter, LogStreamKind::Stderr, msg.clone());
+                ctx.last_swarm_output = msg;
+                if find_next_node(&graph.edges, &node.id, "error").is_some() {
+                    return NodeStepOutcome::Continue("error".to_string());
+                }
+                return NodeStepOutcome::Finish(RunOutcomeKind::Failed, ctx.last_swarm_output.clone());
+            }
+
+            let defaults = if let Some(m) = connected_model {
+                let raw_ctx = config_u64(m, "contextSize", 0) as u32;
+                let max_tok = config_u64(m, "maxTokens", 0) as u32;
+                crate::engine::swarm::SwarmModelDefaults {
+                    model_path: default_model_path.clone(),
+                    context_size: if raw_ctx > 0 { Some(raw_ctx) } else { None },
+                    mmproj_path: opt_config_str(m, "mmprojPath"),
+                    temperature: config_f32(m, "temperature", 0.35),
+                    top_p: Some(config_f32(m, "topP", 0.95)),
+                    max_tokens: if max_tok > 0 { Some(max_tok) } else { None },
+                    repeat_penalty: Some(1.05),
+                }
+            } else {
+                let fallback_model = swarm_cfg
+                    .workers
+                    .iter()
+                    .find(|w| !w.model_path.trim().is_empty())
+                    .map(|w| w.model_path.clone())
+                    .unwrap_or_default();
+                crate::engine::swarm::SwarmModelDefaults {
+                    model_path: fallback_model,
+                    context_size: None,
+                    mmproj_path: None,
+                    temperature: 0.35,
+                    top_p: Some(0.95),
+                    max_tokens: None,
+                    repeat_penalty: Some(1.05),
+                }
+            };
+
+            let mut extra_parts = Vec::new();
+            let skill_nodes =
+                find_connected_nodes_by_handle(graph, node_map, &node.id, "skill_ref");
+            for sn in skill_nodes {
+                let skill_path = config_str(sn, "skillPath", "");
+                let inline_body = config_str(sn, "inlineInstructions", "");
+                if !skill_path.trim().is_empty() && Path::new(&skill_path).exists() {
+                    if let Ok(sk) = load_skill_file(Path::new(&skill_path)) {
+                        extra_parts.push(format!("### Skill: {}\n{}", sk.name, sk.body));
+                    }
+                } else if !inline_body.trim().is_empty() {
+                    extra_parts.push(format!("### Skill: {}\n{}", sn.data.title, inline_body));
+                }
+            }
+            if !ctx.last_rag_context.trim().is_empty() {
+                extra_parts.push(format!("### Contexto RAG\n{}", ctx.last_rag_context));
+            }
+            if !ctx.last_memory.trim().is_empty() {
+                extra_parts.push(format!("### Memoria\n{}", ctx.last_memory));
+            }
+            let extra_context = extra_parts.join("\n\n");
+
+            log(
+                iter,
+                LogStreamKind::System,
+                format!(
+                    "Swarm iniciado: {} workers (maxRounds={}, maxConcurrency={}, worktrees={})...",
+                    swarm_cfg.workers.len(),
+                    swarm_cfg.max_rounds,
+                    swarm_cfg.max_concurrency,
+                    swarm_cfg.use_worktrees
+                ),
+            );
+
+            match crate::engine::swarm::run_swarm_node(
+                run_id,
+                &node.id,
+                &node.data.title,
+                iter,
+                &node_ws,
+                swarm_cfg,
+                defaults,
+                &extra_context,
+                backend.clone(),
+                llama.clone(),
+                cancel.clone(),
+                emit.clone(),
+            )
+            .await
+            {
+                Ok(res) => {
+                    ctx.last_swarm_output = res.output.clone();
+                    ctx.last_swarm_board = res.board_transcript;
+                    ctx.last_agent_output = res.output.clone();
+                    ctx.node_outputs.insert(node.id.clone(), res.output.clone());
+                    ctx.node_outputs.insert(node.data.title.clone(), res.output);
+                    log(
+                        iter,
+                        LogStreamKind::System,
+                        format!(
+                            "Swarm finalizado (converged={}). Resultado disponible en {{{{swarm_output}}}} y {{{{agent_output}}}}.",
+                            res.converged
+                        ),
+                    );
+                    if !res.converged && find_next_node(&graph.edges, &node.id, "error").is_some() {
+                        NodeStepOutcome::Continue("error".to_string())
+                    } else {
+                        NodeStepOutcome::Continue("exec".to_string())
+                    }
+                }
+                Err(err) if err == "__CANCELLED__" => NodeStepOutcome::Finish(
+                    RunOutcomeKind::Cancelled,
+                    "Ejecución detenida inmediatamente por el usuario.".to_string(),
+                ),
+                Err(err) => {
+                    log(iter, LogStreamKind::Stderr, format!("Swarm error: {err}"));
+                    ctx.last_swarm_output = err.clone();
+                    if find_next_node(&graph.edges, &node.id, "error").is_some() {
+                        NodeStepOutcome::Continue("error".to_string())
+                    } else {
+                        NodeStepOutcome::Finish(RunOutcomeKind::Failed, err)
+                    }
+                }
+            }
+        }
+
         "for_each" => {
             let iter = ctx.iteration;
             if !ctx.for_each_queues.contains_key(&node.id) {
@@ -3254,6 +3408,17 @@ fn write_event_to_log(
         }
         EngineEvent::HumanGateWaiting { node_title, iteration, message, .. } => {
             format!("[HUMAN_GATE #{iteration}] {node_title}: {message}\n")
+        }
+        EngineEvent::SwarmAgentStatus { agent_id, status, summary, .. } => {
+            format!("[SWARM_STATUS @{agent_id}] {status} — {summary}\n")
+        }
+        EngineEvent::SwarmBoardMessage { seq, from, mentions, content, .. } => {
+            let to = if mentions.is_empty() {
+                String::new()
+            } else {
+                format!(" -> {}", mentions.iter().map(|m| format!("@{m}")).collect::<Vec<_>>().join(" "))
+            };
+            format!("[SWARM_BOARD #{seq} @{from}{to}] {content}\n")
         }
         EngineEvent::RunFinished { outcome, total_iterations, summary, .. } => {
             format!("[FINISH] {:?} iters={total_iterations} — {summary}\n", outcome)

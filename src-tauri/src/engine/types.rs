@@ -103,6 +103,24 @@ pub enum EngineEvent {
         message: String,
         git_diff: String,
     },
+    SwarmAgentStatus {
+        run_id: String,
+        node_id: String,
+        agent_id: String,
+        agent_name: String,
+        role: String,
+        status: String,
+        summary: String,
+    },
+    SwarmBoardMessage {
+        run_id: String,
+        node_id: String,
+        seq: u64,
+        from: String,
+        mentions: Vec<String>,
+        content: String,
+        timestamp: String,
+    },
     RunFinished {
         run_id: String,
         outcome: RunOutcomeKind,
@@ -134,6 +152,8 @@ pub struct ExecutionContext {
     pub last_http_status: Option<u16>,
     pub last_custom_output: String,
     pub last_rag_context: String,
+    pub last_swarm_output: String,
+    pub last_swarm_board: String,
     pub node_outputs: HashMap<String, String>,
     pub loop_ledger: Vec<String>,
     pub loop_counts: HashMap<String, u32>,
@@ -161,6 +181,8 @@ impl ExecutionContext {
             .replace("{{http_response}}", &self.last_http_response)
             .replace("{{custom_output}}", &self.last_custom_output)
             .replace("{{rag_context}}", &self.last_rag_context)
+            .replace("{{swarm_output}}", &self.last_swarm_output)
+            .replace("{{swarm_board}}", &self.last_swarm_board)
             .replace("{{item}}", &self.current_item)
             .replace("{{item_index}}", &self.current_item_index.to_string())
             .replace("{{item_total}}", &self.current_item_total.to_string())

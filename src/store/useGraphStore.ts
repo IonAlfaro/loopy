@@ -23,6 +23,8 @@ import {
   type RunLogEntry,
   type RunStatus,
   type RuntimeBackendKind,
+  type SwarmAgentLiveStatus,
+  type SwarmBoardLiveMessage,
 } from "../types/graph";
 import { invoke } from "../lib/bridge";
 import { HARNESS_TEMPLATES } from "../templates/harnesses";
@@ -212,6 +214,8 @@ interface GraphStoreState {
   modelLoadProgress: ModelLoadProgressEvent | null;
   modelDownloads: Record<string, ModelDownloadItem>;
   downloadsDockOpen: boolean;
+  swarmAgents: Record<string, SwarmAgentLiveStatus>;
+  swarmMessages: SwarmBoardLiveMessage[];
   logs: RunLogEntry[];
   consoleOpen: boolean;
   pendingGate: HumanGatePrompt | null;
@@ -503,6 +507,8 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   modelLoadProgress: null,
   modelDownloads: {},
   downloadsDockOpen: false,
+  swarmAgents: {},
+  swarmMessages: [],
   logs: [],
   consoleOpen: false,
   pendingGate: null,
@@ -760,7 +766,10 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
           speed_bps: null,
           saved_path: null,
           stage: "starting",
-          message: `Iniciando descarga: ${filename}...`,
+          message:
+            get().locale === "es"
+              ? `Iniciando descarga: ${filename}...`
+              : `Starting download: ${filename}...`,
           updatedAt: Date.now(),
         },
       },
@@ -787,7 +796,10 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
               speed_bps: null,
               saved_path: savedPath,
               stage: "done",
-              message: `Descargado: ${filename}`,
+              message:
+                get().locale === "es"
+                  ? `Descargado: ${filename}`
+                  : `Downloaded: ${filename}`,
               updatedAt: Date.now(),
             },
           },
@@ -1040,7 +1052,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   setSelectedNodeId: (selectedNodeId) => set({ selectedNodeId }),
   setSelectedBackend: (selectedBackend) => set({ selectedBackend }),
   setConsoleOpen: (consoleOpen) => set({ consoleOpen }),
-  clearLogs: () => set({ logs: [], runSummary: null }),
+  clearLogs: () => set({ logs: [], runSummary: null, swarmAgents: {}, swarmMessages: [] }),
   clearPendingGate: () => set({ pendingGate: null }),
 
   newWorkflow: () => {
@@ -1240,12 +1252,53 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       return;
     }
 
+    if (event.type === "swarm_agent_status") {
+      const targetTabId = event.tabId || get().activeHarnessTabId;
+      if (targetTabId !== get().activeHarnessTabId) return;
+      const k = `${event.node_id}::${event.agent_id}`;
+      set((st) => ({
+        swarmAgents: {
+          ...st.swarmAgents,
+          [k]: {
+            nodeId: event.node_id,
+            agentId: event.agent_id,
+            agentName: event.agent_name,
+            role: event.role,
+            status: event.status,
+            summary: event.summary,
+          },
+        },
+      }));
+      return;
+    }
+
+    if (event.type === "swarm_board_message") {
+      const targetTabId = event.tabId || get().activeHarnessTabId;
+      if (targetTabId !== get().activeHarnessTabId) return;
+      set((st) => ({
+        swarmMessages: [
+          ...st.swarmMessages.slice(-300),
+          {
+            id: `${event.run_id}-${event.node_id}-${event.seq}`,
+            nodeId: event.node_id,
+            seq: event.seq,
+            from: event.from,
+            mentions: event.mentions,
+            content: event.content,
+            timestamp: event.timestamp,
+          },
+        ],
+      }));
+      return;
+    }
+
     const s = get();
     const targetTabId = event.tabId || s.activeHarnessTabId;
 
     if (targetTabId === s.activeHarnessTabId) {
       const updated = applyEventToTabState(snapshotActiveTab(s), event);
       set({
+        ...(event.type === "run_started" ? { swarmAgents: {}, swarmMessages: [] } : {}),
         runStatus: updated.runStatus,
         activeRunId: updated.activeRunId,
         currentIteration: updated.currentIteration,

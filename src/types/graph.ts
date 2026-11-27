@@ -21,6 +21,7 @@ export type LoorsNodeKind =
   | "llm_judge"
   | "http_request"
   | "parallel_fanout"
+  | "swarm"
   | "subgraph"
   | "custom"
   | "notify"
@@ -99,6 +100,26 @@ export type EngineEvent =
       git_diff: string;
     }
   | {
+      type: "swarm_agent_status";
+      run_id: string;
+      node_id: string;
+      agent_id: string;
+      agent_name: string;
+      role: string;
+      status: string;
+      summary: string;
+    }
+  | {
+      type: "swarm_board_message";
+      run_id: string;
+      node_id: string;
+      seq: number;
+      from: string;
+      mentions: string[];
+      content: string;
+      timestamp: string;
+    }
+  | {
       type: "run_finished";
       run_id: string;
       outcome: "completed" | "exhausted" | "failed" | "cancelled";
@@ -113,6 +134,36 @@ export interface HumanGatePrompt {
   iteration: number;
   message: string;
   gitDiff: string;
+}
+
+export interface SwarmWorkerSpec {
+  id: string;
+  name: string;
+  role: string;
+  systemPrompt: string;
+  modelPath: string;
+  tools: string[];
+  maxSteps: number;
+  useWorktree?: boolean;
+}
+
+export interface SwarmAgentLiveStatus {
+  nodeId: string;
+  agentId: string;
+  agentName: string;
+  role: string;
+  status: string;
+  summary: string;
+}
+
+export interface SwarmBoardLiveMessage {
+  id: string;
+  nodeId: string;
+  seq: number;
+  from: string;
+  mentions: string[];
+  content: string;
+  timestamp: string;
 }
 
 export interface LocalModelFile {
@@ -1092,6 +1143,57 @@ export const NODE_BLUEPRINTS: Record<LoorsNodeKind, NodeBlueprint> = {
     ],
     defaultConfig: {
       useWorktrees: true,
+    },
+  },
+  swarm: {
+    kind: "swarm",
+    label: "Agent Swarm",
+    category: "IA Local",
+    accent: "#ec4899",
+    description:
+      "Enjambre sincronizado de agentes especialistas con pizarra compartida (@menciones), concurrencia segura y worktrees opcionales.",
+    inputs: [
+      { id: "exec", label: "exec", kind: "exec" },
+      { id: "model_ref", label: "model", kind: "model" },
+      { id: "skill_ref", label: "skill", kind: "skill" },
+      { id: "mcp_ref", label: "mcp", kind: "mcp" },
+      { id: "knowledge_ref", label: "rag", kind: "data" },
+      { id: "workspace_ref", label: "workspace", kind: "data" },
+      { id: "feedback", label: "feedback", kind: "retry" },
+    ],
+    outputs: [
+      { id: "exec", label: "exec", kind: "exec" },
+      { id: "error", label: "error", kind: "false" },
+    ],
+    defaultConfig: {
+      objectiveTemplate: "{{current_prompt}}",
+      coordinatorPrompt:
+        "Decompose the objective into concrete tasks, assign them to workers using swarm_post with @mentions, review their deliverables, and call swarm_finish with a complete synthesized report.",
+      maxRounds: 8,
+      maxConcurrency: 3,
+      useWorktrees: false,
+      workers: [
+        {
+          id: "builder",
+          name: "Builder",
+          role: "Implementation",
+          systemPrompt:
+            "Implement assigned tasks cleanly, verify with tools, and report concrete results to @coordinator.",
+          modelPath: "",
+          tools: ["list_files", "grep_search", "read_file", "edit_file", "write_file", "run_cmd"],
+          maxSteps: 8,
+        },
+        {
+          id: "reviewer",
+          name: "Reviewer",
+          role: "QA & Verification",
+          systemPrompt:
+            "Audit deliverables, run tests or checks, and report pass/fail with concrete evidence to @coordinator.",
+          modelPath: "",
+          tools: ["read_file", "grep_search", "run_cmd", "git_diff"],
+          maxSteps: 6,
+        },
+      ],
     },
   },
   subgraph: {

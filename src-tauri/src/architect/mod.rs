@@ -38,7 +38,7 @@ name: architect-loors
 description: "Guía completa de arquitectura de arneses Loors: nodos, puertos, variables, herramientas, patrones cíclicos y reglas de generación .loors.json."
 ---
 
-# Arquitecto de Arneses Loors (v5)
+# Arquitecto de Arneses Loors (v6)
 
 Eres el **Arquitecto de Arneses de Loors**, una aplicación visual de grafos cíclicos para ejecutar agentes autónomos locales con `llama.cpp`. Tu trabajo es ayudar al usuario a diseñar, auditar, depurar y mejorar arneses (`.loors.json`) de forma ágil, conversacional y **quirúrgica**.
 
@@ -84,6 +84,7 @@ Usa **exactamente** estos `kind` y nombres de puertos (`sourceHandle` / `targetH
 - `context_compactor`: in `[exec]` out `[exec]` | config: `{ maxChars, template }`
 - `human_gate`: in `[exec]` out `[approved, rejected]` | config: `{ message }`
 - `parallel_fanout`: in `[exec]` out `[branch_a, branch_b, merged]` | config: `{ useWorktrees }`
+- `swarm`: in `[exec, model_ref, skill_ref, mcp_ref, knowledge_ref, workspace_ref, feedback]` out `[exec, error]` | config: `{ objectiveTemplate ("{{current_prompt}}"), coordinatorPrompt, maxRounds (8), maxConcurrency (3), useWorktrees (false), workers: [{ id, name, role, systemPrompt, modelPath (opcional), tools, maxSteps }] }` — Enjambre sincronizado de agentes especialistas con pizarra compartida (`@menciones`) dentro del arnés. Publica `{{swarm_output}}` y `{{swarm_board}}`.
 - `subgraph`: in `[exec]` out `[ok, error]` | config: `{ workflowPath, inputTemplate }`
 - `custom`: in `[exec, model_ref]` out `[ok, error]` | config: `{ customNodeId, runner ("shell"|"prompt"|"http"), commandTemplate, promptTemplate, httpMethod, httpUrl, httpHeaders, httpBody, branchOnExit }`
 - `output`: in `[exec]` | config: `{ label }`
@@ -102,6 +103,7 @@ Soportadas en `agent.systemPrompt`, `shell.command`, `memory_file.template`, `lo
 - `{{judge_reason}}`: razón devuelta por `llm_judge`
 - `{{http_response}}`, `{{http_status}}`: respuesta del último `http_request`
 - `{{custom_output}}`: salida del último nodo `custom`
+- `{{swarm_output}}`, `{{swarm_board}}`: síntesis final y transcripción de la pizarra del último nodo `swarm`
 - `{{iteration}}`: número de iteración actual
 
 ## 4. Sintaxis exacta de `condition.expression`
@@ -321,7 +323,7 @@ pub fn ensure_and_load_architect_skill(workspace: &str) -> (String, ArchitectSki
     let needs_seed = if !global_skill.is_file() {
         true
     } else if let Ok(existing) = fs::read_to_string(&global_skill) {
-        existing.contains("# Arquitecto de Arneses Loors") && !existing.contains("(v5)")
+        existing.contains("# Arquitecto de Arneses Loors") && !existing.contains("(v6)")
     } else {
         false
     };
@@ -746,7 +748,7 @@ fn validate_architect_workflow_json(reply: &str, current_graph_json: &str) -> Op
                 .and_then(|d| d.get("kind"))
                 .and_then(|k| k.as_str())
                 .unwrap_or("");
-            if kind == "agent" || kind == "llm_judge" {
+            if kind == "agent" || kind == "llm_judge" || kind == "swarm" {
                 let has_model = edges.iter().any(|e| {
                     e.get("target").and_then(|v| v.as_str()) == Some(id)
                         && e.get("targetHandle").and_then(|v| v.as_str()) == Some("model_ref")

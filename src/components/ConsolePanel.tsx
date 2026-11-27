@@ -30,11 +30,14 @@ export function ConsolePanel() {
   const runSummary = useGraphStore((s) => s.runSummary);
   const activeActivity = useGraphStore((s) => s.activeActivity);
   const logs = useGraphStore((s) => s.logs);
+  const swarmAgents = useGraphStore((s) => s.swarmAgents);
+  const swarmMessages = useGraphStore((s) => s.swarmMessages);
   const consoleOpen = useGraphStore((s) => s.consoleOpen);
   const setConsoleOpen = useGraphStore((s) => s.setConsoleOpen);
   const clearLogs = useGraphStore((s) => s.clearLogs);
 
-  const [tab, setTab] = useState<"logs" | "diff" | "reports">("logs");
+  const [tab, setTab] = useState<"logs" | "diff" | "reports" | "swarm">("logs");
+  const [swarmAgentFilter, setSwarmAgentFilter] = useState<string>("all");
   const [iterFilter, setIterFilter] = useState<number | "all">("all");
   const [autoScroll, setAutoScroll] = useState(true);
   const [panelHeight, setPanelHeight] = useState(230);
@@ -246,6 +249,21 @@ export function ConsolePanel() {
                 <span className="console-tab-count">{reportFiles.length}</span>
               )}
             </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "swarm"}
+              className={`console-tab ${tab === "swarm" ? "active" : ""}`}
+              onClick={() => {
+                setTab("swarm");
+                setConsoleOpen(true);
+              }}
+            >
+              <span>Swarm</span>
+              {swarmMessages.length > 0 && (
+                <span className="console-tab-count">{swarmMessages.length}</span>
+              )}
+            </button>
           </div>
 
           <span className="console-sep" aria-hidden="true" />
@@ -411,6 +429,87 @@ export function ConsolePanel() {
                 )}
               </div>
             )
+          ) : tab === "swarm" ? (
+            (() => {
+              const agentsList = Object.values(swarmAgents);
+              const filteredMsgs =
+                swarmAgentFilter === "all"
+                  ? swarmMessages
+                  : swarmMessages.filter(
+                      (m) =>
+                        m.from === swarmAgentFilter ||
+                        m.mentions.includes(swarmAgentFilter)
+                    );
+              if (agentsList.length === 0 && swarmMessages.length === 0) {
+                return (
+                  <div className="console-empty">
+                    {L(
+                      "Run a harness with an Agent Swarm node to watch the live roster and @mention message board here.",
+                      "Ejecuta un arnés con un nodo Agent Swarm para ver aquí el equipo en vivo y la pizarra de mensajes (@menciones)."
+                    )}
+                  </div>
+                );
+              }
+              return (
+                <div className="swarm-console-wrap">
+                  {agentsList.length > 0 && (
+                    <div className="swarm-console-roster">
+                      <button
+                        type="button"
+                        className={`swarm-agent-pill ${swarmAgentFilter === "all" ? "is-selected" : ""}`}
+                        onClick={() => setSwarmAgentFilter("all")}
+                      >
+                        <span>{L("All", "Todos")} ({swarmMessages.length})</span>
+                      </button>
+                      {agentsList.map((ag) => (
+                        <button
+                          key={`${ag.nodeId}-${ag.agentId}`}
+                          type="button"
+                          className={`swarm-agent-pill is-${ag.status} ${
+                            swarmAgentFilter === ag.agentId ? "is-selected" : ""
+                          }`}
+                          title={`${ag.agentName} (${ag.role}): ${ag.summary}`}
+                          onClick={() =>
+                            setSwarmAgentFilter((prev) =>
+                              prev === ag.agentId ? "all" : ag.agentId
+                            )
+                          }
+                        >
+                          <span className="swarm-roster-dot" />
+                          <strong>@{ag.agentId}</strong>
+                          <span className="swarm-agent-pill-sub truncate-text">
+                            {ag.summary || ag.status}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="swarm-board-feed">
+                    {filteredMsgs.length === 0 ? (
+                      <div className="console-empty">
+                        {L("No board messages yet.", "Todavía no hay mensajes en la pizarra.")}
+                      </div>
+                    ) : (
+                      filteredMsgs.map((msg) => (
+                        <div key={msg.id} className="swarm-board-msg">
+                          <div className="swarm-board-msg-head">
+                            <span className="swarm-board-seq">#{msg.seq}</span>
+                            <span className="swarm-board-from">@{msg.from}</span>
+                            {msg.mentions.length > 0 && (
+                              <span className="swarm-board-mentions">
+                                → {msg.mentions.map((m) => `@${m}`).join(" ")}
+                              </span>
+                            )}
+                            <span className="swarm-board-time">{msg.timestamp}</span>
+                          </div>
+                          <div className="swarm-board-content">{msg.content}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })()
           ) : filteredLogs.length === 0 ? (
             <div className="console-empty">
               {locale === "es" ? (

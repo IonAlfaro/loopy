@@ -365,6 +365,7 @@ const NODE_DESCRIPTIONS_EN: Record<LoorsNodeKind, string> = {
   context_compactor: "Compresses long conversation history and logs to stay within context budget.",
   human_gate: "Pauses the harness so you can review the Git diff and approve or send feedback.",
   parallel_fanout: "Spawns isolated Git worktrees to run parallel branches concurrently.",
+  swarm: "Synchronized multi-agent team with shared @mention message board, safe GPU/cloud concurrency, and optional Git worktrees.",
   subgraph: "Executes another saved .loors.json harness as a reusable step.",
   notify: "Sends notifications or reports to Telegram, Slack, Discord, or any webhook.",
   custom: "User-defined reusable Shell, HTTP, or Prompt node.",
@@ -451,6 +452,10 @@ const NODE_GUIDES: Record<LoorsNodeKind, { en: string; es: string }> = {
   parallel_fanout: {
     en: "Define parallel branch tasks; Loors creates isolated Git worktrees and merges results on completion.",
     es: "Define tareas paralelas; Loors crea worktrees Git aislados para cada rama y recoge los resultados al terminar.",
+  },
+  swarm: {
+    en: "Connect a model to 'model', configure your specialist workers (or pick a preset), and watch them collaborate via @mentions in the Console Swarm tab.",
+    es: "Conecta un modelo al puerto 'model', configura tus workers especialistas (o elige un preset) y sigue su colaboración con @menciones en la pestaña Swarm.",
   },
   subgraph: {
     en: "Pick another saved .loors.json harness from your library to run it as a modular step.",

@@ -1242,8 +1242,12 @@ function LoorsStudioInner() {
                   }).catch(() => {});
                   setBanner(
                     opts.summary
-                      ? `Cambios aplicados: ${opts.summary}`
-                      : `Cambios quirúrgicos aplicados a ${wf.name}`
+                      ? locale === "es"
+                        ? `Cambios aplicados: ${opts.summary}`
+                        : `Changes applied: ${opts.summary}`
+                      : locale === "es"
+                        ? `Cambios quirúrgicos aplicados a ${wf.name}`
+                        : `Surgical changes applied to ${wf.name}`
                   );
                 } else {
                   const targetLib = wf.name || "arnes";
@@ -1257,7 +1261,11 @@ function LoorsStudioInner() {
                     autoLayout();
                     setTimeout(() => fitView({ padding: 0.16, duration: 250 }), 30);
                   }, 30);
-                  setBanner(`Arnés aplicado y guardado: ${wf.name}`);
+                  setBanner(
+                    locale === "es"
+                      ? `Arnés aplicado y guardado: ${wf.name}`
+                      : `Harness applied and saved: ${wf.name}`
+                  );
                 }
               }}
             />

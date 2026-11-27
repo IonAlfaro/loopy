@@ -1772,6 +1772,326 @@ export function Inspector() {
           </>
         )}
 
+        {node.data.kind === "swarm" && (() => {
+          const workers = Array.isArray(cfg.workers)
+            ? (cfg.workers as import("../types/graph").SwarmWorkerSpec[])
+            : [];
+          const setWorkers = (next: import("../types/graph").SwarmWorkerSpec[]) =>
+            updateNodeConfig(node.id, { workers: next });
+
+          const applyPreset = (preset: "engineering" | "research" | "security") => {
+            if (preset === "engineering") {
+              updateNodeConfig(node.id, {
+                useWorktrees: true,
+                maxRounds: 8,
+                coordinatorPrompt:
+                  "Decompose the engineering objective, assign backend/frontend/qa tasks via swarm_post with @mentions, verify test results, and call swarm_finish with a concise delivery summary.",
+                workers: [
+                  {
+                    id: "backend",
+                    name: "Backend",
+                    role: "API & Logic",
+                    systemPrompt: "Implement backend logic and unit tests. Post concrete results to @coordinator and @qa.",
+                    modelPath: "",
+                    tools: ["list_files", "grep_search", "read_file", "edit_file", "write_file", "run_cmd"],
+                    maxSteps: 10,
+                  },
+                  {
+                    id: "frontend",
+                    name: "Frontend",
+                    role: "UI & UX",
+                    systemPrompt: "Implement UI components and styles cleanly. Coordinate contracts with @backend and report to @coordinator.",
+                    modelPath: "",
+                    tools: ["list_files", "grep_search", "read_file", "edit_file", "write_file", "run_cmd"],
+                    maxSteps: 10,
+                  },
+                  {
+                    id: "qa",
+                    name: "QA",
+                    role: "Tests & Audit",
+                    systemPrompt: "Run builds/tests, inspect git_diff, and report pass or actionable failures to @coordinator.",
+                    modelPath: "",
+                    tools: ["read_file", "grep_search", "run_cmd", "git_diff"],
+                    maxSteps: 8,
+                  },
+                ],
+              });
+            } else if (preset === "research") {
+              updateNodeConfig(node.id, {
+                useWorktrees: false,
+                maxRounds: 6,
+                coordinatorPrompt:
+                  "Split the research topic into angles, dispatch @researcher-a and @researcher-b in parallel, have @factcheck verify claims, and call swarm_finish with the final report.",
+                workers: [
+                  {
+                    id: "researcher-a",
+                    name: "Researcher A",
+                    role: "Primary Sources",
+                    systemPrompt: "Gather primary sources, official docs, and data with web_search/fetch_url. Post findings to @coordinator.",
+                    modelPath: "",
+                    tools: ["web_search", "fetch_url", "read_file"],
+                    maxSteps: 8,
+                  },
+                  {
+                    id: "researcher-b",
+                    name: "Researcher B",
+                    role: "Counterpoints & Context",
+                    systemPrompt: "Find independent perspectives, benchmarks, and edge cases. Post findings to @coordinator.",
+                    modelPath: "",
+                    tools: ["web_search", "fetch_url", "read_file"],
+                    maxSteps: 8,
+                  },
+                  {
+                    id: "factcheck",
+                    name: "Fact-Checker",
+                    role: "Verification",
+                    systemPrompt: "Cross-check dates, numbers, and URLs from peers. Flag any contradiction to @coordinator.",
+                    modelPath: "",
+                    tools: ["web_search", "fetch_url"],
+                    maxSteps: 6,
+                  },
+                ],
+              });
+            } else {
+              updateNodeConfig(node.id, {
+                useWorktrees: false,
+                maxRounds: 8,
+                coordinatorPrompt:
+                  "Coordinate a Red/Blue security audit: @auditor finds concrete vulnerabilities, @verifier tries to reproduce or refute each finding, then call swarm_finish with only verified issues.",
+                workers: [
+                  {
+                    id: "auditor",
+                    name: "Red Team Auditor",
+                    role: "Vulnerability Discovery",
+                    systemPrompt: "Audit code for real security flaws with exact file:line evidence and post candidates to @verifier and @coordinator.",
+                    modelPath: "",
+                    tools: ["list_files", "grep_search", "read_file", "code_symbols"],
+                    maxSteps: 10,
+                  },
+                  {
+                    id: "verifier",
+                    name: "Blue Team Verifier",
+                    role: "Refutation & Remediation",
+                    systemPrompt: "Challenge every finding, check existing mitigations, and propose minimal fixes to @coordinator.",
+                    modelPath: "",
+                    tools: ["read_file", "grep_search", "run_cmd"],
+                    maxSteps: 8,
+                  },
+                ],
+              });
+            }
+          };
+
+          return (
+            <>
+              <div className="field">
+                <span>{L("Team Presets", "Presets de equipo")}</span>
+                <div className="swarm-presets-row">
+                  <button type="button" className="btn-secondary" onClick={() => applyPreset("engineering")}>
+                    {L("Engineering (3)", "Ingeniería (3)")}
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => applyPreset("research")}>
+                    {L("Research (3)", "Investigación (3)")}
+                  </button>
+                  <button type="button" className="btn-secondary" onClick={() => applyPreset("security")}>
+                    {L("Security (2)", "Seguridad (2)")}
+                  </button>
+                </div>
+              </div>
+
+              <label className="field">
+                <span>{L("Objective Template", "Objetivo del enjambre")}</span>
+                <textarea
+                  rows={2}
+                  value={String(cfg.objectiveTemplate ?? "{{current_prompt}}")}
+                  onChange={(e) => updateNodeConfig(node.id, { objectiveTemplate: e.target.value })}
+                />
+              </label>
+
+              <label className="field">
+                <span>{L("Coordinator Instructions", "Instrucciones del Coordinador")}</span>
+                <textarea
+                  rows={3}
+                  value={String(cfg.coordinatorPrompt ?? "")}
+                  onChange={(e) => updateNodeConfig(node.id, { coordinatorPrompt: e.target.value })}
+                />
+              </label>
+
+              <div className="swarm-grid-2">
+                <label className="field">
+                  <span>{L("Max Rounds", "Máx. rondas")}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={Number(cfg.maxRounds ?? 8)}
+                    onChange={(e) =>
+                      updateNodeConfig(node.id, { maxRounds: Math.max(1, Number(e.target.value) || 8) })
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>{L("Max Parallel", "Paralelo máx.")}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={8}
+                    value={Number(cfg.maxConcurrency ?? 3)}
+                    onChange={(e) =>
+                      updateNodeConfig(node.id, { maxConcurrency: Math.max(1, Number(e.target.value) || 3) })
+                    }
+                  />
+                </label>
+              </div>
+
+              <label className="field">
+                <span>{L("Git Worktree Isolation", "Aislamiento con Git Worktrees")}</span>
+                <select
+                  value={cfg.useWorktrees ? "true" : "false"}
+                  onChange={(e) => updateNodeConfig(node.id, { useWorktrees: e.target.value === "true" })}
+                >
+                  <option value="false">
+                    {L("No — shared workspace (research / sequential edits)", "No — workspace compartido (investigación / edición ligera)")}
+                  </option>
+                  <option value="true">
+                    {L("Yes — isolated worktree per worker + auto-patch", "Sí — worktree aislado por worker + parche automático")}
+                  </option>
+                </select>
+              </label>
+
+              <div className="field">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>
+                    {L(`Workers (${workers.length})`, `Workers (${workers.length})`)}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    style={{ padding: "3px 8px", fontSize: 11 }}
+                    onClick={() =>
+                      setWorkers([
+                        ...workers,
+                        {
+                          id: `worker-${workers.length + 1}`,
+                          name: `Worker ${workers.length + 1}`,
+                          role: "Specialist",
+                          systemPrompt: "Execute assigned tasks and report back to @coordinator.",
+                          modelPath: "",
+                          tools: ["read_file", "grep_search"],
+                          maxSteps: 8,
+                        },
+                      ])
+                    }
+                  >
+                    + {L("Add worker", "Añadir worker")}
+                  </button>
+                </div>
+
+                <div className="swarm-workers-editor">
+                  {workers.map((w, idx) => (
+                    <div key={`${w.id}-${idx}`} className="swarm-worker-card">
+                      <div className="swarm-worker-card-head">
+                        <input
+                          type="text"
+                          value={w.id}
+                          placeholder="id (e.g. backend)"
+                          style={{ width: 92, fontFamily: "monospace", fontSize: 11 }}
+                          onChange={(e) =>
+                            setWorkers(
+                              workers.map((item, i) =>
+                                i === idx ? { ...item, id: e.target.value } : item
+                              )
+                            )
+                          }
+                        />
+                        <input
+                          type="text"
+                          value={w.role}
+                          placeholder={L("Role", "Rol")}
+                          style={{ flex: 1, fontSize: 11 }}
+                          onChange={(e) =>
+                            setWorkers(
+                              workers.map((item, i) =>
+                                i === idx
+                                  ? { ...item, role: e.target.value, name: e.target.value || item.id }
+                                  : item
+                              )
+                            )
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="icon-btn danger"
+                          title={L("Remove worker", "Quitar worker")}
+                          onClick={() => setWorkers(workers.filter((_, i) => i !== idx))}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                      <textarea
+                        rows={2}
+                        value={w.systemPrompt}
+                        placeholder={L("Worker instructions...", "Instrucciones del worker...")}
+                        onChange={(e) =>
+                          setWorkers(
+                            workers.map((item, i) =>
+                              i === idx ? { ...item, systemPrompt: e.target.value } : item
+                            )
+                          )
+                        }
+                      />
+                      <input
+                        type="text"
+                        value={(w.tools ?? []).join(", ")}
+                        placeholder="tools: read_file, grep_search, run_cmd..."
+                        style={{ fontSize: 11, fontFamily: "monospace" }}
+                        onChange={(e) =>
+                          setWorkers(
+                            workers.map((item, i) =>
+                              i === idx
+                                ? {
+                                    ...item,
+                                    tools: e.target.value
+                                      .split(",")
+                                      .map((s) => s.trim())
+                                      .filter(Boolean),
+                                  }
+                                : item
+                            )
+                          )
+                        }
+                      />
+                      <input
+                        type="text"
+                        value={w.modelPath ?? ""}
+                        placeholder={L(
+                          "Model override (empty = inherit model_ref, or cloud::provider::model)",
+                          "Modelo opcional (vacío = hereda model_ref, o cloud::provider::model)"
+                        )}
+                        style={{ fontSize: 10.5, fontFamily: "monospace" }}
+                        onChange={(e) =>
+                          setWorkers(
+                            workers.map((item, i) =>
+                              i === idx ? { ...item, modelPath: e.target.value } : item
+                            )
+                          )
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="hw-note">
+                {L(
+                  "Connect a local_model or cloud model to 'model'. Outputs are published to {{swarm_output}}, {{swarm_board}}, and {{agent_output}}.",
+                  "Conecta un modelo al puerto 'model'. El resultado se publica en {{swarm_output}}, {{swarm_board}} y {{agent_output}}."
+                )}
+              </div>
+            </>
+          );
+        })()}
+
         {node.data.kind === "parallel_fanout" && (
           <>
             <label className="field">

@@ -14,6 +14,165 @@ export interface HarnessTemplate {
 
 export const HARNESS_TEMPLATES: HarnessTemplate[] = [
   {
+    id: "swarm-engineering-team",
+    name: "swarm-engineering-team",
+    label: "Swarm Engineering Team (Coordinator + Backend + Frontend + QA)",
+    nodes: [
+      {
+        id: "sw-in",
+        type: "loorsNode",
+        position: { x: 40, y: 180 },
+        data: {
+          kind: "task_input",
+          title: "Task Input",
+          status: "idle",
+          config: {
+            ...NODE_BLUEPRINTS.task_input.defaultConfig,
+            workspace: ".",
+            prompt:
+              "Describe the feature or refactor you want the Swarm team to plan, implement, and verify collaboratively.",
+          },
+        },
+      },
+      {
+        id: "sw-model",
+        type: "loorsNode",
+        position: { x: 340, y: 420 },
+        data: {
+          kind: "local_model",
+          title: "Local / Cloud Model",
+          status: "idle",
+          config: {
+            ...NODE_BLUEPRINTS.local_model.defaultConfig,
+          },
+        },
+      },
+      {
+        id: "sw-team",
+        type: "loorsNode",
+        position: { x: 360, y: 140 },
+        data: {
+          kind: "swarm",
+          title: "Engineering Swarm",
+          status: "idle",
+          config: {
+            ...NODE_BLUEPRINTS.swarm.defaultConfig,
+            useWorktrees: true,
+            maxRounds: 8,
+            maxConcurrency: 3,
+            coordinatorPrompt:
+              "Decompose the engineering objective, assign tasks to @backend, @frontend, and @qa via swarm_post with @mentions, verify tests pass, and call swarm_finish with a complete delivery summary.",
+            workers: [
+              {
+                id: "backend",
+                name: "Backend",
+                role: "API & Logic",
+                systemPrompt:
+                  "Implement backend logic and unit tests cleanly. Post concrete results to @coordinator and @qa.",
+                modelPath: "",
+                tools: ["list_files", "grep_search", "read_file", "edit_file", "write_file", "run_cmd"],
+                maxSteps: 10,
+              },
+              {
+                id: "frontend",
+                name: "Frontend",
+                role: "UI & UX",
+                systemPrompt:
+                  "Implement UI components and styles cleanly. Coordinate API contracts with @backend and report to @coordinator.",
+                modelPath: "",
+                tools: ["list_files", "grep_search", "read_file", "edit_file", "write_file", "run_cmd"],
+                maxSteps: 10,
+              },
+              {
+                id: "qa",
+                name: "QA",
+                role: "Tests & Audit",
+                systemPrompt:
+                  "Run builds/tests, inspect git_diff, and report pass or actionable failures to @coordinator.",
+                modelPath: "",
+                tools: ["read_file", "grep_search", "run_cmd", "git_diff"],
+                maxSteps: 8,
+              },
+            ],
+          },
+        },
+      },
+      {
+        id: "sw-judge",
+        type: "loorsNode",
+        position: { x: 700, y: 160 },
+        data: {
+          kind: "llm_judge",
+          title: "Delivery Judge",
+          status: "idle",
+          config: {
+            rubric:
+              "PASS only if the Swarm completed the objective with verified tests/evidence and no unresolved blockers. Otherwise FAIL with exact items to fix.",
+            inputTemplate: "## Swarm Summary\n{{swarm_output}}\n\n## Board Transcript\n{{swarm_board}}",
+          },
+        },
+      },
+      {
+        id: "sw-loop",
+        type: "loorsNode",
+        position: { x: 700, y: 400 },
+        data: {
+          kind: "loop_guard",
+          title: "Retry Guard (max 2)",
+          status: "idle",
+          config: {
+            maxIterations: 2,
+            feedbackTemplate:
+              "RETRY {{iteration}}: The Delivery Judge rejected the previous Swarm result: {{judge_reason}}. Fix only the reported gaps and verify.",
+          },
+        },
+      },
+      {
+        id: "sw-out",
+        type: "loorsNode",
+        position: { x: 1020, y: 160 },
+        data: {
+          kind: "output",
+          title: "Delivered",
+          status: "idle",
+          config: { label: "Swarm objective delivered" },
+        },
+      },
+    ],
+    edges: [
+      { id: "swe-1", source: "sw-in", sourceHandle: "exec", target: "sw-team", targetHandle: "exec" },
+      {
+        id: "swe-2",
+        source: "sw-model",
+        sourceHandle: "model_ref",
+        target: "sw-team",
+        targetHandle: "model_ref",
+        style: { stroke: "#a855f7", strokeDasharray: "5 4" },
+      },
+      {
+        id: "swe-3",
+        source: "sw-model",
+        sourceHandle: "model_ref",
+        target: "sw-judge",
+        targetHandle: "model_ref",
+        style: { stroke: "#a855f7", strokeDasharray: "5 4" },
+      },
+      { id: "swe-4", source: "sw-team", sourceHandle: "exec", target: "sw-judge", targetHandle: "exec" },
+      { id: "swe-5", source: "sw-judge", sourceHandle: "pass", target: "sw-out", targetHandle: "exec" },
+      { id: "swe-6", source: "sw-judge", sourceHandle: "fail", target: "sw-loop", targetHandle: "exec" },
+      {
+        id: "swe-7",
+        source: "sw-loop",
+        sourceHandle: "retry",
+        target: "sw-team",
+        targetHandle: "feedback",
+        animated: true,
+        style: { stroke: "#22c55e", strokeWidth: 2 },
+      },
+      { id: "swe-8", source: "sw-loop", sourceHandle: "exhausted", target: "sw-out", targetHandle: "exec" },
+    ],
+  },
+  {
     id: "autonomous-product-team",
     name: "autonomous-product-team",
     label: "Autonomous Product Team (Spec → Build → Test → QA)",

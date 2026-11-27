@@ -21,6 +21,7 @@ import {
   ShieldAlert,
   Sparkles,
   Terminal,
+  Users,
   Wrench,
 } from "lucide-react";
 import {
@@ -82,6 +83,8 @@ function NodeIcon({ kind }: { kind: LoorsNodeKind }) {
       return <ShieldAlert {...props} />;
     case "parallel_fanout":
       return <GitFork {...props} />;
+    case "swarm":
+      return <Users {...props} />;
     case "subgraph":
       return <Layers {...props} />;
     case "custom":
@@ -172,6 +175,14 @@ function summarizeConfig(node: LoorsFlowNode["data"], locale: "en" | "es"): stri
       return c.useWorktrees
         ? es ? "2 ramas · git worktrees aislados" : "2 branches · isolated git worktrees"
         : es ? "2 ramas en paralelo" : "2 parallel branches";
+    case "swarm": {
+      const workers = Array.isArray(c.workers) ? c.workers.length : 0;
+      const rounds = Number(c.maxRounds ?? 8);
+      const wt = Boolean(c.useWorktrees);
+      return es
+        ? `${workers} workers · máx ${rounds} rondas${wt ? " · worktrees" : ""}`
+        : `${workers} workers · max ${rounds} rounds${wt ? " · worktrees" : ""}`;
+    }
     case "subgraph":
       return String(c.workflowPath || (es ? "Sin .loors.json asignado" : "No .loors.json assigned")).slice(0, 56);
     case "custom":
@@ -206,7 +217,12 @@ function summarizeConfig(node: LoorsFlowNode["data"], locale: "en" | "es"): stri
 export function LoorsNode({ id, data, selected }: NodeProps<LoorsFlowNode>) {
   const edges = useGraphStore((s) => s.edges);
   const locale = useGraphStore((s) => s.locale);
+  const swarmAgents = useGraphStore((s) => s.swarmAgents);
   const bp = NODE_BLUEPRINTS[data.kind];
+  const nodeSwarmRoster =
+    data.kind === "swarm"
+      ? Object.values(swarmAgents).filter((a) => a.nodeId === id)
+      : [];
   const isResource = isResourceKind(data.kind);
   const accent =
     data.kind === "custom" && typeof data.config.accent === "string"
@@ -270,6 +286,21 @@ export function LoorsNode({ id, data, selected }: NodeProps<LoorsFlowNode>) {
       </div>
 
       <div className="loors-node-summary">{summarizeConfig(data, locale)}</div>
+
+      {nodeSwarmRoster.length > 0 && (
+        <div className="swarm-node-roster">
+          {nodeSwarmRoster.map((a) => (
+            <span
+              key={a.agentId}
+              className={`swarm-roster-chip is-${a.status}`}
+              title={`${a.agentName} (${a.role}): ${a.summary}`}
+            >
+              <span className="swarm-roster-dot" />
+              <span>@{a.agentId}</span>
+            </span>
+          ))}
+        </div>
+      )}
 
       {data.status === "running" && data.statusMessage && (
         <div className="loors-node-live">

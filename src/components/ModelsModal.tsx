@@ -449,7 +449,7 @@ export function ModelsModal({
     const short = modelPath.startsWith("cloud::")
       ? modelPath.split("::").slice(1).join("/")
       : (modelPath.split(/[\\/]/).pop() ?? modelPath);
-    onNotice(`Modelo activo: ${short}`);
+    onNotice(locale === "es" ? `Modelo activo: ${short}` : `Active model: ${short}`);
   };
 
   const updateProvider = (

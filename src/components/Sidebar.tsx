@@ -42,6 +42,7 @@ const NODE_SECTIONS: { id: string; titleKey: TranslationKey; kinds: LoorsNodeKin
       "skill",
       "mcp_server",
       "parallel_fanout",
+      "swarm",
       "subgraph",
     ],
   },
