@@ -1989,9 +1989,14 @@ export function AgentWorkspaceView() {
               )}
 
               {session.messages.map((msg, idx) => {
+                // Keep recent messages fully laid out for reliable streaming and autoscroll.
+                // Older rows retain their DOM and accessibility while skipping offscreen layout/paint.
+                const historyStyle: React.CSSProperties | undefined = idx < session.messages.length - 20
+                  ? { contentVisibility: "auto", containIntrinsicSize: "auto 160px" }
+                  : undefined;
                 if (msg.role === "user") {
                   return (
-                    <div key={msg.id} className="agent-user-row">
+                    <div key={msg.id} className="agent-user-row" style={historyStyle}>
                       <div className="agent-user-bubble">
                         {msg.attachments && msg.attachments.length > 0 && (
                           <div className="user-msg-attachments">
@@ -2039,7 +2044,7 @@ export function AgentWorkspaceView() {
                 const continuation = idx > 0 && session.messages[idx - 1].role === "assistant";
 
                 return (
-                  <div key={msg.id} className={`agent-assistant-row${continuation ? " agent-assistant-continuation" : ""}`}>
+                  <div key={msg.id} style={historyStyle} className={`agent-assistant-row${continuation ? " agent-assistant-continuation" : ""}`}>
                     <div className="agent-assistant-head">
                       <span className="agent-model-tag">
                         {!continuation && <Bot size={13} style={{ color: "#a855f7" }} />}
