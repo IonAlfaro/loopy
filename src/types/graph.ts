@@ -407,6 +407,7 @@ export type AgentChatEvent = { turn_id?: string | null } & (
   | {
       type: "harness_progress";
       session_id: string;
+      task_title?: string | null;
       phase: string;
       inferences: number;
       inference_limit: number;
