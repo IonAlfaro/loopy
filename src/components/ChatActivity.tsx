@@ -1,4 +1,6 @@
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
+import "highlight.js/styles/github-dark.css";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -627,7 +629,7 @@ export function MessageQueueTray({
 }
 
 
-function CodeBlock({ lang, code }: { lang: string; code: string }) {
+function CodeBlock({ lang, code, highlighted }: { lang: string; code: string; highlighted?: ReactNode }) {
   const [copied, setCopied] = useState(false);
   const [wrap, setWrap] = useState(false);
   const { locale } = useI18n();
@@ -656,25 +658,31 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
         </div>
       </div>
       <pre className="md-code-pre" style={wrap ? { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } : undefined}>
-        <code>{code}</code>
+        <code>{highlighted ?? code}</code>
       </pre>
     </div>
   );
 }
 
+const markdownComponents: Components = {
+  pre: ({ children }) => <>{children}</>,
+  code: ({ className, children, node }) => {
+    const match = /language-([^ ]+)/.exec(className || "");
+    const plain = (n: unknown): string => {
+      if (!n || typeof n !== "object") return "";
+      const v = n as { value?: string; children?: unknown[] };
+      return v.value ?? (v.children ?? []).map(plain).join("");
+    };
+    const value = node ? plain(node) : String(children);
+    return match || value.endsWith("\n") ? <CodeBlock lang={match?.[1] || ""} code={value.replace(/\n$/, "")} highlighted={children} /> : <code className="md-inline-code">{children}</code>;
+  },
+  table: ({ children }) => <div className="md-table-wrap"><table className="md-table">{children}</table></div>,
+  a: ({ href, children }) => <a className="md-link" href={href} target="_blank" rel="noreferrer noopener">{children}</a>,
+  img: ({ alt }) => <span>{alt || "[image]"}</span>,
+  p: ({ children }) => <p className="md-p">{children}</p>,
+};
 export const MarkdownContent = memo(function MarkdownContent({ text }: { text: string }) {
-  return <div className="md-root"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]} components={{
-    pre: ({ children }) => <>{children}</>,
-    code: ({ className, children }) => {
-      const match = /language-([^ ]+)/.exec(className || "");
-      const value = String(children);
-      return match || value.endsWith("\n") ? <CodeBlock lang={match?.[1] || ""} code={value.replace(/\n$/, "")} /> : <code className="md-inline-code">{children}</code>;
-    },
-    table: ({ children }) => <div className="md-table-wrap"><table className="md-table">{children}</table></div>,
-    a: ({ href, children }) => <a className="md-link" href={href} target="_blank" rel="noreferrer noopener">{children}</a>,
-    img: ({ alt }) => <span>{alt || "[image]"}</span>,
-    p: ({ children }) => <p className="md-p">{children}</p>,
-  }}>{text}</ReactMarkdown></div>;
+  return <div className="md-root"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeHighlight]} components={markdownComponents}>{text}</ReactMarkdown></div>;
 });
 
 export function ModelLoadInlineBar({
