@@ -525,7 +525,7 @@ impl LlamaCppManager {
         }
 
         let mut stream = resp.bytes_stream();
-        let mut line_buf = String::new();
+        let mut line_buf: Vec<u8> = Vec::new();
         let mut full_content = String::new();
         let mut tool_acc: BTreeMap<usize, (String, String, String)> = BTreeMap::new();
         let mut finish_reason: Option<String> = None;
@@ -553,11 +553,10 @@ impl LlamaCppManager {
                 break;
             };
             let chunk = chunk_res.map_err(|e| format!("Error leyendo stream de tokens: {e}"))?;
-            line_buf.push_str(&String::from_utf8_lossy(&chunk));
+            line_buf.extend_from_slice(&chunk);
 
-            while let Some(pos) = line_buf.find('\n') {
-                let raw_line = line_buf[..pos].trim().to_string();
-                line_buf.drain(..=pos);
+            while let Some(raw_line) = take_sse_line(&mut line_buf) {
+                let raw_line = raw_line.trim();
 
                 let Some(data) = raw_line.strip_prefix("data:") else {
                     continue;
@@ -574,7 +573,6 @@ impl LlamaCppManager {
                     tokens_per_second = t.get("predicted_per_second").and_then(Value::as_f64).or(tokens_per_second);
                     prefill_ms = t.get("prompt_ms").and_then(Value::as_f64).or(prefill_ms);
                     generation_ms = t.get("predicted_ms").and_then(Value::as_f64).or(generation_ms);
-                    prompt_tokens = t.get("prompt_n").and_then(Value::as_u64).or(prompt_tokens);
                 }
                 prompt_tokens = parsed.get("usage").and_then(|u| u.get("prompt_tokens")).and_then(Value::as_u64).or(prompt_tokens);
                 let Some(choice0) = parsed.get("choices").and_then(|c| c.get(0)) else {
@@ -653,6 +651,13 @@ impl LlamaCppManager {
     }
 }
 
+// Decode only complete SSE lines: HTTP chunks may split UTF-8 code points.
+fn take_sse_line(buffer: &mut Vec<u8>) -> Option<String> {
+    let pos = buffer.iter().position(|&byte| byte == b'\n')?;
+    let line: Vec<u8> = buffer.drain(..=pos).collect();
+    Some(String::from_utf8_lossy(&line).into_owned())
+}
+
 async fn wait_until_cancelled(flag: &std::sync::Arc<std::sync::atomic::AtomicBool>) {
     loop {
         if flag.load(std::sync::atomic::Ordering::SeqCst) {
@@ -674,6 +679,18 @@ fn pick_free_port() -> Result<u16, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sse_preserves_utf8_across_chunk_boundaries() {
+        let input = "data: café 🦀\r\n".as_bytes();
+        for split in 0..input.len() {
+            let mut buffer = input[..split].to_vec();
+            assert!(take_sse_line(&mut buffer).is_none());
+            buffer.extend_from_slice(&input[split..]);
+            assert_eq!(take_sse_line(&mut buffer).unwrap().trim(), "data: café 🦀");
+            assert!(buffer.is_empty());
+        }
+    }
 
     #[tokio::test]
     async fn compatible_agent_turns_share_runtime_until_both_leases_drop() {
