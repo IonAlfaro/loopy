@@ -668,6 +668,7 @@ export function AgentWorkspaceView() {
     listen<AgentChatEvent>("loors://agent-chat-event", (ev) => {
       if (cancelled) return;
       const p = ev.payload;
+      if (!runningTurns.current.has(p.session_id)) return;
       if (p.type !== "token" && pendingTokens.size) flushTokens();
       if (p.type === "context_usage") {
         setContextUsage((prev) => ({ ...prev, [p.session_id]: p }));
@@ -696,9 +697,22 @@ export function AgentWorkspaceView() {
         }
         return;
       }
-      if (p.type === "tool_finished" || p.type === "turn_finished") {
+      if (p.type === "turn_finished") {
         setPermissionReq(null, p.session_id);
         setPendingQuestion(null, p.session_id);
+      } else if (p.type === "tool_finished") {
+        setPermissions(prev => {
+          if (prev[p.session_id]?.callId !== p.call.id) return prev;
+          const next = { ...prev };
+          delete next[p.session_id];
+          return next;
+        });
+        setQuestions(prev => {
+          if (prev[p.session_id]?.callId !== p.call.id) return prev;
+          const next = { ...prev };
+          delete next[p.session_id];
+          return next;
+        });
       }
 
       const updateTurn = (update: (session: AgentSession) => AgentSession) => {
@@ -706,15 +720,7 @@ export function AgentWorkspaceView() {
         if (!current) return;
         const next = update(current);
         runningTurns.current.set(p.session_id, next);
-        if (visible) {
-          if (p.type === "token") {
-            if (renderTimer === undefined) renderTimer = setTimeout(() => flushTokens(), 40);
-          } else {
-            if (renderTimer !== undefined) clearTimeout(renderTimer);
-            renderTimer = undefined;
-            showSession(next);
-          }
-        }
+        if (visible) showSession(next);
       };
 
       if (!visible && p.type !== "token" && p.type !== "tool_started" && p.type !== "tool_finished" && p.type !== "todo_updated" && p.type !== "artifact_updated") return;
