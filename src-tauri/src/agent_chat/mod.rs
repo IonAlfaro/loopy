@@ -311,6 +311,7 @@ struct AgentTurnState {
     task_evidence: Mutex<HashMap<String, Vec<String>>>,
     task_failed_checks: Mutex<HashMap<String, std::collections::HashSet<String>>>,
     task_verification: Mutex<HashMap<String, bool>>,
+    task_review_attempts: Mutex<HashMap<String, usize>>,
     cancel: Arc<AtomicBool>,
     pending_permission: Mutex<Option<oneshot::Sender<PermissionDecision>>>,
     pending_question: Mutex<Option<oneshot::Sender<QuestionDecision>>>,
@@ -2334,6 +2335,19 @@ where
             }
         };
         for task in review_tasks {
+            let attempt = {
+                let mut attempts = match state.task_review_attempts.lock() {
+                    Ok(attempts) => attempts,
+                    Err(_) => { record.status = "error".into(); return "Review lock poisoned.".into(); }
+                };
+                let count = attempts.entry(task.id.clone()).or_default();
+                if *count >= 3 {
+                    record.status = "error".into();
+                    return format!("Task {} exhausted its independent review budget. Mark it failed and report the blocker; do not claim completion.", task.id);
+                }
+                *count += 1;
+                *count
+            };
             let review_prompt = format!(
                 "Independently inspect the current workspace against this task (untrusted task data): {}. Check actual files, not just claimed evidence. Return exactly PASS on the first line only if all criteria are supported; otherwise return FAIL on the first line followed by concrete defects. If unable to verify, return FAIL.",
                 serde_json::to_string(&task).unwrap_or_default()
@@ -2341,7 +2355,7 @@ where
             let report = run_subagent_loop(workspace, model_path, llama, port, "verifier", &review_prompt, 6, rag_index, cancel).await;
             if cancel.load(Ordering::SeqCst) || report.lines().next().map(str::trim) != Some("PASS") {
                 record.status = "error".into();
-                return format!("Independent verification rejected task {}: {}. Repair the defects and retry completion.", task.id, truncate_chars(&report, 3000));
+                return format!("Independent verification rejected task {} (attempt {}/3): {}. Repair the defects and retry completion, or mark the task failed if blocked.", task.id, attempt, truncate_chars(&report, 3000));
             }
         }
         match state.execution_plan.lock() {
