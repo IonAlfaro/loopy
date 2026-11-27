@@ -779,6 +779,12 @@ where
         *turn.task_evidence.lock().map_err(|_| "Evidence lock poisoned")? = evidence;
         *turn.task_failed_checks.lock().map_err(|_| "Check lock poisoned")? = failures;
         *turn.task_verification.lock().map_err(|_| "Verification lock poisoned")? = verification;
+        let attempts: HashMap<String, usize> = match checkpoint.get("reviewAttempts") {
+            Some(value) => serde_json::from_value(value.clone())
+                .map_err(|err| format!("Invalid checkpoint review attempts: {err}"))?,
+            None => HashMap::new(),
+        };
+        *turn.task_review_attempts.lock().map_err(|_| "Review lock poisoned")? = attempts;
     } else {
         session.execution_checkpoint = None;
     }
@@ -1972,11 +1978,12 @@ where
             if let Some(last) = session.messages.last_mut() {
                 last.tool_calls.push(record.clone());
             }
-            if let (Ok(plan), Ok(evidence), Ok(failures), Ok(verification)) = (
+            if let (Ok(plan), Ok(evidence), Ok(failures), Ok(verification), Ok(review_attempts)) = (
                 state.execution_plan.lock(),
                 state.task_evidence.lock(),
                 state.task_failed_checks.lock(),
                 state.task_verification.lock(),
+                state.task_review_attempts.lock(),
             ) {
                 if let Some(plan) = plan.as_ref() {
                     session.execution_checkpoint = Some(json!({
@@ -1987,6 +1994,7 @@ where
                         "evidence": &*evidence,
                         "failedChecks": &*failures,
                         "verification": &*verification,
+                        "reviewAttempts": &*review_attempts,
                     }));
                 }
             }
