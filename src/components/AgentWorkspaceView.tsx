@@ -2064,7 +2064,7 @@ export function AgentWorkspaceView() {
 
                     {msg.content ? (
                       <div className="agent-assistant-body">
-                        <MarkdownContent text={msg.content} />
+                        <MarkdownContent text={msg.content} streaming={isCurrentRunning && isLastMsg && !msg.toolCalls.length} />
                       </div>
                     ) : (
                       isCurrentRunning &&
