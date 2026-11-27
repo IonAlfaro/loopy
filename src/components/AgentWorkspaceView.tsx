@@ -2373,6 +2373,7 @@ export function AgentWorkspaceView() {
                     reasoning: locale === "es" ? "Razonando" : "Reasoning",
                     executing: locale === "es" ? "Ejecutando herramientas" : "Executing tools",
                     verifying: locale === "es" ? "Verificando" : "Verifying",
+                    recovering: locale === "es" ? "Replanteando estrategia" : "Recovering strategy",
                   } as Record<string, string>)[harnessProgress[session.id].phase] ?? harnessProgress[session.id].phase}</span>
                   {harnessProgress[session.id].task_title && (
                     <span title={harnessProgress[session.id].task_title ?? undefined}
