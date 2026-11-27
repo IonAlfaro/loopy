@@ -93,6 +93,10 @@ pub struct AgentChatMessage {
     #[serde(default)]
     pub tool_calls: Vec<AgentToolCallRecord>,
     pub timestamp: u64,
+    #[serde(default)]
+    pub inference_ms: Option<u64>,
+    #[serde(default)]
+    pub first_token_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -558,6 +562,8 @@ where
             attachments: attachments.clone(),
             tool_calls: Vec::new(),
             timestamp: now_epoch_secs(),
+                inference_ms: None,
+                first_token_ms: None,
         });
     }
 
@@ -607,6 +613,8 @@ where
         attachments: Vec::new(),
         tool_calls: Vec::new(),
         timestamp: now_epoch_secs(),
+                inference_ms: None,
+                first_token_ms: None,
     });
     // Optional RAG index & Mini-Repo-Map (only when a real project workspace is linked)
     let has_workspace =
@@ -1083,6 +1091,25 @@ where
             break;
         }
 
+        // Preserve each model iteration as its own chronological assistant message.
+        let assistant_msg_id = if _step == 1 {
+            assistant_msg_id.clone()
+        } else {
+            let id = format!("{}-{}", assistant_msg_id, _step);
+            session.messages.push(AgentChatMessage {
+                id: id.clone(),
+                role: "assistant".to_string(),
+                content: String::new(),
+                thinking: String::new(),
+                attachments: Vec::new(),
+                tool_calls: Vec::new(),
+                timestamp: now_epoch_secs(),
+                inference_ms: None,
+                first_token_ms: None,
+            });
+            id
+        };
+
         compact_agent_messages(&mut llm_messages, tool_bytes, effective_compact_budget);
         emit(AgentChatEvent::ContextUsage {
             session_id: session.id.clone(),
@@ -1111,10 +1138,15 @@ where
             reasoning_effort: session.reasoning_effort.clone(),
         };
 
+        let inference_start = Instant::now();
+        let mut first_token_ms = None;
         let mut step_started_content = true;
         let chat_res = if let Some(p) = port {
             llama
                 .chat_stream(p, chat_req, Some(&cancel), |is_thinking, tok| {
+                    if !tok.is_empty() && first_token_ms.is_none() {
+                        first_token_ms = Some(inference_start.elapsed().as_millis() as u64);
+                    }
                     if let Some(last) = session.messages.last_mut() {
                         if is_thinking {
                             last.thinking.push_str(tok);
@@ -1151,6 +1183,9 @@ where
                 chat_req,
                 Some(&cancel),
                 |is_thinking, tok| {
+                    if !tok.is_empty() && first_token_ms.is_none() {
+                        first_token_ms = Some(inference_start.elapsed().as_millis() as u64);
+                    }
                     if let Some(last) = session.messages.last_mut() {
                         if is_thinking {
                             last.thinking.push_str(tok);
@@ -1184,6 +1219,10 @@ where
             .await
         };
 
+        if let Some(last) = session.messages.last_mut() {
+            last.inference_ms = Some(inference_start.elapsed().as_millis() as u64);
+            last.first_token_ms = first_token_ms;
+        }
         let resp = match chat_res {
             Ok(r) => r,
             Err(err) if err == "__CANCELLED__" => {
@@ -2287,6 +2326,8 @@ mod tests {
                 thinking: String::new(),
                 attachments: Vec::new(),
                 timestamp: 1,
+                inference_ms: None,
+                first_token_ms: None,
                 tool_calls: vec![AgentToolCallRecord {
                     id: "c1".to_string(),
                     name: "edit_file".to_string(),

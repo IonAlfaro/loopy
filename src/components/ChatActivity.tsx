@@ -1,3 +1,10 @@
+import ReactMarkdown, { type Components } from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
+import "highlight.js/styles/github-dark.css";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { AgentDiff } from "./AgentDiff";
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { detectModelReasoningCaps } from "../types/graph";
@@ -622,7 +629,36 @@ export function MessageQueueTray({
 }
 
 
-function CodeBlock({ lang, code }: { lang: string; code: string }) {
+let diagramSequence = 0;
+function MermaidDiagram({ source }: { source: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(() => {
+      void import("mermaid").then(({ default: mermaid }) => {
+        if (!active) return null;
+        mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral", suppressErrorRendering: true });
+        return mermaid.render("loors-diagram-" + (++diagramSequence), source);
+      }).then((result) => {
+        if (!result) return;
+        const { svg } = result;
+        if (!active || !ref.current) return;
+        // Render in an image rather than injecting executable markup into the app.
+        const img = document.createElement("img");
+        img.alt = "Mermaid diagram";
+        img.style.maxWidth = "100%";
+        img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+        ref.current.replaceChildren(img);
+        setFailed(false);
+      }).catch(() => { if (active) setFailed(true); });
+    }, 350);
+    return () => { active = false; clearTimeout(timer); };
+  }, [source]);
+  return <div style={{ overflowX: "auto", padding: 8 }}><div ref={ref} />{failed && <pre className="md-code-pre">{source}</pre>}</div>;
+}
+
+function CodeBlock({ lang, code, highlighted }: { lang: string; code: string; highlighted?: ReactNode }) {
   const [copied, setCopied] = useState(false);
   const [wrap, setWrap] = useState(false);
   const { locale } = useI18n();
@@ -650,255 +686,34 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
         </button>
         </div>
       </div>
+      {lang.toLowerCase() === "mermaid" && <MermaidDiagram source={code} />}
       <pre className="md-code-pre" style={wrap ? { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } : undefined}>
-        <code>{code}</code>
+        <code>{highlighted ?? code}</code>
       </pre>
     </div>
   );
 }
 
-function renderInlineMarkdown(text: string): ReactNode[] {
-  const out: ReactNode[] = [];
-  // Matches: `code`, **bold**, *italic*, [label](url)
-  const regex = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*|\[[^\]\n]+\]\([^)\n]+\))/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  let k = 0;
-
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      out.push(text.slice(lastIndex, match.index));
-    }
-    const token = match[0];
-    if (token.startsWith("`") && token.endsWith("`")) {
-      out.push(
-        <code key={`i-${k++}`} className="md-inline-code">
-          {token.slice(1, -1)}
-        </code>
-      );
-    } else if (token.startsWith("**") && token.endsWith("**")) {
-      out.push(<strong key={`i-${k++}`}>{token.slice(2, -2)}</strong>);
-    } else if (token.startsWith("*") && token.endsWith("*")) {
-      out.push(<em key={`i-${k++}`}>{token.slice(1, -1)}</em>);
-    } else if (token.startsWith("[")) {
-      const m = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-      if (m) {
-        const href = m[2];
-        const safeHref = /^(https?:|mailto:)/i.test(href) ? href : undefined;
-        out.push(
-          safeHref ? (
-            <a
-              key={`i-${k++}`}
-              className="md-link"
-              href={safeHref}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {m[1]}
-            </a>
-          ) : (
-            <span key={`i-${k++}`} className="md-inline-code">
-              {m[1]}
-            </span>
-          )
-        );
-      } else {
-        out.push(token);
-      }
-    }
-    lastIndex = match.index + token.length;
-  }
-
-  if (lastIndex < text.length) {
-    out.push(text.slice(lastIndex));
-  }
-  return out;
-}
-
+const markdownComponents: Components = {
+  pre: ({ children }) => <>{children}</>,
+  code: ({ className, children, node }) => {
+    const match = /language-([^ ]+)/.exec(className || "");
+    const plain = (n: unknown): string => {
+      if (!n || typeof n !== "object") return "";
+      const v = n as { value?: string; children?: unknown[] };
+      return v.value ?? (v.children ?? []).map(plain).join("");
+    };
+    const value = node ? plain(node) : String(children);
+    return match || value.endsWith("\n") ? <CodeBlock lang={match?.[1] || ""} code={value.replace(/\n$/, "")} highlighted={children} /> : <code className="md-inline-code">{children}</code>;
+  },
+  table: ({ children }) => <div className="md-table-wrap"><table className="md-table">{children}</table></div>,
+  a: ({ href, children }) => <a className="md-link" href={href} target="_blank" rel="noreferrer noopener">{children}</a>,
+  img: ({ alt }) => <span>{alt || "[image]"}</span>,
+  p: ({ children }) => <p className="md-p">{children}</p>,
+};
 export const MarkdownContent = memo(function MarkdownContent({ text }: { text: string }) {
-  if (!text) return null;
-
-  const blocks: ReactNode[] = [];
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
-  let i = 0;
-  let keyIdx = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // Fenced code block ```lang
-    const fenceMatch = line.match(/^\s*(`{3,}|~{3,})\s*([^\s`~]*)[^\n]*$/);
-    if (fenceMatch) {
-      const fence = fenceMatch[1];
-      const lang = fenceMatch[2] || "";
-      const codeLines: string[] = [];
-      i++;
-      while (i < lines.length && !(lines[i].trim().length >= fence.length && [...lines[i].trim()].every((c) => c === fence[0]))) {
-        codeLines.push(lines[i]);
-        i++;
-      }
-      if (i < lines.length) i++; // skip closing fence
-      blocks.push(
-        <CodeBlock key={`b-${keyIdx++}`} lang={lang} code={codeLines.join("\n")} />
-      );
-      continue;
-    }
-
-    // Blank line
-    if (!line.trim()) {
-      i++;
-      continue;
-    }
-
-    // Horizontal rule
-    if (/^\s*(?:---|\*\*\*|___)\s*$/.test(line)) {
-      blocks.push(<hr key={`b-${keyIdx++}`} className="md-hr" />);
-      i++;
-      continue;
-    }
-
-    // Headings # to ####
-    const headMatch = line.match(/^(#{1,4})\s+(.+)$/);
-    if (headMatch) {
-      const level = headMatch[1].length;
-      const content = renderInlineMarkdown(headMatch[2].trim());
-      blocks.push(
-        <div key={`b-${keyIdx++}`} className={`md-h md-h${level}`}>
-          {content}
-        </div>
-      );
-      i++;
-      continue;
-    }
-
-    // Blockquote
-    if (/^\s*>\s?/.test(line)) {
-      const qLines: string[] = [];
-      while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
-        qLines.push(lines[i].replace(/^\s*>\s?/, ""));
-        i++;
-      }
-      blocks.push(
-        <blockquote key={`b-${keyIdx++}`} className="md-quote">
-          {qLines.map((ql, idx) => (
-            <div key={idx}>{renderInlineMarkdown(ql)}</div>
-          ))}
-        </blockquote>
-      );
-      continue;
-    }
-
-    // GFM Table
-    if (
-      line.includes("|") &&
-      i + 1 < lines.length &&
-      /^\s*\|?[\s:-]+\|[\s|:-]*$/.test(lines[i + 1])
-    ) {
-      const splitRow = (row: string) =>
-        row
-          .trim()
-          .replace(/^\|/, "")
-          .replace(/\|$/, "")
-          .split("|")
-          .map((c) => c.trim());
-      const headers = splitRow(line);
-      i += 2;
-      const rows: string[][] = [];
-      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
-        rows.push(splitRow(lines[i]));
-        i++;
-      }
-      blocks.push(
-        <div key={`b-${keyIdx++}`} className="md-table-wrap">
-          <table className="md-table">
-            <thead>
-              <tr>
-                {headers.map((h, hi) => (
-                  <th key={hi}>{renderInlineMarkdown(h)}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, ri) => (
-                <tr key={ri}>
-                  {r.map((cell, ci) => (
-                    <td key={ci}>{renderInlineMarkdown(cell)}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-      continue;
-    }
-
-    // Unordered list
-    if (/^\s*[-*•]\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\s*[-*•]\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*[-*•]\s+/, ""));
-        i++;
-      }
-      blocks.push(
-        <ul key={`b-${keyIdx++}`} className="md-list">
-          {items.map((it, idx) => (
-            <li key={idx}>{/^\[[ xX]\]\s/.test(it) ? <><input type="checkbox" checked={it[1].toLowerCase() === "x"} disabled aria-label={it.slice(4)} /> {renderInlineMarkdown(it.slice(4))}</> : renderInlineMarkdown(it)}</li>
-          ))}
-        </ul>
-      );
-      continue;
-    }
-
-    // Ordered list
-    if (/^\s*\d+[.)]\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*\d+[.)]\s+/, ""));
-        i++;
-      }
-      blocks.push(
-        <ol key={`b-${keyIdx++}`} className="md-list md-olist">
-          {items.map((it, idx) => (
-            <li key={idx}>{renderInlineMarkdown(it)}</li>
-          ))}
-        </ol>
-      );
-      continue;
-    }
-
-    // Paragraph (consume consecutive plain lines)
-    const pLines: string[] = [];
-    while (
-      i < lines.length &&
-      lines[i].trim() !== "" &&
-      !/^\s*(?:`{3,}|~{3,})/.test(lines[i]) &&
-      !/^#{1,4}\s+/.test(lines[i]) &&
-      !/^\s*>\s?/.test(lines[i]) &&
-      !/^\s*[-*•]\s+/.test(lines[i]) &&
-      !/^\s*\d+[.)]\s+/.test(lines[i]) &&
-      !/^\s*(?:---|\*\*\*|___)\s*$/.test(lines[i])
-    ) {
-      pLines.push(lines[i]);
-      i++;
-    }
-    // Unrecognized or incomplete fence during streaming: always advance.
-    if (pLines.length === 0) pLines.push(lines[i++]);
-    blocks.push(
-      <p key={`b-${keyIdx++}`} className="md-p">
-        {pLines.map((pl, idx) => (
-          <span key={idx}>
-            {idx > 0 && <br />}
-            {renderInlineMarkdown(pl)}
-          </span>
-        ))}
-      </p>
-    );
-  }
-
-  return <div className="md-root">{blocks}</div>;
+  return <div className="md-root"><ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex, rehypeHighlight]} components={markdownComponents}>{text}</ReactMarkdown></div>;
 });
-
 
 export function ModelLoadInlineBar({
   progress,

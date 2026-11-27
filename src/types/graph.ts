@@ -330,6 +330,8 @@ export interface AgentChatMessage {
   attachments?: string[];
   toolCalls: AgentToolCallRecord[];
   timestamp: number;
+  inferenceMs?: number | null;
+  firstTokenMs?: number | null;
 }
 
 export interface AgentSession {

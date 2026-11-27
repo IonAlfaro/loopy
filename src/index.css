@@ -10102,3 +10102,13 @@ dialog.loors-dialog::backdrop {
   cursor: pointer;
   font-size: 12px;
 }
+
+/* Agent iteration timeline */
+.agent-assistant-continuation { position: relative; border-inline-start: 2px solid var(--border-subtle); padding-inline-start: 14px; margin-inline-start: 6px; }
+.agent-assistant-continuation .agent-assistant-head { opacity: .78; }
+.agent-assistant-body .md-root { font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.agent-assistant-body .md-root pre { overflow-wrap: normal; }
+.agent-assistant-body .md-root li { margin-block: 3px; }
+.agent-assistant-body .md-root blockquote { border-inline-start: 3px solid var(--border-subtle); margin-inline: 0; padding-inline-start: 12px; }
+.agent-assistant-body .katex-display { overflow-x: auto; overflow-y: hidden; padding-block: 4px; }
+.agent-assistant-body .md-root a { text-decoration: underline; text-underline-offset: 3px; }
