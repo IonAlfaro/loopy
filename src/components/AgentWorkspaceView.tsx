@@ -653,6 +653,13 @@ export function AgentWorkspaceView() {
     let cancelled = false;
     let unlistenAgent: (() => void) | undefined;
     let unlistenBrowser: (() => void) | undefined;
+    let renderTimer: ReturnType<typeof setTimeout> | undefined;
+    const flushTokens = () => {
+      if (renderTimer !== undefined) clearTimeout(renderTimer);
+      renderTimer = undefined;
+      const next = runningTurns.current.get(activeSessionIdRef.current);
+      if (!cancelled && next) showSession(next);
+    };
 
     listen<AgentChatEvent>("loors://agent-chat-event", (ev) => {
       if (cancelled) return;
@@ -694,7 +701,15 @@ export function AgentWorkspaceView() {
         if (!current) return;
         const next = update(current);
         runningTurns.current.set(p.session_id, next);
-        if (visible) showSession(next);
+        if (visible) {
+          if (p.type === "token") {
+            if (renderTimer === undefined) renderTimer = setTimeout(flushTokens, 40);
+          } else {
+            if (renderTimer !== undefined) clearTimeout(renderTimer);
+            renderTimer = undefined;
+            showSession(next);
+          }
+        }
       };
 
       if (!visible && p.type !== "token" && p.type !== "tool_started" && p.type !== "tool_finished") return;
@@ -808,6 +823,7 @@ export function AgentWorkspaceView() {
 
     return () => {
       cancelled = true;
+      if (renderTimer !== undefined) clearTimeout(renderTimer);
       if (unlistenAgent) unlistenAgent();
       if (unlistenBrowser) unlistenBrowser();
     };
