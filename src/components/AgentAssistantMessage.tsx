@@ -1,3 +1,4 @@
+import { AgentContextMeter } from "./AgentContextMeter";
 import { memo, type CSSProperties, type ComponentProps } from "react";
 import { Bot, Check, Copy, RefreshCw } from "lucide-react";
 import { MarkdownContent, ModelLoadInlineBar, ThinkingDisclosure, ToolCallGroup } from "./ChatActivity";
@@ -43,7 +44,7 @@ export const AgentAssistantMessage = memo(function AgentAssistantMessage({ msg, 
                         </span>
                       </span>
                       {msg.tokensPerSecond != null && <span className="agent-model-tag">{msg.tokensPerSecond.toFixed(1)} tok/s</span>}
-                      {msg.promptTokens != null && <span className="agent-model-tag">{msg.promptTokens.toLocaleString()}{msg.contextCapacity != null && msg.contextCapacity > 0 ? ` / ${msg.contextCapacity.toLocaleString()} (${(100 * msg.promptTokens / msg.contextCapacity).toFixed(1)}%)` : ""} ctx tokens</span>}
+                      <AgentContextMeter tokens={msg.promptTokens} capacity={msg.contextCapacity} locale={locale} />
                       {msg.prefillMs != null && <span className="agent-model-tag">Prefill {(msg.prefillMs / 1000).toFixed(2)} s</span>}
                       {msg.generationMs != null && <span className="agent-model-tag">Gen {(msg.generationMs / 1000).toFixed(2)} s</span>}
                       {msg.inferenceMs != null && <span className="agent-model-tag" title={locale === "es" ? "Duración de inferencia / primer fragmento" : "Inference duration / first chunk"}>{(msg.inferenceMs / 1000).toFixed(2)} s{msg.firstTokenMs != null ? ` · TTFT ${(msg.firstTokenMs / 1000).toFixed(2)} s` : ""}</span>}
