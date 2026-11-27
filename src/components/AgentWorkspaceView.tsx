@@ -664,16 +664,35 @@ export function AgentWorkspaceView() {
     let unlistenAgent: (() => void) | undefined;
     let unlistenBrowser: (() => void) | undefined;
     let renderTimer: ReturnType<typeof setTimeout> | undefined;
-    const flushTokens = () => {
+    const pendingTokens = new Map<string, Map<string, { content: string; thinking: string }>>();
+    const flushTokens = (publish = true) => {
       if (renderTimer !== undefined) clearTimeout(renderTimer);
       renderTimer = undefined;
-      const next = runningTurns.current.get(activeSessionIdRef.current);
-      if (!cancelled && next) showSession(next);
+      for (const [sessionId, chunks] of pendingTokens) {
+        const current = runningTurns.current.get(sessionId);
+        if (!current) continue;
+        const messages = [...current.messages];
+        const indices = new Map(messages.map((m, i) => [m.id, i]));
+        for (const [id, chunk] of chunks) {
+          const idx = indices.get(id);
+          if (idx === undefined) {
+            messages.push({ id, role: "assistant", content: chunk.content, thinking: chunk.thinking, toolCalls: [], timestamp: Math.floor(Date.now() / 1000) });
+          } else {
+            const m = messages[idx];
+            messages[idx] = { ...m, content: m.content + chunk.content, thinking: (m.thinking ?? "") + chunk.thinking };
+          }
+        }
+        const next = { ...current, messages };
+        runningTurns.current.set(sessionId, next);
+        if (publish && !cancelled && sessionId === activeSessionIdRef.current) showSession(next);
+      }
+      pendingTokens.clear();
     };
 
     listen<AgentChatEvent>("loors://agent-chat-event", (ev) => {
       if (cancelled) return;
       const p = ev.payload;
+      if (p.type !== "token" && pendingTokens.size) flushTokens();
       if (p.type === "context_usage") {
         setContextUsage((prev) => ({ ...prev, [p.session_id]: p }));
         return;
@@ -713,7 +732,7 @@ export function AgentWorkspaceView() {
         runningTurns.current.set(p.session_id, next);
         if (visible) {
           if (p.type === "token") {
-            if (renderTimer === undefined) renderTimer = setTimeout(flushTokens, 40);
+            if (renderTimer === undefined) renderTimer = setTimeout(() => flushTokens(), 40);
           } else {
             if (renderTimer !== undefined) clearTimeout(renderTimer);
             renderTimer = undefined;
@@ -740,26 +759,14 @@ export function AgentWorkspaceView() {
           setArtifactExpanded(false);
         }
       } else if (p.type === "token") {
-        updateTurn((prev) => {
-          const msgs = [...prev.messages];
-          let idx = msgs.findIndex((m) => m.id === p.message_id);
-          if (idx === -1) {
-            msgs.push({
-              id: p.message_id,
-              role: "assistant",
-              content: "",
-              thinking: "",
-              toolCalls: [],
-              timestamp: Math.floor(Date.now() / 1000),
-            });
-            idx = msgs.length - 1;
-          }
-          const target = { ...msgs[idx] };
-          if (p.is_thinking) target.thinking += p.token;
-          else target.content += p.token;
-          msgs[idx] = target;
-          return { ...prev, messages: msgs };
-        });
+        if (!runningTurns.current.has(p.session_id)) return;
+        let chunks = pendingTokens.get(p.session_id);
+        if (!chunks) { chunks = new Map(); pendingTokens.set(p.session_id, chunks); }
+        let chunk = chunks.get(p.message_id);
+        if (!chunk) { chunk = { content: "", thinking: "" }; chunks.set(p.message_id, chunk); }
+        if (p.is_thinking) chunk.thinking += p.token;
+        else chunk.content += p.token;
+        if (renderTimer === undefined) renderTimer = setTimeout(() => flushTokens(), 40);
       } else if (p.type === "tool_started") {
         updateTurn((prev) => {
           const msgs = [...prev.messages];
@@ -828,7 +835,7 @@ export function AgentWorkspaceView() {
 
     return () => {
       cancelled = true;
-      if (renderTimer !== undefined) clearTimeout(renderTimer);
+      flushTokens(false);
       if (unlistenAgent) unlistenAgent();
       if (unlistenBrowser) unlistenBrowser();
     };
