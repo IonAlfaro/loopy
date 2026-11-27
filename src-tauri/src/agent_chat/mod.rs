@@ -2171,6 +2171,14 @@ where
                         "failedChecks": &*failures,
                         "verification": &*verification,
                         "reviewAttempts": &*review_attempts,
+                        "telemetry": {
+                            "iterations": _step,
+                            "iterationLimit": state.budget.iterations,
+                            "inferences": state.inference_count.load(Ordering::SeqCst),
+                            "inferenceLimit": state.budget.total_inferences,
+                            "recoveries": replans,
+                            "recoveryLimit": state.budget.recovery_attempts,
+                        },
                     }));
                 }
             }
