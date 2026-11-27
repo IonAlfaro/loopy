@@ -1,5 +1,5 @@
-import { AgentAssistantMessage } from "./AgentAssistantMessage";
-import { AgentUserMessage, getAttachmentBadge } from "./AgentUserMessage";
+import { AgentHistory } from "./AgentHistory";
+import { getAttachmentBadge } from "./AgentUserMessage";
 import { AgentDiff } from "./AgentDiff";
 import { PanelResizer } from "./PanelResizer";
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1467,12 +1467,7 @@ export function AgentWorkspaceView() {
   const assistantUndo = useCallback((id: string, callId: string) => { void assistantActions.current.handleUndoToolCall(id, callId); }, []);
   const assistantToggleThinking = useCallback((id: string, next: boolean) => setExpandedThinking(p => ({ ...p, [id]: next })), []);
   const assistantToggleTool = useCallback((id: string, next: boolean) => setExpandedTools(p => ({ ...p, [id]: next })), []);
-  const lastUserMsgIndex = useMemo(() => {
-    for (let i = session.messages.length - 1; i >= 0; i--) {
-      if (session.messages[i].role === "user") return i;
-    }
-    return -1;
-  }, [session.messages]);
+
 
   return (
     <div className="agent-workspace-root">
@@ -1985,19 +1980,7 @@ export function AgentWorkspaceView() {
                 </div>
               )}
 
-              {session.messages.map((msg, idx) => {
-                // Keep recent messages fully laid out for reliable streaming and autoscroll.
-                // Older rows retain their DOM and accessibility while skipping offscreen layout/paint.
-                const historyStyle: React.CSSProperties | undefined = idx < session.messages.length - 20
-                  ? { contentVisibility: "auto", containIntrinsicSize: "auto 160px" }
-                  : undefined;
-                if (msg.role === "user") {
-                  return <AgentUserMessage key={msg.id} msg={msg} locale={locale} canRetry={idx === lastUserMsgIndex && !isCurrentRunning} deferred={!!historyStyle} onRetry={retryUserMessage} />;
-                }
-
-                return <AgentAssistantMessage key={msg.id} msg={msg} active={isCurrentRunning && idx === session.messages.length - 1} continuation={idx > 0 && session.messages[idx - 1].role === "assistant"} deferred={!!historyStyle} locale={locale} modelPath={session.modelPath} thinkingOpen={expandedThinking[msg.id] ?? false} copied={copiedId === msg.id} modelLoadProgress={idx === session.messages.length - 1 ? modelLoadProgress : null} expandedTools={expandedTools} savedShots={savedShots} onCopy={assistantCopy} onToggleThinking={assistantToggleThinking} onToggleTool={assistantToggleTool} onUndo={assistantUndo} />;
-
-              })}
+              <AgentHistory messages={session.messages} running={isCurrentRunning} locale={locale} modelPath={session.modelPath} expandedThinking={expandedThinking} copiedId={copiedId} modelLoadProgress={modelLoadProgress} expandedTools={expandedTools} savedShots={savedShots} onRetry={retryUserMessage} onCopy={assistantCopy} onToggleThinking={assistantToggleThinking} onToggleTool={assistantToggleTool} onUndo={assistantUndo} />
 
               {/* Interactive Permission Approval Card */}
               {permissionReq && (
