@@ -2260,6 +2260,15 @@ where
         .map(|m| m.content.as_ref().map(|c| c.len()).unwrap_or(0))
         .sum();
 
+    // Persist the terminal outcome with the existing plan checkpoint.
+    if let Some(checkpoint) = session.execution_checkpoint.as_mut().and_then(Value::as_object_mut) {
+        checkpoint.insert("outcome".into(), json!({
+            "status": execution.outcome().as_str(),
+            "summary": &final_summary,
+            "inferences": state.inference_count.load(Ordering::SeqCst),
+            "inferenceLimit": state.budget.total_inferences,
+        }));
+    }
     session.updated_at = now_epoch_secs();
     save_session_in(&dir, &session)?;
 
