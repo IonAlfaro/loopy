@@ -733,18 +733,24 @@ export function AgentWorkspaceView() {
       } else if (p.type === "tool_started") {
         updateTurn((prev) => {
           const msgs = [...prev.messages];
-          const idx = msgs.findIndex((m) => m.id === p.message_id);
-          if (idx === -1) return prev;
+          let idx = msgs.findIndex((m) => m.id === p.message_id);
+          if (idx === -1) {
+            msgs.push({ id: p.message_id, role: "assistant", content: "", thinking: "", toolCalls: [], timestamp: Math.floor(Date.now() / 1000) });
+            idx = msgs.length - 1;
+          }
           const target = { ...msgs[idx] };
-          target.toolCalls = [...target.toolCalls, p.call];
+          target.toolCalls = target.toolCalls.some((c) => c.id === p.call.id) ? target.toolCalls : [...target.toolCalls, p.call];
           msgs[idx] = target;
           return { ...prev, messages: msgs };
         });
       } else if (p.type === "tool_finished") {
         updateTurn((prev) => {
           const msgs = [...prev.messages];
-          const idx = msgs.findIndex((m) => m.id === p.message_id);
-          if (idx === -1) return prev;
+          let idx = msgs.findIndex((m) => m.id === p.message_id);
+          if (idx === -1) {
+            msgs.push({ id: p.message_id, role: "assistant", content: "", thinking: "", toolCalls: [], timestamp: Math.floor(Date.now() / 1000) });
+            idx = msgs.length - 1;
+          }
           const target = { ...msgs[idx] };
           const cIdx = target.toolCalls.findIndex((c) => c.id === p.call.id);
           if (cIdx >= 0) {
@@ -3633,7 +3639,7 @@ export function AgentWorkspaceView() {
                       className="btn-mini"
                       onClick={() => {
                         invoke<string>("get_workspace_diff", {
-                          workspace: session.workspace || ".",
+                          workspace: sessionRef.current.workspace || ".",
                         })
                           .then(setGitDiffText)
                           .catch(() => {});

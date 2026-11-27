@@ -1,5 +1,5 @@
 import { AgentDiff } from "./AgentDiff";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { detectModelReasoningCaps } from "../types/graph";
 import { useI18n } from "../i18n";
 import {
@@ -630,10 +630,12 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
         <button
           type="button"
           className="md-code-copy"
-          onClick={() => {
-            navigator.clipboard?.writeText(code).catch(() => {});
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1400);
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(code);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1400);
+            } catch { setCopied(false); }
           }}
         >
           {copied ? <Check size={11} /> : <Copy size={11} />}
@@ -705,7 +707,7 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   return out;
 }
 
-export function MarkdownContent({ text }: { text: string }) {
+export const MarkdownContent = memo(function MarkdownContent({ text }: { text: string }) {
   if (!text) return null;
 
   const blocks: ReactNode[] = [];
@@ -871,6 +873,8 @@ export function MarkdownContent({ text }: { text: string }) {
       pLines.push(lines[i]);
       i++;
     }
+    // Unrecognized or incomplete fence during streaming: always advance.
+    if (pLines.length === 0) pLines.push(lines[i++]);
     blocks.push(
       <p key={`b-${keyIdx++}`} className="md-p">
         {pLines.map((pl, idx) => (
@@ -884,7 +888,7 @@ export function MarkdownContent({ text }: { text: string }) {
   }
 
   return <div className="md-root">{blocks}</div>;
-}
+});
 
 
 export function ModelLoadInlineBar({
