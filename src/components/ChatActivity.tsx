@@ -6,7 +6,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 import { AgentDiff } from "./AgentDiff";
-import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { detectModelReasoningCaps } from "../types/graph";
 import { useI18n } from "../i18n";
 import {
@@ -427,6 +427,32 @@ export function ThinkingDisclosure({
   );
 }
 
+const ToolOutputPreview = memo(function ToolOutputPreview({ text, locale }: { text: string; locale: string }) {
+  const [formatted, setFormatted] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const pretty = useMemo(() => {
+    if (text.length > 100000 || !/^[\\s]*[\\[{]/.test(text)) return null;
+    try {
+      return JSON.stringify(JSON.parse(text), null, 2);
+    } catch {
+      return null;
+    }
+  }, [text]);
+  const output = formatted && pretty !== null ? pretty : text;
+  const lines = output.split("\n");
+  const limited = lines.length > 100 || output.length > 12000;
+  const visible = !expanded && limited ? lines.slice(0, 100).join("\n").slice(0, 12000) : output;
+  return <div>
+    {pretty !== null && <button type="button" className="icon-btn" aria-pressed={formatted} onClick={() => setFormatted(v => !v)}>
+      {formatted ? (locale === "es" ? "JSON original" : "Raw JSON") : (locale === "es" ? "Formatear JSON" : "Format JSON")}
+    </button>}
+    <pre className="tool-output-pre" tabIndex={0}>{visible}</pre>
+    {limited && <button type="button" className="icon-btn" aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>
+      {expanded ? (locale === "es" ? "Mostrar menos" : "Show less") : (locale === "es" ? "Ver vista previa completa" : "Show full preview")}
+    </button>}
+  </div>;
+});
+
 export function ToolActivityRow({
   call,
   open,
@@ -596,7 +622,7 @@ export function ToolActivityRow({
                 // fallback to plain preview
               }
             }
-            return <pre className="tool-output-pre">{call.outputPreview}</pre>;
+            return <ToolOutputPreview text={call.outputPreview} locale={locale} />;
           })()}
         </div>
       )}
