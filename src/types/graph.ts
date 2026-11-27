@@ -336,6 +336,7 @@ export interface AgentChatMessage {
   prefillMs?: number | null;
   generationMs?: number | null;
   promptTokens?: number | null;
+  contextCapacity?: number | null;
 }
 
 export interface AgentSession {

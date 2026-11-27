@@ -2021,11 +2021,12 @@ export function AgentWorkspaceView() {
                 }
 
                 const isLastMsg = idx === session.messages.length - 1;
+                const hasRunningTools = msg.toolCalls.some((t) => t.status === "running");
                 const isThinkingLive =
                   isCurrentRunning &&
                   isLastMsg &&
                   !msg.content &&
-                  !msg.toolCalls.some((t) => t.status === "running");
+                  !msg.toolCalls.length;
                 const thinkOpen = expandedThinking[msg.id] ?? false;
                 const continuation = idx > 0 && session.messages[idx - 1].role === "assistant";
 
@@ -2039,7 +2040,7 @@ export function AgentWorkspaceView() {
                         </span>
                       </span>
                       {msg.tokensPerSecond != null && <span className="agent-model-tag">{msg.tokensPerSecond.toFixed(1)} tok/s</span>}
-                      {msg.promptTokens != null && <span className="agent-model-tag">{msg.promptTokens.toLocaleString()} ctx tokens</span>}
+                      {msg.promptTokens != null && <span className="agent-model-tag">{msg.promptTokens.toLocaleString()}{msg.contextCapacity != null && msg.contextCapacity > 0 ? ` / ${msg.contextCapacity.toLocaleString()} (${(100 * msg.promptTokens / msg.contextCapacity).toFixed(1)}%)` : ""} ctx tokens</span>}
                       {msg.prefillMs != null && <span className="agent-model-tag">Prefill {(msg.prefillMs / 1000).toFixed(2)} s</span>}
                       {msg.generationMs != null && <span className="agent-model-tag">Gen {(msg.generationMs / 1000).toFixed(2)} s</span>}
                       {msg.inferenceMs != null && <span className="agent-model-tag" title={locale === "es" ? "Duración de inferencia / primer fragmento" : "Inference duration / first chunk"}>{(msg.inferenceMs / 1000).toFixed(2)} s{msg.firstTokenMs != null ? ` · TTFT ${(msg.firstTokenMs / 1000).toFixed(2)} s` : ""}</span>}
@@ -2072,7 +2073,7 @@ export function AgentWorkspaceView() {
                       </div>
                     ) : (
                       isCurrentRunning &&
-                      idx === session.messages.length - 1 && (
+                      idx === session.messages.length - 1 && !msg.toolCalls.length && (
                         modelLoadProgress &&
                         (modelLoadProgress.stage === "unloading" ||
                           modelLoadProgress.stage === "starting" ||
@@ -2086,6 +2087,7 @@ export function AgentWorkspaceView() {
                         )
                       )
                     )}
+                    {isCurrentRunning && isLastMsg && hasRunningTools && <div className="agent-typing-hint"><RefreshCw size={12} className="spin" /><span>{locale === "es" ? "Ejecutando herramientas…" : "Running tools…"}</span></div>}
                     {msg.toolCalls.length > 0 && (
                       <ToolCallGroup
                         calls={msg.toolCalls}
