@@ -2374,6 +2374,12 @@ export function AgentWorkspaceView() {
                     executing: locale === "es" ? "Ejecutando herramientas" : "Executing tools",
                     verifying: locale === "es" ? "Verificando" : "Verifying",
                   } as Record<string, string>)[harnessProgress[session.id].phase] ?? harnessProgress[session.id].phase}</span>
+                  {harnessProgress[session.id].task_title && (
+                    <span title={harnessProgress[session.id].task_title ?? undefined}
+                      style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {harnessProgress[session.id].task_title}
+                    </span>
+                  )}
                   <progress aria-label={locale === "es" ? "Presupuesto de inferencias" : "Inference budget"}
                     value={harnessProgress[session.id].inferences} max={Math.max(1, harnessProgress[session.id].inference_limit)}
                     style={{ width: 80 }} />
