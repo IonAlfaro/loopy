@@ -2485,6 +2485,36 @@ where
             record.status = "error".into();
             return err;
         }
+        // Reject deterministic failures before spending inference on independent review.
+        {
+                let evidence = match state.task_evidence.lock() {
+                    Ok(evidence) => evidence,
+                    Err(_) => { record.status = "error".into(); return "Evidence lock poisoned.".into(); }
+                };
+                let failures = match state.task_failed_checks.lock() {
+                    Ok(failures) => failures,
+                    Err(_) => { record.status = "error".into(); return "Check lock poisoned.".into(); }
+                };
+                let verification = match state.task_verification.lock() {
+                    Ok(checks) => checks,
+                    Err(_) => { record.status = "error".into(); return "Verification lock poisoned.".into(); }
+                };
+                for task in &plan.tasks {
+                    if task.status == PlanTaskStatus::Done && verification.get(&task.id) == Some(&false) {
+                        record.status = "error".into();
+                        return format!("Task {} modified files after its last successful command. Run a relevant verification command before completing it.", task.id);
+                    }
+                    if task.status == PlanTaskStatus::Done && failures.get(&task.id).map_or(false, |commands| !commands.is_empty()) {
+                        record.status = "error".into();
+                        return format!("Task {} has an unresolved failed command. Repair and rerun the same command successfully before completing it, or report the task as failed.", task.id);
+                    }
+                    if task.status == PlanTaskStatus::Done &&
+                        !evidence.get(&task.id).map_or(false, |ids| !ids.is_empty()) {
+                        record.status = "error".into();
+                        return format!("Task {} has no successful recorded tool calls. Run a relevant check before completing it.", task.id);
+                    }
+                }
+        }
         // Review newly completed tasks in an isolated read-only model context.
         // Never hold a mutex across an inference await.
         let review_tasks = {
@@ -2542,33 +2572,6 @@ where
                 if plan.tasks.iter().filter(|task| task.status == PlanTaskStatus::InProgress).count() > 1 {
                     record.status = "error".into();
                     return "Only one task may be in progress at a time.".into();
-                }
-                let evidence = match state.task_evidence.lock() {
-                    Ok(evidence) => evidence,
-                    Err(_) => { record.status = "error".into(); return "Evidence lock poisoned.".into(); }
-                };
-                let failures = match state.task_failed_checks.lock() {
-                    Ok(failures) => failures,
-                    Err(_) => { record.status = "error".into(); return "Check lock poisoned.".into(); }
-                };
-                let verification = match state.task_verification.lock() {
-                    Ok(checks) => checks,
-                    Err(_) => { record.status = "error".into(); return "Verification lock poisoned.".into(); }
-                };
-                for task in &plan.tasks {
-                    if task.status == PlanTaskStatus::Done && verification.get(&task.id) == Some(&false) {
-                        record.status = "error".into();
-                        return format!("Task {} modified files after its last successful command. Run a relevant verification command before completing it.", task.id);
-                    }
-                    if task.status == PlanTaskStatus::Done && failures.get(&task.id).map_or(false, |commands| !commands.is_empty()) {
-                        record.status = "error".into();
-                        return format!("Task {} has an unresolved failed command. Repair and rerun the same command successfully before completing it, or report the task as failed.", task.id);
-                    }
-                    if task.status == PlanTaskStatus::Done &&
-                        !evidence.get(&task.id).map_or(false, |ids| !ids.is_empty()) {
-                        record.status = "error".into();
-                        return format!("Task {} has no successful recorded tool calls. Run a relevant check before completing it.", task.id);
-                    }
                 }
                 *slot = Some(plan.clone());
             },
