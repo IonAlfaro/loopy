@@ -5,6 +5,15 @@ description = "Visual agentic development loop studio with embedded local infere
 authors = ["Loors"]
 edition = "2021"
 default-run = "loors"
+autobins = false
+
+[[bin]]
+name = "loors"
+path = "src/main.rs"
+
+[[bin]]
+name = "loors-cli"
+path = "src/bin/loors-cli.rs"
 
 [lib]
 name = "loors_lib"
