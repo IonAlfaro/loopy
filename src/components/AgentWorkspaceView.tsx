@@ -300,6 +300,13 @@ export function AgentWorkspaceView() {
       if (current()) setGitDiffText(`Error: ${String(err)}`);
     }
   };
+  const [harnessProgress, setHarnessProgress] = useState<Record<string, Extract<AgentChatEvent, { type: "harness_progress" }>>>({});
+  const clearHarnessProgress = (id: string) => setHarnessProgress(prev => {
+    if (!prev[id]) return prev;
+    const next = { ...prev };
+    delete next[id];
+    return next;
+  });
   const [contextUsage, setContextUsage] = useState<
     Record<string, Extract<AgentChatEvent, { type: "context_usage" }>>
   >({});
@@ -691,6 +698,10 @@ export function AgentWorkspaceView() {
       const p = ev.payload;
       if (!runningTurns.current.has(p.session_id) || p.turn_id !== activeTurnIds.current.get(p.session_id)) return;
       if (p.type !== "token" && pendingTokens.size) flushTokens();
+      if (p.type === "harness_progress") {
+        setHarnessProgress(prev => ({ ...prev, [p.session_id]: p }));
+        return;
+      }
       if (p.type === "context_usage") {
         setContextUsage((prev) => ({ ...prev, [p.session_id]: p }));
         return;
@@ -719,6 +730,7 @@ export function AgentWorkspaceView() {
         return;
       }
       if (p.type === "turn_finished") {
+        clearHarnessProgress(p.session_id);
         setPermissionReq(null, p.session_id);
         setPendingQuestion(null, p.session_id);
       } else if (p.type === "tool_finished") {
@@ -1228,6 +1240,7 @@ export function AgentWorkspaceView() {
     };
 
     const turnId = crypto.randomUUID();
+    clearHarnessProgress(id);
     activeTurnIds.current.set(id, turnId);
     runningTurns.current.set(id, nextSession);
     setRunningSessionIds([...runningTurns.current.keys()]);
@@ -2354,6 +2367,19 @@ export function AgentWorkspaceView() {
               />
               <AgentComposerAttachments pendingAttachments={pendingAttachments} pinnedFiles={session.pinnedFiles} stagingFiles={!!stagingFiles} locale={locale} onRemove={att => setPendingAttachments(prev => prev.filter(x => x !== att))} onUnpin={rel => void togglePinFile(rel)} />
 
+              {isCurrentRunning && harnessProgress[session.id] && (
+                <div role="status" style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, padding: "6px 0" }}>
+                  <span>{({
+                    reasoning: locale === "es" ? "Razonando" : "Reasoning",
+                    executing: locale === "es" ? "Ejecutando herramientas" : "Executing tools",
+                    verifying: locale === "es" ? "Verificando" : "Verifying",
+                  } as Record<string, string>)[harnessProgress[session.id].phase] ?? harnessProgress[session.id].phase}</span>
+                  <progress aria-label={locale === "es" ? "Presupuesto de inferencias" : "Inference budget"}
+                    value={harnessProgress[session.id].inferences} max={Math.max(1, harnessProgress[session.id].inference_limit)}
+                    style={{ width: 80 }} />
+                  <span>{harnessProgress[session.id].inferences}/{harnessProgress[session.id].inference_limit}</span>
+                </div>
+              )}
               {!isCurrentRunning && (
                 <AgentExecutionCheckpoint checkpoint={session.executionCheckpoint} workspace={session.workspace}
                   locale={locale} disabled={!session.modelPath || Boolean(input.trim()) || pendingAttachments.length > 0}
