@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,26 +92,32 @@ pub fn current_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-pub fn parse_semver(raw: &str) -> (u64, u64, u64) {
-    let cleaned = raw
-        .trim()
-        .trim_start_matches('v')
-        .trim_start_matches('V')
-        .split('-')
-        .next()
-        .unwrap_or("0.0.0");
-    let mut parts = cleaned.split('.');
-    let major = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-    let minor = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-    let patch = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-    (major, minor, patch)
+fn parse_semver(raw: &str) -> Result<semver::Version, String> {
+    semver::Version::parse(raw.trim().trim_start_matches(['v', 'V']))
+        .map_err(|_| format!("Versión de actualización inválida: {raw}"))
 }
 
-pub fn is_newer_version(current: &str, latest: &str) -> bool {
-    parse_semver(latest) > parse_semver(current)
+fn is_newer_version(current: &str, latest: &str) -> Result<bool, String> {
+    Ok(parse_semver(latest)?
+        .cmp_precedence(&parse_semver(current)?)
+        .is_gt())
 }
 
 fn select_platform_asset(assets: &[Value]) -> Option<(String, String, Option<u64>)> {
+    select_asset(
+        assets,
+        std::env::consts::OS,
+        std::env::consts::ARCH,
+        std::env::var_os("APPIMAGE").is_some_and(|path| !path.is_empty()),
+    )
+}
+
+fn select_asset(
+    assets: &[Value],
+    os: &str,
+    arch: &str,
+    running_appimage: bool,
+) -> Option<(String, String, Option<u64>)> {
     let items: Vec<(String, String, Option<u64>)> = assets
         .iter()
         .filter_map(|a| {
@@ -122,7 +128,7 @@ fn select_platform_asset(assets: &[Value]) -> Option<(String, String, Option<u64
         })
         .collect();
 
-    if cfg!(target_os = "windows") {
+    if os == "windows" {
         items
             .iter()
             .find(|(n, _, _)| n.to_ascii_lowercase().ends_with("-setup.exe"))
@@ -137,35 +143,31 @@ fn select_platform_asset(assets: &[Value]) -> Option<(String, String, Option<u64
                     .find(|(n, _, _)| n.to_ascii_lowercase().ends_with(".msi"))
             })
             .cloned()
-    } else if cfg!(target_os = "macos") {
-        let want_arm = cfg!(target_arch = "aarch64");
-        items
-            .iter()
-            .find(|(n, _, _)| {
-                let l = n.to_ascii_lowercase();
-                l.ends_with(".dmg")
-                    && if want_arm {
-                        l.contains("aarch64") || l.contains("arm64")
-                    } else {
-                        l.contains("x64") || l.contains("x86_64")
-                    }
-            })
-            .or_else(|| {
-                items
-                    .iter()
-                    .find(|(n, _, _)| n.to_ascii_lowercase().ends_with(".dmg"))
-            })
-            .cloned()
     } else {
-        items
-            .iter()
-            .find(|(n, _, _)| n.to_ascii_lowercase().ends_with(".appimage"))
-            .or_else(|| {
-                items
-                    .iter()
-                    .find(|(n, _, _)| n.to_ascii_lowercase().ends_with(".deb"))
+        let extension = match (os, running_appimage) {
+            ("macos", _) => ".dmg",
+            ("linux", true) => ".appimage",
+            ("linux", false) => ".deb",
+            _ => return None,
+        };
+        let arch_aliases: &[&str] = match arch {
+            "x86_64" => &["x64", "amd64"],
+            "aarch64" => &["aarch64", "arm64"],
+            "x86" => &["x86", "i386", "i686"],
+            "arm" => &["arm", "armhf", "armv7"],
+            _ => &[],
+        };
+        items.into_iter().find(|(name, _, _)| {
+            let name = name.to_ascii_lowercase().replace("x86_64", "x64");
+            name.strip_suffix(extension).is_some_and(|stem| {
+                stem.split(|c: char| !c.is_ascii_alphanumeric())
+                    .any(|label| {
+                        label == arch
+                            || arch_aliases.contains(&label)
+                            || (os == "macos" && matches!(label, "universal" | "universal2"))
+                    })
             })
-            .cloned()
+        })
     }
 }
 
@@ -179,7 +181,17 @@ pub async fn check_for_updates(repo_override: Option<String>) -> Result<UpdateCh
                 .to_string()
         })?;
 
-    if !repo.contains('/') || repo.contains(' ') {
+    let valid_segment = |segment: &str| {
+        !segment.is_empty()
+            && !matches!(segment, "." | "..")
+            && segment
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'.' | b'-' | b'_'))
+    };
+    if !repo
+        .split_once('/')
+        .is_some_and(|(owner, name)| valid_segment(owner) && valid_segment(name))
+    {
         return Err(
             "Formato de repositorio inválido. Usa 'usuario/repositorio' (ej. tu-usuario/loors)."
                 .to_string(),
@@ -220,8 +232,7 @@ pub async fn check_for_updates(repo_override: Option<String>) -> Result<UpdateCh
     let tag = payload
         .get("tag_name")
         .and_then(|v| v.as_str())
-        .unwrap_or("0.0.0")
-        .to_string();
+        .ok_or_else(|| "GitHub no devolvió la versión de la publicación.".to_string())?;
     let release_url = payload
         .get("html_url")
         .and_then(|v| v.as_str())
@@ -241,8 +252,8 @@ pub async fn check_for_updates(repo_override: Option<String>) -> Result<UpdateCh
     let selected = select_platform_asset(assets);
 
     let current = current_app_version();
-    let latest_clean = tag.trim_start_matches('v').trim_start_matches('V').to_string();
-    let update_available = is_newer_version(&current, &latest_clean);
+    let latest_clean = parse_semver(tag)?.to_string();
+    let update_available = is_newer_version(&current, &latest_clean)?;
 
     Ok(UpdateCheckResult {
         current_version: current,
@@ -257,15 +268,24 @@ pub async fn check_for_updates(repo_override: Option<String>) -> Result<UpdateCh
     })
 }
 
+pub struct DownloadedInstaller {
+    pub directory: tempfile::TempDir,
+    pub path: PathBuf,
+}
+
 pub async fn download_update_installer<F>(
-    asset_url: &str,
-    asset_name: &str,
+    release: &UpdateCheckResult,
     mut on_progress: F,
-) -> Result<PathBuf, String>
+) -> Result<DownloadedInstaller, String>
 where
     F: FnMut(UpdateProgressEvent),
 {
-    if !asset_url.starts_with("https://") {
+    let (asset_url, asset_name) = release
+        .asset_url
+        .as_deref()
+        .zip(release.asset_name.as_deref())
+        .ok_or_else(|| "No hay un instalador disponible para este sistema.".to_string())?;
+    if !asset_url.starts_with("https://github.com/") {
         return Err("La URL de descarga debe usar HTTPS.".to_string());
     }
 
@@ -279,14 +299,15 @@ where
             }
         })
         .collect();
-    if safe_name.is_empty() {
+    if safe_name.is_empty() || matches!(safe_name.as_str(), "." | "..") {
         return Err("Nombre de instalador inválido.".to_string());
     }
 
-    let updates_dir = std::env::temp_dir().join("loors-updates");
-    fs::create_dir_all(&updates_dir)
+    let directory = tempfile::Builder::new()
+        .prefix("loors-update-")
+        .tempdir()
         .map_err(|e| format!("No se pudo crear carpeta temporal: {e}"))?;
-    let dest = updates_dir.join(&safe_name);
+    let dest = directory.path().join(&safe_name);
 
     on_progress(UpdateProgressEvent {
         stage: "connecting".to_string(),
@@ -310,13 +331,14 @@ where
         .error_for_status()
         .map_err(|e| format!("Error HTTP descargando actualización: {e}"))?;
 
-    let total_bytes = resp.content_length();
-    let mut file = fs::File::create(&dest)
+    let total_bytes = release.asset_size.or_else(|| resp.content_length());
+    let mut file = fs::File::create_new(&dest)
         .map_err(|e| format!("No se pudo crear {}: {e}", dest.display()))?;
 
     let mut stream = resp.bytes_stream();
     let mut downloaded: u64 = 0;
-    let mut last_pct: u8 = 0;
+    let mut last_reported_bytes = 0;
+    let mut last_pct = Some(0);
 
     while let Some(chunk_res) = stream.next().await {
         let chunk = chunk_res.map_err(|e| format!("Error leyendo descarga: {e}"))?;
@@ -326,8 +348,9 @@ where
         let pct = total_bytes
             .filter(|&t| t > 0)
             .map(|t| ((downloaded.saturating_mul(100)) / t).min(100) as u8);
-        if pct.unwrap_or(0) != last_pct || total_bytes.is_none() {
-            last_pct = pct.unwrap_or(0);
+        if pct != last_pct || (pct.is_none() && downloaded - last_reported_bytes >= 1024 * 1024) {
+            last_pct = pct;
+            last_reported_bytes = downloaded;
             on_progress(UpdateProgressEvent {
                 stage: "downloading".to_string(),
                 downloaded_bytes: downloaded,
@@ -344,6 +367,13 @@ where
         }
     }
 
+    if downloaded == 0 || total_bytes.is_some_and(|size| size != downloaded) {
+        return Err("El tamaño del instalador descargado no coincide con el esperado.".into());
+    }
+    file.sync_all()
+        .map_err(|e| format!("Error guardando el instalador: {e}"))?;
+    drop(file);
+
     on_progress(UpdateProgressEvent {
         stage: "installing".to_string(),
         downloaded_bytes: downloaded,
@@ -352,45 +382,57 @@ where
         message: "Iniciando instalador…".to_string(),
     });
 
-    Ok(dest)
+    Ok(DownloadedInstaller {
+        directory,
+        path: dest,
+    })
 }
 
-pub fn launch_installer(installer_path: &PathBuf) -> Result<bool, String> {
+pub fn launch_installer(installer_path: &Path) -> Result<bool, String> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-        let lower = installer_path
-            .to_string_lossy()
-            .to_ascii_lowercase();
-        let inst_escaped = installer_path
-            .to_string_lossy()
-            .replace('\'', "''");
-        let exe_escaped = std::env::current_exe()
-            .ok()
-            .map(|p| p.to_string_lossy().replace('\'', "''"))
-            .unwrap_or_default();
-
-        // Run a hidden detached PowerShell helper that waits briefly for Loors to exit,
-        // runs the NSIS (/S) or MSI (/qn) installer 100% silently with zero wizard UI,
-        // and automatically relaunches the updated Loors executable.
-        let ps_script = if lower.ends_with(".msi") {
-            format!(
-                "Start-Sleep -Milliseconds 700; \
-                 $p = Start-Process 'msiexec.exe' -ArgumentList '/i','\"{inst_escaped}\"','/qn','/norestart' -PassThru -Wait; \
-                 if ('{exe_escaped}' -ne '' -and (Test-Path '{exe_escaped}')) {{ Start-Process '{exe_escaped}' }}"
-            )
-        } else {
-            format!(
-                "Start-Sleep -Milliseconds 700; \
-                 $p = Start-Process '{inst_escaped}' -ArgumentList '/S' -PassThru -Wait; \
-                 if ('{exe_escaped}' -ne '' -and (Test-Path '{exe_escaped}')) {{ Start-Process '{exe_escaped}' }}"
-            )
-        };
+        let executable = std::env::current_exe()
+            .map_err(|e| format!("No se pudo localizar Loors para reiniciarlo: {e}"))?;
+        let ps_script = r#"
+            $ErrorActionPreference = 'Stop'
+            $installer = $env:LOORS_UPDATE_INSTALLER
+            try {
+                $appProcess = Get-Process -Id ([int]$env:LOORS_UPDATE_PID) -ErrorAction SilentlyContinue
+                if ($appProcess) { $appProcess | Wait-Process -Timeout 60 }
+                if ([IO.Path]::GetExtension($installer) -ieq '.msi') {
+                    $quotedInstaller = '"' + $installer + '"'
+                    $process = Start-Process 'msiexec.exe' -ArgumentList '/i',$quotedInstaller,'/qn','/norestart' -PassThru -Wait -WindowStyle Hidden
+                } else {
+                    $process = Start-Process -FilePath $installer -ArgumentList '/S' -PassThru -Wait -WindowStyle Hidden
+                }
+                if ($process.ExitCode -ne 0) { throw "Installer exit code: $($process.ExitCode)" }
+            } catch {
+                Add-Type -AssemblyName PresentationFramework
+                [void][System.Windows.MessageBox]::Show($_.Exception.Message, 'Loors Update')
+            } finally {
+                Remove-Item -LiteralPath $installer -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath ([IO.Path]::GetDirectoryName($installer)) -ErrorAction SilentlyContinue
+                if (-not (Get-Process -Id ([int]$env:LOORS_UPDATE_PID) -ErrorAction SilentlyContinue) -and
+                    (Test-Path -LiteralPath $env:LOORS_UPDATE_EXECUTABLE)) {
+                    Start-Process -FilePath $env:LOORS_UPDATE_EXECUTABLE
+                }
+            }
+        "#;
 
         std::process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
+            .args([
+                "-NoProfile",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                ps_script,
+            ])
+            .env("LOORS_UPDATE_PID", std::process::id().to_string())
+            .env("LOORS_UPDATE_INSTALLER", installer_path)
+            .env("LOORS_UPDATE_EXECUTABLE", executable)
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|e| format!("No se pudo lanzar el actualizador silencioso: {e}"))?;
@@ -399,35 +441,55 @@ pub fn launch_installer(installer_path: &PathBuf) -> Result<bool, String> {
 
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
+        let status = std::process::Command::new("open")
             .arg(installer_path)
-            .spawn()
+            .status()
             .map_err(|e| format!("No se pudo abrir el DMG: {e}"))?;
+        if !status.success() {
+            return Err(format!("No se pudo abrir el DMG: {status}"));
+        }
         Ok(false)
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(installer_path, fs::Permissions::from_mode(0o755));
-        if let Ok(current_appimage) = std::env::var("APPIMAGE") {
+        let is_appimage = installer_path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("appimage"));
+        if is_appimage {
+            fs::set_permissions(installer_path, fs::Permissions::from_mode(0o755))
+                .map_err(|e| format!("No se pudo preparar el AppImage: {e}"))?;
+        }
+        if let Some(current_appimage) = std::env::var_os("APPIMAGE").filter(|path| !path.is_empty())
+        {
             let current_path = PathBuf::from(&current_appimage);
-            if installer_path
-                .to_string_lossy()
-                .to_ascii_lowercase()
-                .ends_with(".appimage")
-            {
-                let backup = current_path.with_extension("AppImage.old");
-                let _ = fs::rename(&current_path, &backup);
-                if fs::copy(installer_path, &current_path).is_ok() {
-                    let _ = fs::set_permissions(&current_path, fs::Permissions::from_mode(0o755));
-                    let _ = std::process::Command::new(&current_path).spawn();
+            if let Some(parent) = current_path.parent().filter(|_| is_appimage) {
+                let replace = || -> std::io::Result<()> {
+                    let staged = tempfile::NamedTempFile::new_in(parent)?;
+                    fs::copy(installer_path, staged.path())?;
+                    staged.as_file().sync_all()?;
+                    staged.persist(&current_path)?;
+                    Ok(())
+                };
+                if replace().is_ok()
+                    && std::process::Command::new(&current_path)
+                        .env_remove("APPIMAGE")
+                        .env_remove("APPDIR")
+                        .env_remove("ARGV0")
+                        .env_remove("OWD")
+                        .spawn()
+                        .is_ok()
+                {
                     return Ok(true);
                 }
             }
         }
         if let Some(parent) = installer_path.parent() {
-            let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+            std::process::Command::new("xdg-open")
+                .arg(parent)
+                .spawn()
+                .map_err(|e| format!("No se pudo abrir la carpeta del instalador: {e}"))?;
         }
         Ok(false)
     }
@@ -438,12 +500,54 @@ mod tests {
     use super::*;
 
     #[test]
+    fn selects_unix_installers_by_format_and_architecture() {
+        let assets = [
+            "Loors_1.2.3_aarch64.dmg",
+            "Loors_1.2.3_x64.dmg",
+            "Loors_1.2.3_aarch64.AppImage",
+            "Loors_1.2.3_amd64.AppImage",
+            "Loors_1.2.3_amd64.deb",
+            "Loors_1.2.3_universal.dmg",
+        ].map(|name| serde_json::json!({
+            "name": name,
+            "browser_download_url": format!("https://github.com/owner/repo/releases/download/v1.2.3/{name}"),
+        }));
+        let selected = |assets: &[Value], os, arch, appimage| {
+            select_asset(assets, os, arch, appimage).map(|(name, _, _)| name)
+        };
+
+        assert_eq!(
+            selected(&assets, "macos", "x86_64", false).as_deref(),
+            Some("Loors_1.2.3_x64.dmg")
+        );
+        assert_eq!(
+            selected(&assets[5..], "macos", "x86_64", false).as_deref(),
+            Some("Loors_1.2.3_universal.dmg")
+        );
+        assert!(selected(&assets[..1], "macos", "x86_64", false).is_none());
+        assert_eq!(
+            selected(&assets, "linux", "x86_64", true).as_deref(),
+            Some("Loors_1.2.3_amd64.AppImage")
+        );
+        assert_eq!(
+            selected(&assets, "linux", "x86_64", false).as_deref(),
+            Some("Loors_1.2.3_amd64.deb")
+        );
+        assert!(selected(&assets, "linux", "aarch64", false).is_none());
+        assert!(selected(&assets[4..], "linux", "x86_64", true).is_none());
+    }
+
+    #[test]
     fn compares_semver_versions_correctly() {
-        assert!(is_newer_version("0.1.0", "0.2.0"));
-        assert!(is_newer_version("0.1.0", "v0.1.1"));
-        assert!(is_newer_version("0.9.9", "1.0.0"));
-        assert!(!is_newer_version("0.2.0", "0.2.0"));
-        assert!(!is_newer_version("0.2.1", "0.2.0"));
-        assert!(!is_newer_version("1.0.0", "v0.9.5"));
+        assert_eq!(is_newer_version("0.1.0", "0.2.0"), Ok(true));
+        assert_eq!(is_newer_version("0.1.0", "v0.1.1"), Ok(true));
+        assert_eq!(is_newer_version("0.9.9", "1.0.0"), Ok(true));
+        assert_eq!(is_newer_version("0.2.0", "0.2.0"), Ok(false));
+        assert_eq!(is_newer_version("0.2.1", "0.2.0"), Ok(false));
+        assert_eq!(is_newer_version("1.0.0", "v0.9.5"), Ok(false));
+        assert_eq!(is_newer_version("1.0.0-rc.1", "1.0.0"), Ok(true));
+        assert_eq!(is_newer_version("1.0.0", "1.0.0-rc.2"), Ok(false));
+        assert_eq!(is_newer_version("1.0.0", "1.0.0+build"), Ok(false));
+        assert!(is_newer_version("1.0.0", "invalid").is_err());
     }
 }

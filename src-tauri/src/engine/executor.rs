@@ -3638,6 +3638,37 @@ pub fn chat_prompt_tokens(messages: &[ChatMessage], tool_bytes: usize) -> usize 
 }
 
 pub fn compact_agent_messages(messages: &mut [ChatMessage], tool_bytes: usize, threshold: u32) -> bool {
+    compact_tool_outputs(messages, tool_bytes, threshold, |text| truncate(text, 180))
+}
+
+pub(crate) fn compact_local_agent_messages(
+    messages: &mut [ChatMessage],
+    tool_bytes: usize,
+    threshold: u32,
+) -> bool {
+    compact_tool_outputs(messages, tool_bytes, threshold, |text| local_tool_preview(text, 180))
+}
+
+pub(crate) fn local_tool_preview(text: &str, head_chars: usize) -> String {
+    let Some((head_end, _)) = text.char_indices().nth(head_chars) else {
+        return text.to_string();
+    };
+    let mut tail_start = text.len().saturating_sub(320);
+    if tail_start <= head_end {
+        return text.to_string();
+    }
+    while !text.is_char_boundary(tail_start) {
+        tail_start += 1;
+    }
+    format!("{}\n[…]\n{}", &text[..head_end], &text[tail_start..])
+}
+
+fn compact_tool_outputs(
+    messages: &mut [ChatMessage],
+    tool_bytes: usize,
+    threshold: u32,
+    preview: impl Fn(&str) -> String,
+) -> bool {
     // Estimate one token per 2.6 UTF-8 bytes and aim for 60% of the trigger.
     let trigger_budget = (threshold as usize).saturating_mul(26) / 10;
     let target_budget = trigger_budget.saturating_mul(3) / 5;
@@ -3661,7 +3692,7 @@ pub fn compact_agent_messages(messages: &mut [ChatMessage], tool_bytes: usize, t
                     continue;
                 }
                 let replacement =
-                    format!("{}\n[salida de herramienta compactada]", truncate(text, 180));
+                    format!("{}\n[salida de herramienta compactada]", preview(text));
                 if replacement.len() < text.len() {
                     total_bytes -= text.len() - replacement.len();
                     *text = replacement;
@@ -3807,6 +3838,34 @@ mod tests {
         assert_eq!(messages[0].content.as_deref(), Some("keep"));
         assert_eq!(messages[1].content.as_deref(), Some("keep"));
         assert!(!compact_agent_messages(&mut messages, 500, 500));
+    }
+
+    #[test]
+    fn local_compaction_keeps_terminal_diagnostics() {
+        let output = format!(
+            "exit_code: 1\n{}\nerror[E0308]: tipos incompatibles",
+            "compilación de dependencias\n".repeat(500)
+        );
+        let mut original = vec![ChatMessage {
+            role: "tool".into(),
+            content: Some(local_tool_preview(&output, 7680)),
+            tool_calls: None,
+            tool_call_id: Some("check-1".into()),
+            image_paths: Vec::new(),
+        }];
+        let mut local = original.clone();
+        let before = chat_prompt_tokens(&original, 0);
+        assert!(compact_agent_messages(&mut original, 0, 500));
+        assert!(compact_local_agent_messages(&mut local, 0, 500));
+        let local_tokens = chat_prompt_tokens(&local, 0);
+        assert!(local_tokens < 500);
+        assert!(!original[0].content.as_deref().unwrap().contains("error[E0308]"));
+        let preview = local[0].content.as_deref().unwrap();
+        assert!(preview.starts_with("exit_code: 1\n"));
+        assert!(preview.contains("error[E0308]: tipos incompatibles"));
+        assert_eq!(local[0].tool_call_id.as_deref(), Some("check-1"));
+        println!("estimated prompt tokens: before={before}, current={}, local={local_tokens}",
+            chat_prompt_tokens(&original, 0));
     }
 
     #[test]

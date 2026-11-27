@@ -1,6 +1,7 @@
-import { useRef } from "react";
+import { useRef, type Ref } from "react";
 
 interface Props {
+  inputRef?: Ref<HTMLTextAreaElement>;
   value: string;
   placeholder: string;
   label: string;
@@ -9,9 +10,10 @@ interface Props {
   onSend: () => void;
 }
 
-export function AgentComposerInput({ value, placeholder, label, onChange, onFiles, onSend }: Props) {
+export function AgentComposerInput({ inputRef, value, placeholder, label, onChange, onFiles, onSend }: Props) {
   const composing = useRef(false);
   return <textarea
+    ref={inputRef}
     rows={2}
     aria-label={label}
     placeholder={placeholder}

@@ -1,5 +1,8 @@
 ﻿use crate::engine::executor::{compact_agent_messages, parse_inline_tool_calls};
-use crate::engine::executor::{chat_prompt_tokens, chat_tool_bytes, compaction_threshold};
+use crate::engine::executor::{
+    chat_prompt_tokens, chat_tool_bytes, compact_local_agent_messages, compaction_threshold,
+    local_tool_preview,
+};
 use crate::inference::llama_cpp::{agent_slot_context, LlamaCppManager};
 use crate::inference::{resolve_load_config_with_profile, ChatMessage, ChatRequest};
 use crate::knowledge::{build_knowledge_tree, build_or_update_index, search_bm25, KnowledgeIndex};
@@ -12,7 +15,7 @@ use crate::tools::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -1021,7 +1024,15 @@ where
     let has_workspace =
         !session.workspace.trim().is_empty() && session.workspace.trim() != ".";
     let mut rag_index: Option<KnowledgeIndex> = None;
-    let mut system_prompt = if has_workspace {
+    let mut system_prompt = if has_workspace && !is_cloud {
+        format!(
+            "Eres el agente de ingeniería de Loors. Workspace: {}. Permisos: {:?}.\n\
+             Verifica el código y las rutas leyendo los archivos. Abre documentos con read_file.\n\
+             Para navegar o consultar información actual usa browser_action. Complementa con web_search o fetch_url.\n\
+             Responde en español con rutas, líneas o enlaces verificados.",
+            session.workspace, session.permission_mode
+        )
+    } else if has_workspace {
         format!(
             "Eres el Agente de IngenierÃ­a de Loors trabajando directamente sobre el proyecto del usuario.\n\
              Workspace activo: `{}`\n\
@@ -1057,6 +1068,8 @@ where
              - Start with pending tasks, explicit dependencies and observable acceptance criteria.\n\
              - Work on one ready task at a time; update its status as work progresses.\n\
              - Run relevant checks and record actual results before marking a task done.\n\
+             - Use run_cmd for short local checks. If permission is denied, report the blocker; do not retry the same operation through another tool.\n\
+             - Say that tests passed only after observing a successful test run. Label manual inspection separately.\n\
              - If checks fail, repair or report a blocker; never invent evidence.\n\
              - For simple questions or small edits, avoid unnecessary planning overhead."
         );
@@ -1553,7 +1566,15 @@ where
     } else {
         profile.compact_at_tokens
     };
-    let effective_compact_budget = compaction_threshold(context_size, target_compact_tokens);
+    let mut effective_compact_budget = compaction_threshold(context_size, target_compact_tokens);
+    if !is_cloud && context_size > 0 {
+        let reserve = if profile.max_tokens == 0 {
+            context_size / 4
+        } else {
+            profile.max_tokens.min(context_size / 4)
+        };
+        effective_compact_budget = effective_compact_budget.min(context_size - reserve);
+    }
     tool_defs.retain(|tool| tool["function"]["name"].as_str().map_or(false, |name| work_mode.allows_tool(name)));
     let tool_bytes = chat_tool_bytes(&tool_defs);
 
@@ -1565,9 +1586,17 @@ where
     // A turn is only completed after an explicit non-truncated final response.
     let mut execution = ExecutionState::new(max_steps);
     let mut plan_reminders = 0usize;
+    let mut unplanned_edit = false;
+    let mut unplanned_check_after_edit = None;
+    let mut rejected_commands = HashSet::new();
     let mut final_summary = format!("Iteration budget exhausted ({max_steps}); work may be incomplete.");
 
     for _step in 1..=max_steps {
+        if cancel.load(Ordering::SeqCst) {
+            execution.finish(TurnOutcome::Cancelled);
+            final_summary = "Detenido por el usuario.".to_string();
+            break;
+        }
         if stagnant {
             if work_mode == AgentWorkMode::Agent && replans < state.budget.recovery_attempts {
                 replans += 1;
@@ -1603,12 +1632,6 @@ where
             final_summary = "Global inference budget exhausted.".into();
             break;
         }
-        if cancel.load(Ordering::SeqCst) {
-            execution.finish(TurnOutcome::Cancelled);
-            final_summary = "Detenido por el usuario.".to_string();
-            break;
-        }
-
         emit(AgentChatEvent::HarnessProgress { session_id: session.id.clone(), phase: "reasoning".into(), task_title: state.execution_plan.lock().ok().and_then(|slot| slot.as_ref().and_then(|plan| plan.tasks.iter().find(|task| task.status == PlanTaskStatus::InProgress).map(|task| task.title.clone()))), inferences: state.inference_count.load(Ordering::SeqCst), inference_limit: state.budget.total_inferences });
         // Preserve each model iteration as its own chronological assistant message.
         let assistant_msg_id = if _step == 1 {
@@ -1659,11 +1682,16 @@ where
                 system.content = Some(current_system_prompt);
             }
         }
-        compact_agent_messages(&mut llm_messages, tool_bytes, effective_compact_budget);
+        if is_cloud {
+            compact_agent_messages(&mut llm_messages, tool_bytes, effective_compact_budget);
+        } else {
+            compact_local_agent_messages(&mut llm_messages, tool_bytes, effective_compact_budget);
+        }
+        let prompt_tokens = chat_prompt_tokens(&llm_messages, tool_bytes);
         emit(AgentChatEvent::ContextUsage {
             session_id: session.id.clone(),
             model_path: session.model_path.clone(),
-            used_tokens: chat_prompt_tokens(&llm_messages, tool_bytes),
+            used_tokens: prompt_tokens,
             max_tokens: context_size,
             compact_at_tokens: effective_compact_budget,
         });
@@ -1676,7 +1704,10 @@ where
             tools: tool_defs.clone(),
             temperature: profile.temperature,
             top_p: Some(profile.top_p),
-            max_tokens: if profile.max_tokens > 0 {
+            max_tokens: if !is_cloud && context_size > 0 && prompt_tokens < context_size as usize {
+                let available = context_size - prompt_tokens as u32;
+                Some(if profile.max_tokens == 0 { available } else { profile.max_tokens.min(available) })
+            } else if profile.max_tokens > 0 {
                 Some(profile.max_tokens)
             } else {
                 None
@@ -1773,12 +1804,12 @@ where
             last.first_token_ms = first_token_ms;
         }
         let resp = match chat_res {
-            Ok(r) => r,
-            Err(err) if err == "__CANCELLED__" => {
+            result if cancel.load(Ordering::SeqCst) || result.as_ref().is_err_and(|err| err == "__CANCELLED__") => {
                 execution.finish(TurnOutcome::Cancelled);
                 final_summary = "Detenido por el usuario.".to_string();
                 break;
             }
+            Ok(r) => r,
             Err(err) => {
                 execution.finish(TurnOutcome::Error);
                 final_summary = err.clone();
@@ -1855,7 +1886,10 @@ where
                 final_summary = format!("Unfinished plan: {remaining}");
                 break;
             }
-            if truncated {
+            if unplanned_check_after_edit == Some(false) {
+                execution.finish(TurnOutcome::Incomplete);
+                final_summary = "The changes were saved, but the attempted post-edit command did not verify them.".into();
+            } else if truncated {
                 execution.finish(TurnOutcome::Incomplete);
                 final_summary = "The model did not produce a complete final response.".to_string();
             } else {
@@ -1945,10 +1979,15 @@ where
                     );
                 }
                 Ok(parsed_args) => {
+                    let commands = permission_commands(&tc.function.name, &parsed_args);
                     // Once a plan exists, side-effecting tools require an active task.
                     let plan_requires_task = state.execution_plan.lock()
                         .map(|slot| slot.is_some()).unwrap_or(true);
-                    if work_mode == AgentWorkMode::Plan && tc.function.name == "set_execution_plan"
+                    if commands.clone().any(|command| rejected_commands.contains(command)) {
+                        denied = true;
+                        record.status = "denied".into();
+                        tool_output = "El usuario ya rechazó este comando durante este turno. Informa del bloqueo y no repitas la ejecución con otra herramienta.".into();
+                    } else if work_mode == AgentWorkMode::Plan && tc.function.name == "set_execution_plan"
                         && serde_json::from_value::<ExecutionPlan>(parsed_args.clone())
                             .map_or(true, |plan| plan.tasks.iter().any(|task| task.status != PlanTaskStatus::Pending))
                     {
@@ -2049,16 +2088,25 @@ where
                                 preview,
                             });
 
-                            let decision = tokio::select! {
-                                res = rx => res.unwrap_or(PermissionDecision { approved: false, always_allow_tool: false }),
+                            let response = tokio::select! {
+                                res = rx => res.ok(),
                                 _ = async {
                                     while !cancel.load(Ordering::SeqCst) {
                                         tokio::time::sleep(Duration::from_millis(90)).await;
                                     }
-                                } => PermissionDecision { approved: false, always_allow_tool: false },
+                                } => None,
                             };
+                            if response.as_ref().is_some_and(|decision| !decision.approved)
+                                && !cancel.load(Ordering::SeqCst)
+                            {
+                                rejected_commands.extend(commands.map(str::to_owned));
+                            }
+                            let decision = response.unwrap_or(PermissionDecision {
+                                approved: false,
+                                always_allow_tool: false,
+                            });
 
-                            if !decision.approved {
+                            if !decision.approved || cancel.load(Ordering::SeqCst) {
                                 denied = true;
                                 record.status = "denied".to_string();
                                 tool_output = if cancel.load(Ordering::SeqCst) {
@@ -2124,6 +2172,18 @@ where
             }
             record.duration_ms = t0.elapsed().as_millis() as u64;
             record.output_preview = truncate_chars(&tool_output, 4000);
+            if record.task_id.is_none() {
+                match (record.name.as_str(), record.status.as_str()) {
+                    ("edit_file" | "write_file" | "delete_file", "success") => {
+                        unplanned_edit = true;
+                        unplanned_check_after_edit = None;
+                    }
+                    ("run_cmd", status) if unplanned_edit && unplanned_check_after_edit != Some(true) => {
+                        unplanned_check_after_edit = Some(status == "success");
+                    }
+                    _ => {}
+                }
+            }
             // A file mutation invalidates earlier command verification for the active task.
             if let Some(task_id) = &record.task_id {
                 if let Ok(mut checks) = state.task_verification.lock() {
@@ -2220,7 +2280,11 @@ where
 
             llm_messages.push(ChatMessage {
                 role: "tool".to_string(),
-                content: Some(truncate_chars(&tool_output, 8000)),
+                content: Some(if is_cloud {
+                    truncate_chars(&tool_output, 8000)
+                } else {
+                    local_tool_preview(&tool_output, 7680)
+                }),
                 tool_calls: None,
                 tool_call_id: Some(call_id),
                 image_paths: Vec::new(),
@@ -2273,6 +2337,14 @@ where
 
     // Persist the terminal outcome with the existing plan checkpoint.
     if let Some(checkpoint) = session.execution_checkpoint.as_mut().and_then(Value::as_object_mut) {
+        checkpoint.insert("telemetry".into(), json!({
+            "iterations": execution.iterations,
+            "iterationLimit": state.budget.iterations,
+            "inferences": state.inference_count.load(Ordering::SeqCst),
+            "inferenceLimit": state.budget.total_inferences,
+            "recoveries": replans,
+            "recoveryLimit": state.budget.recovery_attempts,
+        }));
         checkpoint.insert("outcome".into(), json!({
             "status": execution.outcome().as_str(),
             "summary": &final_summary,
@@ -2961,6 +3033,18 @@ async fn run_subagent_loop(
     }
 }
 
+fn permission_commands<'a>(tool: &str, args: &'a Value) -> impl Iterator<Item = &'a str> + Clone {
+    let keys: &[&str] = match tool {
+        "run_cmd" | "run_bg_cmd" | "schedule_task" | "docker_exec" | "debug_crash" => &["command"],
+        "differential_test" => &["cmd_a", "cmd_b"],
+        _ => &[],
+    };
+    keys.iter().filter_map(|key| args.get(*key)?.as_str()).map(|command| {
+        let command = command.trim();
+        command.strip_suffix(" 2>&1").unwrap_or(command).trim_end()
+    }).filter(|command| !command.is_empty())
+}
+
 fn command_identity(args: &str) -> String {
     serde_json::from_str::<Value>(args).ok()
         .and_then(|value| value.get("command").and_then(Value::as_str).map(str::to_owned))
@@ -2973,7 +3057,24 @@ fn command_exit_code(output: &str) -> Option<i32> {
 
 #[cfg(test)]
 mod command_evidence_tests {
-    use super::command_exit_code;
+    use super::{command_exit_code, permission_commands};
+    use serde_json::json;
+
+    #[test]
+    fn permission_commands_match_across_shell_tools() {
+        let original = json!({"command": "python -m unittest"});
+        let redirected = json!({"command": " python -m unittest 2>&1 ", "image": "python"});
+        let rejected: std::collections::HashSet<_> = permission_commands("run_cmd", &original).collect();
+        for tool in ["run_bg_cmd", "schedule_task", "docker_exec", "debug_crash"] {
+            assert!(permission_commands(tool, &redirected).any(|command| rejected.contains(command)));
+        }
+        assert!(permission_commands("differential_test", &json!({
+            "cmd_a": "python --version", "cmd_b": "python -m unittest"
+        })).any(|command| rejected.contains(command)));
+        assert!(!permission_commands("write_file", &original).any(|command| rejected.contains(command)));
+        assert!(!permission_commands("run_cmd", &json!({"command": "python -m unittest other"}))
+            .any(|command| rejected.contains(command)));
+    }
 
     #[test]
     fn command_result_uses_only_header() {

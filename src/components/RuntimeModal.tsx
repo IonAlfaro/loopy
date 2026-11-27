@@ -1,6 +1,6 @@
 ﻿import { ModalBackdrop } from "./ModalBackdrop";
 import { useEffect, useState } from "react";
-import { CheckCircle2, Cpu, Download, Trash2, X } from "lucide-react";
+import { CheckCircle2, Cpu, Download, FolderOpen, Gauge, MemoryStick, Trash2, X } from "lucide-react";
 import { invoke } from "../lib/bridge";
 import { listen } from "../lib/bridge";
 import { useGraphStore } from "../store/useGraphStore";
@@ -154,193 +154,136 @@ export function RuntimeModal({ open, embedded = false, onClose }: RuntimeModalPr
     }
   };
 
+  const L = (en: string, es: string) => locale === "es" ? es : en;
+  const backendLabel = (backend: RuntimeBackendKind) => backend === "auto"
+    ? L("Automatic", "Automático")
+    : BACKEND_LABELS[backend];
+  const installed = status?.installed ?? [];
   const innerBody = (
-    <div className="modal-body" style={embedded ? { padding: 0 } : undefined}>
-          {hardware ? (
-            <div className="hw-box">
-              <div>
-                <strong>CPU:</strong> {hardware.cpu_brand} ({hardware.cpu_cores}{" "}
-                {locale === "es" ? "hilos" : "threads"})
-              </div>
-              <div>
-                <strong>RAM:</strong>{" "}
-                {(hardware.total_ram_mb / 1024).toFixed(1)} GB
-              </div>
-              <div>
-                <strong>GPU:</strong>{" "}
-                {hardware.gpus.length > 0
-                  ? hardware.gpus
-                      .map(
-                        (g) =>
-                          `${g.name}${g.vram_mb ? ` (${(g.vram_mb / 1024).toFixed(1)} GB VRAM)` : ""}`
-                      )
-                      .join(", ")
-                  : locale === "es"
-                    ? "No detectada (se usará CPU)"
-                    : "Not detected (CPU will be used)"}
-              </div>
-              <div>
-                <strong>{locale === "es" ? "Recomendado:" : "Recommended:"}</strong>{" "}
-                <span className="pill">
-                  {BACKEND_LABELS[hardware.recommended_backend]}
-                </span>
-              </div>
-            </div>
-          ) : error ? (
-            <div className="hw-note">{error}</div>
-          ) : (
-            <div className="hw-note">
-              {locale === "es" ? "Detectando hardware…" : "Detecting hardware…"}
-            </div>
-          )}
-
-          <label className="field">
-            <span>{locale === "es" ? "Backend de inferencia" : "Inference backend"}</span>
-            <select
-              value={selectedBackend}
-              disabled={downloading}
-              onChange={(e) =>
-                setSelectedBackend(e.target.value as RuntimeBackendKind)
-              }
-            >
-              {backends.map((b) => (
-                <option key={b} value={b}>
-                  {BACKEND_LABELS[b]}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 6,
-              padding: "10px 12px",
-              borderRadius: 10,
-              border: "1px solid rgba(255,255,255,0.08)",
-              background: "rgba(255,255,255,0.03)",
-            }}
-          >
-            <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0" }}>
-              {locale === "es"
-                ? "Binario llama-server personalizado (opcional)"
-                : "Custom llama-server binary (optional)"}
-            </span>
-            <span style={{ fontSize: 11.5, color: "#94a3b8" }}>
-              {locale === "es"
-                ? "Usa tu propia compilación de llama.cpp, ik_llama.cpp u otro binario compatible."
-                : "Point to your own llama.cpp, ik_llama.cpp, or any compatible llama-server binary."}
-            </span>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <input
-                type="text"
-                className="cloud-field-input"
-                style={{ flex: 1 }}
-                value={customPath}
-                onChange={(e) => setCustomPath(e.target.value)}
-                placeholder={
-                  locale === "es"
-                    ? "C:\\ruta\\a\\llama-server.exe (vacío = gestionado por Loors)"
-                    : "/path/to/llama-server (empty = Loors-managed)"
-                }
-              />
-              <button
-                type="button"
-                className="btn-secondary"
-                disabled={savingCustom}
-                onClick={() => void handleBrowseCustomRuntime()}
-              >
-                {locale === "es" ? "Examinar…" : "Browse…"}
-              </button>
-              <button
-                type="button"
-                className="btn-secondary"
-                disabled={savingCustom}
-                onClick={() => void handleSaveCustomRuntime()}
-              >
-                {locale === "es" ? "Usar" : "Apply"}
-              </button>
-              {status?.custom_binary_path && (
-                <button
-                  type="button"
-                  className="icon-btn"
-                  title={locale === "es" ? "Restaurar runtime gestionado" : "Reset to managed runtime"}
-                  onClick={() => void handleSaveCustomRuntime("")}
-                >
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-            {customNotice && (
-              <span style={{ fontSize: 11.5, color: "#34d399" }}>{customNotice}</span>
-            )}
-          </div>
-
-          {status && status.installed.length > 0 && (
-            <div className="installed-list">
-              <div className="panel-title">
-                {locale === "es" ? "Runtimes instalados" : "Installed runtimes"}
-              </div>
-              {status.installed.map((rt) => (
-                <div key={rt.backend} className="installed-item">
-                  <CheckCircle2 size={15} className="installed-ok" />
-                  <div className="installed-meta">
-                    <div className="installed-name">
-                      {BACKEND_LABELS[rt.backend]} ·{" "}
-                      <span>{rt.version}</span>
-                    </div>
-                    <div className="installed-path">{rt.binary_path}</div>
-                  </div>
-                  <button
-                    type="button"
-                    className="icon-btn danger"
-                    title={locale === "es" ? "Desinstalar runtime" : "Uninstall runtime"}
-                    disabled={downloading}
-                    onClick={() => handleUninstall(rt.backend)}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {progress && (
-            <div className="download-box">
-              <div className="download-msg">{progress.message}</div>
-              {progress.percent !== null && (
-                <div className="progress-track">
-                  <div
-                    className="progress-fill"
-                    style={{ width: `${Math.min(100, Math.max(0, progress.percent))}%` }}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          {error && hardware && <div className="hw-error">{error}</div>}
-
-          <div className="modal-footer" style={embedded ? { justifyContent: "flex-start" } : undefined}>
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={downloading || !hardware}
-              onClick={handleInstall}
-            >
-              <Download size={14} />
-              <span>
-                {downloading ? "Downloading llama.cpp…" : t("runtime.install")}
-              </span>
-            </button>
-            {!embedded && (
-              <button type="button" className="btn-secondary" onClick={onClose}>
-                {t("runtime.done")}
-              </button>
+    <div className={`modal-body runtime-settings ${embedded ? "is-embedded" : ""}`}>
+      <section className="runtime-preference">
+        <div className="runtime-preference-title">
+          <span className="runtime-section-icon"><Gauge size={17} /></span>
+          <div>
+            <label className="runtime-section-title" htmlFor="runtime-backend">
+              {L("Inference engine", "Motor de inferencia")}
+            </label>
+            {hardware && (
+              <p>{L("Recommended for this device", "Recomendado para este equipo")} · <strong>{backendLabel(hardware.recommended_backend)}</strong></p>
             )}
           </div>
         </div>
+        <select id="runtime-backend" className="cloud-field-input" value={selectedBackend} disabled={downloading}
+          onChange={(event) => setSelectedBackend(event.target.value as RuntimeBackendKind)}>
+          {backends.map((backend) => (
+            <option key={backend} value={backend}>{backendLabel(backend)}</option>
+          ))}
+        </select>
+      </section>
+
+      <section className="runtime-installed">
+        <div className="runtime-section-head">
+          <h3 className="runtime-section-title">{L("Installed runtimes", "Runtimes instalados")}</h3>
+          <button type="button" className="btn-primary" disabled={downloading || !hardware} onClick={handleInstall}>
+            <Download size={14} />
+            {downloading ? L("Downloading…", "Descargando…") : installed.length
+              ? L("Download or update", "Descargar o actualizar") : L("Download llama.cpp", "Descargar llama.cpp")}
+          </button>
+        </div>
+        {installed.length > 0 ? (
+          <div className="runtime-installed-list">
+            {installed.map((runtime) => (
+              <div key={runtime.backend} className="runtime-installed-row">
+                <CheckCircle2 size={16} className="installed-ok" aria-hidden="true" />
+                <div className="runtime-installed-meta">
+                  <strong>{BACKEND_LABELS[runtime.backend]}</strong>
+                  <span className="runtime-installed-path truncate-text" title={runtime.binary_path}>{runtime.binary_path}</span>
+                </div>
+                <span className="runtime-version">{runtime.version}</span>
+                <button type="button" className="icon-btn danger" disabled={downloading}
+                  title={L("Uninstall runtime", "Desinstalar runtime")}
+                  aria-label={`${L("Uninstall", "Desinstalar")} ${BACKEND_LABELS[runtime.backend]}`}
+                  onClick={() => void handleUninstall(runtime.backend)}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : status && (
+          <p className="runtime-empty">{L("No Loors-managed runtimes installed.", "No hay runtimes gestionados por Loors instalados.")}</p>
+        )}
+        {progress && (
+          <div className="download-box" role="status">
+            <div className="download-msg">{progress.message}</div>
+            {progress.percent !== null && (
+              <div className="progress-track">
+                <div className="progress-fill" style={{ width: `${Math.min(100, Math.max(0, progress.percent))}%` }} />
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      {hardware ? (
+        <section className="runtime-device">
+          <h3 className="runtime-section-title">{L("This device", "Este equipo")}</h3>
+          <dl className="runtime-hardware-grid">
+            <div>
+              <dt><Cpu size={14} /> CPU</dt>
+              <dd>{hardware.cpu_brand}</dd>
+              <dd className="runtime-hardware-detail">{hardware.cpu_cores} {L("threads", "hilos")}</dd>
+            </div>
+            <div>
+              <dt><MemoryStick size={14} /> RAM</dt>
+              <dd>{(hardware.total_ram_mb / 1024).toFixed(1)} GB</dd>
+            </div>
+            <div>
+              <dt><Gauge size={14} /> GPU</dt>
+              {hardware.gpus.length ? hardware.gpus.map((gpu, index) => (
+                <dd key={index}>{gpu.name}{gpu.vram_mb ? ` · ${(gpu.vram_mb / 1024).toFixed(1)} GB VRAM` : ""}</dd>
+              )) : <dd>{L("None detected", "No detectada")}</dd>}
+            </div>
+          </dl>
+        </section>
+      ) : !error && <p className="runtime-empty" role="status">{L("Detecting hardware…", "Detectando hardware…")}</p>}
+
+      <details className="runtime-advanced">
+        <summary>
+          <span>{L("Custom binary", "Binario personalizado")}</span>
+          {status?.custom_binary_path && <span className="runtime-version">{L("In use", "En uso")}</span>}
+        </summary>
+        <div className="runtime-custom-body">
+          <p>{L("Use a compatible llama-server binary instead of the Loors-managed runtime.", "Usa un binario llama-server compatible en lugar del runtime gestionado por Loors.")}</p>
+          <label className="cloud-field-label">
+            <span>{L("Binary path", "Ruta del binario")}</span>
+            <input type="text" className="cloud-field-input" value={customPath}
+              onChange={(event) => setCustomPath(event.target.value)}
+              placeholder={L("/path/to/llama-server", "Ruta a llama-server")} />
+          </label>
+          <div className="runtime-custom-actions">
+            <button type="button" className="btn-secondary" disabled={savingCustom} onClick={() => void handleBrowseCustomRuntime()}>
+              <FolderOpen size={14} /> {L("Browse…", "Examinar…")}
+            </button>
+            <button type="button" className="btn-primary" disabled={savingCustom} onClick={() => void handleSaveCustomRuntime()}>
+              {L("Apply", "Aplicar")}
+            </button>
+            {status?.custom_binary_path && (
+              <button type="button" className="btn-secondary" disabled={savingCustom} onClick={() => void handleSaveCustomRuntime("")}>
+                {L("Use Loors runtime", "Usar runtime de Loors")}
+              </button>
+            )}
+          </div>
+          {customNotice && <p role="status">{customNotice}</p>}
+        </div>
+      </details>
+
+      {error && <div className="hw-error" role="alert">{error}</div>}
+      {!embedded && (
+        <div className="modal-footer">
+          <button type="button" className="btn-secondary" onClick={onClose}>{t("runtime.done")}</button>
+        </div>
+      )}
+    </div>
   );
 
   if (embedded) return innerBody;

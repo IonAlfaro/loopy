@@ -668,6 +668,14 @@ pub async fn dispatch_rpc(
                 .unwrap_or_default();
 
             let is_cloud = inference::cloud::is_cloud_model(&session.model_path);
+            let override_ctx = match args.get("slotContext").and_then(Value::as_u64) {
+                Some(tokens) if !is_cloud => Some(
+                    u32::try_from(tokens).ok()
+                        .and_then(inference::llama_cpp::agent_total_context)
+                        .ok_or("Requested context is too large for the shared agent runtime")?,
+                ),
+                _ => override_ctx,
+            };
             if !is_cloud && state.engine.is_running() {
                 return Err("__GPU_BUSY_HARNESS__".to_string());
             }

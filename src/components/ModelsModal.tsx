@@ -1,10 +1,9 @@
 ﻿import { ModalBackdrop } from "./ModalBackdrop";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Boxes,
   Check,
   ChevronDown,
-  ChevronRight,
   Cloud,
   Cpu,
   Download,
@@ -273,6 +272,7 @@ export function ModelsModal({
   // Local filters
   const [localSearch, setLocalSearch] = useState("");
   const [familyFilter, setFamilyFilter] = useState<string>("Todos");
+  const [expandedLocalGroup, setExpandedLocalGroup] = useState<string | null>(null);
 
   // HF Discover state
   const [query, setQuery] = useState("");
@@ -289,6 +289,7 @@ export function ModelsModal({
     nodes.find((n) => n.data.kind === "local_model")?.data.config.modelPath ?? ""
   );
   const effectiveActivePath = activeModelPath || graphModelPath;
+
 
   const refreshLocal = useCallback(() => {
     invoke<LocalModelFile[]>("scan_local_models")
@@ -444,8 +445,11 @@ export function ModelsModal({
         });
       }
     }
-    return Array.from(groups.values());
-  }, [localModels, localSearch, familyFilter]);
+    const activeFirst = (paths: string[]) => Number(paths.includes(effectiveActivePath));
+    return Array.from(groups.values()).sort((a, b) =>
+      activeFirst(b.items.map(({ file }) => file.path)) - activeFirst(a.items.map(({ file }) => file.path))
+    );
+  }, [localModels, localSearch, familyFilter, effectiveActivePath]);
 
   const filteredRepoFiles = useMemo(() => {
     const q = quantFilter.trim().toLowerCase();
@@ -459,6 +463,16 @@ export function ModelsModal({
       );
     });
   }, [ggufFiles, quantFilter]);
+
+  const hfFileGroups = useMemo(() => {
+    const variants: typeof filteredRepoFiles = [];
+    const projectors: typeof filteredRepoFiles = [];
+    for (const file of filteredRepoFiles) {
+      const meta = parseGgufMetadata(file.filename, file.size_bytes);
+      (meta.isMmproj ? projectors : variants).push(file);
+    }
+    return { variants, projectors };
+  }, [filteredRepoFiles]);
 
   if (!open) return null;
 
@@ -732,7 +746,7 @@ export function ModelsModal({
                         : "Select a provider below to connect your API key or local endpoint"}
                   </span>
                 </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <div className="cloud-summary-actions">
                   <button
                     type="button"
                     className="btn-secondary"
@@ -779,63 +793,39 @@ export function ModelsModal({
                       key={prov.id}
                       className={`cloud-row-item ${isExpanded ? "is-expanded" : ""} ${isConnected ? "is-connected" : ""}`}
                     >
-                      <div
+                      <button
+                        type="button"
                         className="cloud-row-header"
+                        id={`provider-${prov.id}`}
+                        aria-expanded={isExpanded}
+                        aria-controls={`provider-config-${prov.id}`}
                         onClick={() => setExpandedProviderId(isExpanded ? null : prov.id)}
                       >
-                        <div
-                          className="cloud-brand-avatar"
-                          style={{ color: brand.color, background: brand.bg, borderColor: `${brand.color}33` }}
-                        >
-                          {brand.badge}
-                        </div>
+                        <span className="cloud-brand-avatar" aria-hidden="true">{brand.badge}</span>
+                        <span className="cloud-row-name">{prov.name}</span>
+                        <span className={`cloud-provider-status ${isConnected ? "connected" : ""}`}>
+                          {isConnected
+                            ? (locale === "es" ? `${prov.models.length} modelos` : `${prov.models.length} models`)
+                            : !prov.enabled && (hasKey || prov.models.length)
+                              ? (locale === "es" ? "Desactivado" : "Disabled")
+                              : hasKey
+                                ? (locale === "es" ? "Clave guardada" : "Key saved")
+                                : (locale === "es" ? "Sin conectar" : "Not connected")}
+                        </span>
+                        <ChevronDown size={15} className="cloud-row-chevron" aria-hidden="true" />
+                      </button>
 
-                        <div className="cloud-row-info">
-                          <div className="cloud-row-title-line">
-                            <span className="cloud-row-name">{prov.name}</span>
-                            {isConnected ? (
-                              <span className="cloud-pill connected">
-                                {locale === "es"
-                                  ? `${prov.models.length} modelos`
-                                  : `${prov.models.length} models`}
-                              </span>
-                            ) : hasKey ? (
-                              <span className="cloud-pill configured">
-                                {locale === "es" ? "Clave guardada" : "Key saved"}
-                              </span>
-                            ) : null}
+                      <div id={`provider-config-${prov.id}`} className="cloud-row-drawer" hidden={!isExpanded} aria-labelledby={`provider-${prov.id}`}>
+                        {isExpanded && (
+                        <>
+                          <div className="cloud-provider-settings-head">
+                            <p>{locale === "es" ? brand.descEs : brand.descEn}</p>
+                            <label className="cloud-provider-enable">
+                              <span>{locale === "es" ? "Habilitado" : "Enabled"}</span>
+                              <input type="checkbox" role="switch" checked={prov.enabled}
+                                onChange={() => updateProvider(idx, { enabled: !prov.enabled })} />
+                            </label>
                           </div>
-                          <div className="cloud-row-sub truncate-text">
-                            {locale === "es" ? brand.descEs : brand.descEn}
-                          </div>
-                        </div>
-
-                        <div
-                          className="cloud-row-controls"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={prov.enabled}
-                            aria-label={prov.enabled ? `Disable ${prov.name}` : `Enable ${prov.name}`}
-                            className={`cloud-toggle-btn ${prov.enabled ? "is-on" : ""}`}
-                            onClick={() => updateProvider(idx, { enabled: !prov.enabled })}
-                          >
-                            <span className="cloud-toggle-thumb" />
-                          </button>
-                          <button
-                            type="button"
-                            className="cloud-expand-btn"
-                            onClick={() => setExpandedProviderId(isExpanded ? null : prov.id)}
-                          >
-                            {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                          </button>
-                        </div>
-                      </div>
-
-                      {isExpanded && (
-                        <div className="cloud-row-drawer">
                           {(isCustom || isLocalApi) && (
                             <div className="cloud-drawer-grid">
                               {isCustom ? (
@@ -991,11 +981,11 @@ export function ModelsModal({
                           </div>
 
                           {provErr && (
-                            <div className="cloud-drawer-error">{provErr}</div>
+                            <div className="cloud-drawer-error" role="alert">{provErr}</div>
                           )}
 
                           {visibleModels.length > 0 && (
-                            <div className="cloud-models-tray">
+                            <div className="cloud-models-tray" aria-label={locale === "es" ? "Modelos del proveedor" : "Provider models"}>
                               {visibleModels.map((mid) => {
                                 const uri = `cloud::${prov.id}::${mid}`;
                                 const isActive = effectiveActivePath === uri;
@@ -1004,6 +994,8 @@ export function ModelsModal({
                                     key={mid}
                                     type="button"
                                     className={`chip ${isActive ? "active" : ""}`}
+                                    aria-pressed={isActive}
+                                    title={mid}
                                     onClick={() => void useCloudModel(prov, mid)}
                                   >
                                     {isActive && <Check size={11} style={{ marginRight: 4, verticalAlign: -1 }} />}
@@ -1013,8 +1005,9 @@ export function ModelsModal({
                               })}
                             </div>
                           )}
-                        </div>
-                      )}
+                        </>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -1023,7 +1016,7 @@ export function ModelsModal({
             );
           })() : hubTab === "local" ? (
             <div className="hub-local-view">
-              <div className="hub-toolbar">
+              <div className="hub-toolbar local-model-toolbar">
                 <div className="hub-search-box">
                   <Search size={14} className="hub-search-icon" />
                   <input
@@ -1032,8 +1025,8 @@ export function ModelsModal({
                     onChange={(e) => setLocalSearch(e.target.value)}
                     placeholder={
                       locale === "es"
-                        ? "Buscar entre tus modelos locales (nombre, familia o cuantización Q4, Q8, UD-Q4_K_XL...)"
-                        : "Search your local models (name, family, or quantization Q4, Q8, UD-Q4_K_XL...)"
+                        ? "Buscar modelo, familia o variante…"
+                        : "Search model, family, or quantization…"
                     }
                   />
                   {localSearch && (
@@ -1046,31 +1039,27 @@ export function ModelsModal({
                     </button>
                   )}
                 </div>
+                {localFamilies.length > 2 && (
+                  <select className="cloud-field-input local-family-filter"
+                    aria-label={locale === "es" ? "Familia del modelo" : "Model family"}
+                    value={familyFilter} onChange={(event) => setFamilyFilter(event.target.value)}>
+                    {localFamilies.map((family) => (
+                      <option key={family} value={family}>
+                        {family === "Todos" ? (locale === "es" ? "Todas las familias" : "All families") : family}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <button
                   type="button"
                   className="btn-secondary"
-                  title="Volver a escanear carpetas de LM Studio y Loors"
+                  title={locale === "es" ? "Volver a buscar modelos locales" : "Scan for local models again"}
                   onClick={refreshLocal}
                 >
                   <RefreshCw size={13} />
                   <span>{locale === "es" ? "Reescanear" : "Rescan"}</span>
                 </button>
               </div>
-
-              {localFamilies.length > 2 && (
-                <div className="hub-filter-chips">
-                  {localFamilies.map((fam) => (
-                    <button
-                      key={fam}
-                      type="button"
-                      className={`chip ${familyFilter === fam ? "active" : ""}`}
-                      onClick={() => setFamilyFilter(fam)}
-                    >
-                      {fam === "Todos" ? (locale === "es" ? "Todos" : "All") : fam}
-                    </button>
-                  ))}
-                </div>
-              )}
 
               {groupedLocalModels.length === 0 ? (
                 <div className="hub-empty-box">
@@ -1107,111 +1096,95 @@ export function ModelsModal({
                   </button>
                 </div>
               ) : (
-                <div className="hub-card-grid">
-                  {groupedLocalModels.map((grp) => {
-                    const hasLocalMmproj = localModels.some((m) =>
-                      m.name.toLowerCase().includes("mmproj")
-                    );
-                    const caps = detectModelModalities(grp.baseName, false);
+                <ul className="local-model-list">
+                  {groupedLocalModels.map((group, groupIndex) => {
+                    const groupKey = `${group.family}::${group.baseName}`;
+                    const expanded = expandedLocalGroup === groupKey;
+                    const detailsId = `downloaded-model-details-${groupIndex}`;
+                    const caps = detectModelModalities(group.baseName, false);
+                    const hasLocalMmproj = localModels.some((model) => model.name.toLowerCase().includes("mmproj"));
                     return (
-                    <div
-                      key={`${grp.family}-${grp.baseName}`}
-                      className="model-family-card local-model-card"
-                    >
-                      <div className="model-family-head">
-                        <h4 className="model-family-title">{grp.baseName}</h4>
-                      </div>
-
-                      <div className="quant-table">
-                        {grp.items.map(({ file, meta }) => {
-                          const isSelected = effectiveActivePath === file.path;
+                      <li key={groupKey}>
+                        {group.items.map(({ file, meta }, index) => {
+                          const active = effectiveActivePath === file.path;
                           const sizeGb = file.size_mb / 1024;
                           const fit = getHardwareFit(sizeGb, budgetGb, locale);
                           return (
-                            <div
-                              key={file.path}
-                              className={`quant-row ${isSelected ? "is-active" : ""}`}
-                            >
-                              <div className="quant-row-main">
-                                <span className={`quant-pill ${meta.quantColor}`}>
-                                  {meta.quant}
-                                </span>
-                                <span className="quant-size tabular-nums">
-                                  {sizeGb >= 1 ? `${sizeGb.toFixed(2)} GB` : `${file.size_mb} MB`}
-                                </span>
-                                <span className={`local-model-fit ${fit.cls}`}>{fit.label}</span>
+                            <div key={file.path} className="local-model-row" data-active={active}>
+                              {index === 0
+                                ? <span className="local-model-list-icon"><HardDrive size={16} /></span>
+                                : <span aria-hidden="true" />}
+                              <div className="local-model-row-info">
+                                {index === 0 && <strong className="truncate-text" title={group.baseName}>{group.baseName}</strong>}
+                                <div className="local-model-row-meta">
+                                  <code>{meta.quant}</code>
+                                  <span className="tabular-nums">{sizeGb >= 1 ? `${sizeGb.toFixed(2)} GB` : `${file.size_mb} MB`}</span>
+                                  <span className={`local-model-fit ${fit.cls}`}>{fit.label}</span>
+                                </div>
                               </div>
-
-                              <div className="quant-row-actions">
+                              <div className="local-model-row-actions">
                                 {!meta.isMmproj && (
-                                  <button
-                                    type="button"
-                                    className="icon-btn"
-                                    title={locale === "es" ? "Ajustes de inferencia" : "Inference settings"}
+                                  <button type="button" className="icon-btn"
                                     aria-label={locale === "es" ? "Ajustes de inferencia" : "Inference settings"}
-                                    onClick={() => openTuningModal(file.path)}
-                                  >
+                                    title={locale === "es" ? "Ajustes de inferencia" : "Inference settings"}
+                                    onClick={() => openTuningModal(file.path)}>
                                     <Settings size={15} />
                                   </button>
                                 )}
-                                {isSelected ? (
-                                  <span className="local-model-active">
-                                    <Check size={13} />
-                                    {locale === "es" ? "Activo" : "Active"}
-                                  </span>
-                                ) : (
-                                  <button type="button" className="btn-primary" onClick={() => selectModel(file.path)}>
-                                    {locale === "es" ? "Seleccionar" : "Select"}
+                                <button type="button" className="btn-secondary local-model-select" aria-pressed={active}
+                                  onClick={() => { if (!active) selectModel(file.path); }}>
+                                  {active && <Check size={13} />}
+                                  {active ? (locale === "es" ? "Activo" : "Active") : (locale === "es" ? "Seleccionar" : "Select")}
+                                </button>
+                                {index === 0 ? (
+                                  <button type="button" className="icon-btn local-model-expand" aria-expanded={expanded} aria-controls={detailsId}
+                                    aria-label={locale === "es" ? "Detalles del modelo" : "Model details"}
+                                    title={locale === "es" ? "Detalles del modelo" : "Model details"}
+                                    onClick={() => setExpandedLocalGroup(expanded ? null : groupKey)}>
+                                    <ChevronDown size={15} />
                                   </button>
-                                )}
+                                ) : <span className="local-model-expand-space" />}
                               </div>
-                              <details className="model-family-details inspector-disclosure">
-                        <summary>{locale === "es" ? "Detalles del modelo" : "Model details"}</summary>
-                        <p>
-                          {[
-                            grp.family,
-                            grp.params,
-                            grp.sourceLabel,
-                            caps.text && (locale === "es" ? "Texto" : "Text"),
-                            caps.vision && (hasLocalMmproj
-                              ? locale === "es" ? "Imágenes" : "Images"
-                              : locale === "es" ? "Imágenes (requiere mmproj)" : "Images (requires mmproj)"),
-                            caps.thinking && (locale === "es" ? "Razonamiento" : "Reasoning"),
-                            caps.tools && (locale === "es" ? "Herramientas" : "Tools"),
-                          ].filter(Boolean).join(" · ")}
-                        </p>
-                        {grp.items.map(({ file, meta }) => (
-                          <div className="local-model-file" key={file.path}>
-                            <div>
-                              <p>{meta.quant} · {meta.quantQuality}{meta.recommended
-                                ? locale === "es" ? " · Recomendado" : " · Recommended"
-                                : ""}</p>
-                              <code>{file.path}</code>
                             </div>
-                            <button
-                              type="button"
-                              className="icon-btn danger"
-                              title={locale === "es" ? `Eliminar ${file.name} del disco` : `Delete ${file.name} from disk`}
-                              onClick={() => void handleDeleteLocalModel(file)}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        ))}
-                      </details>
-                    </div>
                           );
                         })}
-                      </div>
-                    </div>
-                  );
+                        <div id={detailsId} className="local-model-details" hidden={!expanded}>
+                          <p>
+                            {[
+                              group.family, group.params, group.sourceLabel,
+                              caps.text && (locale === "es" ? "Texto" : "Text"),
+                              caps.vision && (hasLocalMmproj
+                                ? (locale === "es" ? "Imágenes" : "Images")
+                                : (locale === "es" ? "Imágenes (requiere mmproj)" : "Images (requires mmproj)")),
+                              caps.thinking && (locale === "es" ? "Razonamiento" : "Reasoning"),
+                              caps.tools && (locale === "es" ? "Herramientas" : "Tools"),
+                            ].filter(Boolean).join(" · ")}
+                          </p>
+                          {group.items.map(({ file, meta }) => (
+                            <div className="local-model-file" key={file.path}>
+                              <div>
+                                <p>{meta.quant} · {meta.quantQuality}{meta.recommended
+                                  ? (locale === "es" ? " · Recomendado" : " · Recommended") : ""}</p>
+                                <code>{file.path}</code>
+                              </div>
+                              <button type="button" className="icon-btn danger"
+                                title={locale === "es" ? `Eliminar ${file.name} del disco` : `Delete ${file.name} from disk`}
+                                aria-label={locale === "es" ? `Eliminar ${file.name}` : `Delete ${file.name}`}
+                                onClick={() => void handleDeleteLocalModel(file)}>
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </li>
+                    );
                   })}
-                </div>
+                </ul>
               )}
             </div>
           ) : (
             <div className="hub-discover-view">
-              <div className="hub-toolbar">
+              <div className="hub-toolbar hf-search-toolbar">
                 <div className="hub-search-box">
                   <Search size={14} className="hub-search-icon" />
                   <input
@@ -1228,6 +1201,16 @@ export function ModelsModal({
                     }
                   />
                 </div>
+                <select className="cloud-field-input hf-sort-select" aria-label={locale === "es" ? "Orden de resultados" : "Sort results"}
+                  value={sortBy} onChange={(event) => {
+                    const next = event.target.value as HfSortMode;
+                    setSortBy(next);
+                    void runSearch(query, next);
+                  }}>
+                  {HF_SORT_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>{locale === "es" ? option.labelEs : option.labelEn}</option>
+                  ))}
+                </select>
                 <button
                   type="button"
                   className="btn-primary"
@@ -1247,28 +1230,12 @@ export function ModelsModal({
                 </button>
               </div>
 
-              <div className="hub-filter-chips">
-                {HF_SORT_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    className={`chip ${sortBy === opt.id ? "active" : ""}`}
-                    onClick={() => {
-                      setSortBy(opt.id);
-                      void runSearch(query, opt.id);
-                    }}
-                  >
-                    {locale === "es" ? opt.labelEs : opt.labelEn}
-                  </button>
-                ))}
-              </div>
-
               <div className="hf-split-pane">
                 <div className="hf-repos-col">
                   <div className="hf-pane-title">
                     {locale === "es"
-                      ? `Repositorios encontrados (${repos.length})`
-                      : `Repositories found (${repos.length})`}
+                      ? `Repositorios · ${repos.length}`
+                      : `Repositories · ${repos.length}`}
                   </div>
                   <div className="hf-repos-list">
                     {searching && (
@@ -1285,49 +1252,19 @@ export function ModelsModal({
                           : "Search for a model above to inspect its GGUF quantizations."}
                       </div>
                     )}
-                    {repos.map((r) => {
-                      const [author, repoName] = r.id.includes("/")
-                        ? r.id.split("/", 2)
-                        : ["HF", r.id];
-                      const meta = parseGgufMetadata(repoName);
-                      const caps = detectModelModalities(repoName);
-                      const active = selectedRepo === r.id;
-                      const updatedDate = r.last_modified
-                        ? r.last_modified.slice(0, 10)
-                        : null;
+                    {repos.map((repo) => {
+                      const [author, name] = repo.id.includes("/") ? repo.id.split("/", 2) : ["HF", repo.id];
+                      const active = selectedRepo === repo.id;
                       return (
-                        <button
-                          key={r.id}
-                          type="button"
+                        <button key={repo.id} type="button" title={repo.id} aria-pressed={active}
                           className={`hf-repo-card ${active ? "active" : ""}`}
-                          onClick={() => void openRepoFiles(r.id)}
-                        >
-                          <div className="hf-repo-top">
-                            <span className="hf-author">{author}</span>
-                            <span className="model-family-tag">{meta.family}</span>
-                            {meta.params && (
-                              <span className="model-param-tag">{meta.params}</span>
-                            )}
-                            {caps.vision && (
-                              <span className="cap-badge cap-vision">Images</span>
-                            )}
-                            {caps.thinking && (
-                              <span className="cap-badge cap-thinking">Thinking</span>
-                            )}
-                          </div>
-                          <div className="hf-repo-name">{repoName}</div>
-                          <div className="hf-repo-stats tabular-nums">
-                            <span>↓ {formatCount(r.downloads)}</span>
-                            <span>
-                              <Heart size={10} style={{ verticalAlign: -1 }} />{" "}
-                              {formatCount(r.likes)}
-                            </span>
-                            {updatedDate && (
-                              <span style={{ marginLeft: "auto", opacity: 0.7 }}>
-                                {updatedDate}
-                              </span>
-                            )}
-                          </div>
+                          onClick={() => void openRepoFiles(repo.id)}>
+                          <span className="hf-repo-name truncate-text">{name}</span>
+                          <span className="hf-repo-stats tabular-nums">
+                            <span className="hf-author truncate-text">{author}</span>
+                            <span><Download size={11} /> {formatCount(repo.downloads)}</span>
+                            <span><Heart size={11} /> {formatCount(repo.likes)}</span>
+                          </span>
                         </button>
                       );
                     })}
@@ -1338,18 +1275,17 @@ export function ModelsModal({
                   <div className="hf-quants-head">
                     <div>
                       <div className="hf-pane-title">
-                        {locale === "es"
-                          ? "Cuantizaciones GGUF disponibles"
-                          : "Available GGUF quantizations"}
+                        {locale === "es" ? "Archivos GGUF" : "GGUF files"}
                       </div>
                       {selectedRepo && (
-                        <div className="hf-selected-repo-id">{selectedRepo}</div>
+                        <div className="hf-selected-repo-id truncate-text" title={selectedRepo}>{selectedRepo}</div>
                       )}
                     </div>
                     {ggufFiles.length > 0 && (
                       <input
                         type="text"
                         className="hf-quant-filter"
+                        aria-label={locale === "es" ? "Filtrar archivos" : "Filter files"}
                         placeholder={
                           locale === "es"
                             ? "Filtrar Q4_K_M, Q8_0..."
@@ -1381,7 +1317,7 @@ export function ModelsModal({
                           : "No `.gguf` files matched that filter in this repository."}
                       </div>
                     ) : (
-                      filteredRepoFiles.map((f) => {
+                      [...hfFileGroups.variants, ...hfFileGroups.projectors].map((f, index) => {
                         const meta = parseGgufMetadata(f.filename, f.size_bytes);
                         const fit = getHardwareFit(meta.sizeGb, budgetGb, locale);
                         const localMatch = findLocalMatch(f.filename);
@@ -1397,26 +1333,24 @@ export function ModelsModal({
                               : `${Math.round(dlItem.speed_bps / 1024)} KB/s`
                             : null;
                         return (
-                          <div key={f.filename} className="quant-row">
-                            <div className="quant-row-main">
-                              <span className={`quant-pill ${meta.quantColor}`}>
-                                {meta.quant}
-                              </span>
-                              <div className="quant-desc-col">
-                                <div className="quant-quality-line" style={{ flexWrap: "wrap", rowGap: 2 }}>
-                                  <span style={{ whiteSpace: "nowrap" }}>{meta.quantQuality}</span>
-                                  {meta.recommended && (
-                                    <span className="rec-badge" style={{ whiteSpace: "nowrap" }}>
-                                      {locale === "es" ? "★ Recomendado" : "★ Recommended"}
-                                    </span>
-                                  )}
-                                </div>
-                                <div
-                                  className="quant-path-sub truncate-text"
-                                  title={f.filename}
-                                >
-                                  {f.filename}
-                                </div>
+                          <Fragment key={f.filename}>
+                            {(index === 0 || index === hfFileGroups.variants.length) && (
+                              <h4 className="hf-file-section-label">
+                                {meta.isMmproj
+                                  ? (locale === "es" ? "Proyectores de visión · mmproj" : "Vision projectors · mmproj")
+                                  : (locale === "es" ? "Variantes del modelo" : "Model variants")}
+                              </h4>
+                            )}
+                          <div className="hf-file-row">
+                            <div className="hf-file-row-info">
+                              <div className="hf-file-meta">
+                                <code>{meta.quant}</code>
+                                <span className="truncate-text" title={meta.quantQuality}>
+                                  {meta.isMmproj ? (locale === "es" ? "Proyector" : "Projector") : meta.quantQuality}
+                                </span>
+                                {meta.recommended && <span className="hf-file-recommended">{locale === "es" ? "Recomendado" : "Recommended"}</span>}
+                              </div>
+                              <div className="hf-file-name truncate-text" title={f.filename}>{f.filename.split("/").pop()}</div>
                                 {isThisDownloading && (
                                   <div className="quant-inline-dl">
                                     <div className="dl-progress-track">
@@ -1433,16 +1367,13 @@ export function ModelsModal({
                                     </span>
                                   </div>
                                 )}
-                              </div>
                             </div>
 
-                            <div className="quant-row-actions">
-                              <span className={`fit-badge ${fit.cls}`}>
-                                {fit.label}
-                              </span>
-                              <span className="quant-size tabular-nums">
-                                {formatBytes(f.size_bytes)}
-                              </span>
+                            <div className="hf-file-size">
+                              <span className="tabular-nums">{formatBytes(f.size_bytes)}</span>
+                              <span className={`local-model-fit ${fit.cls}`}>{fit.label}</span>
+                            </div>
+                            <div className="hf-file-actions">
                               {localMatch ? (
                                 <button
                                   type="button"
@@ -1460,8 +1391,8 @@ export function ModelsModal({
                                         ? "Activo"
                                         : "Active"
                                       : locale === "es"
-                                        ? "Descargado · Usar"
-                                        : "Downloaded · Use"}
+                                        ? "Usar"
+                                        : "Use"}
                                   </span>
                                 </button>
                               ) : isThisDownloading ? (
@@ -1481,7 +1412,7 @@ export function ModelsModal({
                               ) : (
                                 <button
                                   type="button"
-                                  className="btn-primary"
+                                  className="btn-secondary"
                                   onClick={() =>
                                     handleDownload(selectedRepo, f.filename, f.size_bytes)
                                   }
@@ -1494,6 +1425,7 @@ export function ModelsModal({
                               )}
                             </div>
                           </div>
+                          </Fragment>
                         );
                       })
                     )}

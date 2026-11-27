@@ -1353,7 +1353,7 @@ function LoorsStudioInner() {
         open={settingsOpen}
         initialTab={settingsTab}
         updateInfo={updateInfo}
-        onUpdateChecked={(res) => setUpdateInfo(res)}
+        onUpdateChecked={setUpdateInfo}
         onClose={() => setSettingsOpen(false)}
         onNotice={(msg) => setBanner(msg)}
       />

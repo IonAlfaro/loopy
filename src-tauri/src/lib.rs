@@ -592,24 +592,34 @@ async fn check_app_update(repo: Option<String>) -> Result<updater::UpdateCheckRe
 #[tauri::command]
 async fn install_app_update(
     app: AppHandle,
-    asset_url: String,
-    asset_name: String,
-) -> Result<String, String> {
-    let app_prog = app.clone();
-    let installer_path = updater::download_update_installer(&asset_url, &asset_name, move |ev| {
-        let _ = app_prog.emit("loors://update-progress", ev);
+    expected_version: String,
+) -> Result<bool, String> {
+    static INSTALL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let guard = INSTALL_LOCK
+        .try_lock()
+        .map_err(|_| "Ya hay una actualización en curso.".to_string())?;
+
+    let release = updater::check_for_updates(None).await?;
+    if !release.update_available || release.latest_version != expected_version {
+        return Err("La versión disponible ha cambiado. Vuelve a buscar actualizaciones.".into());
+    }
+    let installer = updater::download_update_installer(&release, |ev| {
+        let _ = app.emit("loors://update-progress", ev);
     })
     .await?;
 
-    let should_exit = updater::launch_installer(&installer_path)?;
+    let should_exit = updater::launch_installer(&installer.path)?;
+    if cfg!(target_os = "windows") || !should_exit {
+        let _ = installer.directory.keep();
+    }
     if should_exit {
-        let app_exit = app.clone();
         tokio::spawn(async move {
+            let _guard = guard;
             tokio::time::sleep(std::time::Duration::from_millis(600)).await;
-            app_exit.exit(0);
+            app.exit(0);
         });
     }
-    Ok(installer_path.to_string_lossy().to_string())
+    Ok(should_exit)
 }
 
 #[tauri::command]

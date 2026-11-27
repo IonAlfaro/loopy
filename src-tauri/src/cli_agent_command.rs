@@ -9,6 +9,7 @@ pub const HELP: &str =
 [--backend <auto|cuda|vulkan|metal|cpu>] [--context <tokens>] <prompt>
 
 Uses LOORS_MODEL if --model is omitted. Tool approvals are requested on stdin.
+--context is the requested context in tokens per local agent slot.
 --worktree starts from committed HEAD and keeps the worktree for desktop review.";
 
 struct Options {
@@ -177,7 +178,7 @@ pub async fn run(args: &[String]) -> Result<i32, String> {
             "id": id, "title": title, "workspace": workspace, "modelPath": options.model,
             "permissionMode": "ask",
         },
-        "userPrompt": options.prompt, "backend": options.backend, "overrideCtx": options.context,
+        "userPrompt": options.prompt, "backend": options.backend, "slotContext": options.context,
     });
     let state = HeadlessState::new(None, None);
     let mut events = state.events_tx.subscribe();

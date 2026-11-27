@@ -431,7 +431,7 @@ const ToolOutputPreview = memo(function ToolOutputPreview({ text, locale }: { te
   const [formatted, setFormatted] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const pretty = useMemo(() => {
-    if (text.length > 100000 || !/^[\\s]*[\\[{]/.test(text)) return null;
+    if (text.length > 100000 || !/^\s*[[{]/.test(text)) return null;
     try {
       return JSON.stringify(JSON.parse(text), null, 2);
     } catch {
@@ -882,9 +882,10 @@ export function ReasoningEffortSelect({
           { id: "high" as const, label: "High", short: "High", desc: "Deep reasoning" },
         ];
 
+  const effortLabel = locale === "es" ? "Esfuerzo de razonamiento" : "Reasoning effort";
   const caps = modelPath
-    ? detectModelReasoningCaps(modelPath)
-    : { supported: true, allowOff: true, hint: "Thinking + effort" };
+    ? detectModelReasoningCaps(modelPath, locale)
+    : { supported: true, allowOff: true, hint: "" };
 
   // Always expose Thinking/Effort selector so new GGUF/cloud models (e.g. Inkling, Qwen, etc.)
   // can toggle thinking on/off and set effort even if not in the static heuristic list.
@@ -902,7 +903,9 @@ export function ReasoningEffortSelect({
         type="button"
         disabled={disabled}
         className={`effort-pill-btn ${effectiveValue === "off" ? "is-off" : ""} ${open ? "is-open" : ""}`}
-        title={`Thinking / Effort: ${current.label} (${caps.hint})`}
+        aria-label={`${effortLabel}: ${current.label}`}
+        aria-expanded={open}
+        title={`${effortLabel}: ${current.label}${caps.hint ? ` (${caps.hint})` : ""}`}
         onClick={() => setOpen((v) => !v)}
       >
         <Brain size={12} />
@@ -912,7 +915,7 @@ export function ReasoningEffortSelect({
 
       {open && (
         <div className="effort-popover" role="menu">
-          <div className="effort-popover-title">Thinking y esfuerzo</div>
+          <div className="effort-popover-title">{effortLabel}</div>
           {visibleOptions.map((opt) => {
             const active = opt.id === effectiveValue;
             return (

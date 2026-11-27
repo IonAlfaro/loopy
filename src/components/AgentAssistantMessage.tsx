@@ -32,7 +32,6 @@ export const AgentAssistantMessage = memo(function AgentAssistantMessage({ msg, 
                   !msg.content &&
                   !msg.toolCalls.length;
                 const thinkOpen = thinkingOpen;
-                
 
                 return (
                   <div style={historyStyle} className={`agent-assistant-row${continuation ? " agent-assistant-continuation" : ""}`}>

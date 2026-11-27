@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import {
   ArrowDownToLine,
   Boxes,
-  Check,
   Cloud,
   Cpu,
   Globe,
@@ -38,6 +37,7 @@ export function SettingsModal({
   onNotice,
 }: SettingsModalProps) {
   const { locale, setLocale, t } = useI18n();
+  const settingsLabel = locale === "es" ? "Configuración" : "Settings";
   const autoSaveHarnesses = useGraphStore((s) => s.autoSaveHarnesses);
   const setAutoSaveHarnesses = useGraphStore((s) => s.setAutoSaveHarnesses);
   const [tab, setTab] = useState<SettingsTab>(initialTab);
@@ -55,6 +55,7 @@ export function SettingsModal({
     label: string;
     icon: React.ReactNode;
     badge?: string;
+    menuLabel?: string;
   }[] = [
     {
       id: "general",
@@ -73,12 +74,13 @@ export function SettingsModal({
     },
     {
       id: "mcp",
-      label: "MCP Servers",
+      label: locale === "es" ? "Servidores MCP" : "MCP Servers",
       icon: <PlugZap size={15} />,
     },
     {
       id: "runtime",
       label: t("runtime.title"),
+      menuLabel: locale === "es" ? "Runtime local" : "Local runtime",
       icon: <Cpu size={15} />,
     },
     {
@@ -89,33 +91,38 @@ export function SettingsModal({
     },
   ];
 
-  const languages: { code: AppLocale; name: string; native: string; desc: string }[] = [
-    {
-      code: "en",
-      name: "English",
-      native: "English (Default)",
-      desc: "Use Loors in English across all views and modals.",
-    },
-    {
-      code: "es",
-      name: "Spanish",
-      native: "Español",
-      desc: "Usa Loors en español en todas las pantallas y modales.",
-    },
+  const languages: { code: AppLocale; label: string }[] = [
+    { code: "en", label: "English" },
+    { code: "es", label: "Español" },
   ];
 
   return (
-    <ModalBackdrop label={locale === "es" ? "Configuración" : "Settings"} onClose={onClose}>
+    <ModalBackdrop label={settingsLabel} onClose={onClose}>
       <div
         className="modal-card settings-modal-shell"
         onClick={(e) => e.stopPropagation()}
       >
-        <aside className="settings-sidebar">
-          <div className="settings-sidebar-head">
-            <Settings size={15} style={{ color: "#94a3b8" }} />
-            <span>{locale === "es" ? "Configuración" : "Settings"}</span>
+        <header className="settings-window-head">
+          <div className="settings-window-title">
+            <Settings size={19} aria-hidden="true" />
+            <h2>{settingsLabel}</h2>
           </div>
-          <nav className="settings-nav" role="tablist" aria-orientation="vertical">
+          <button type="button" className="icon-btn" aria-label={t("models.close")} onClick={onClose}>
+            <X size={18} />
+          </button>
+        </header>
+        <aside className="settings-sidebar">
+          <nav className="settings-nav" role="tablist" aria-label={settingsLabel} aria-orientation="vertical" onKeyDown={(event) => {
+            const ids = navItems.map((item) => item.id);
+            const current = ids.indexOf(tab);
+            const next = { ArrowUp: current - 1, ArrowLeft: current - 1,
+              ArrowDown: current + 1, ArrowRight: current + 1, Home: 0, End: ids.length - 1 }[event.key];
+            if (typeof next !== "number") return;
+            event.preventDefault();
+            const target = ids[(next + ids.length) % ids.length];
+            setTab(target);
+            event.currentTarget.querySelector<HTMLButtonElement>(`#settings-tab-${target}`)?.focus();
+          }}>
             {navItems.map((item) => {
               const active = tab === item.id;
               return (
@@ -123,13 +130,16 @@ export function SettingsModal({
                   key={item.id}
                   type="button"
                   role="tab"
+                  id={`settings-tab-${item.id}`}
+                  aria-controls="settings-panel"
                   aria-selected={active}
+                  tabIndex={active ? 0 : -1}
                   className={`settings-nav-btn ${active ? "active" : ""}`}
                   onClick={() => setTab(item.id)}
                 >
                   <span className="settings-nav-icon">{item.icon}</span>
                   <span className="truncate-text" style={{ flex: 1, textAlign: "left" }}>
-                    {item.label}
+                    {item.menuLabel ?? item.label}
                   </span>
                   {item.badge && (
                     <span className="settings-nav-badge">{item.badge}</span>
@@ -141,33 +151,15 @@ export function SettingsModal({
         </aside>
 
         <div className="settings-main">
-          <div className="settings-main-head">
-            <div className="settings-main-title">
-              {navItems.find((i) => i.id === tab)?.label}
-            </div>
-            <button
-              type="button"
-              className="icon-btn"
-              aria-label={t("models.close")}
-              onClick={onClose}
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          <div className="settings-main-body">
+          <div key={tab} className="settings-main-body" id="settings-panel" role="tabpanel" aria-labelledby={`settings-tab-${tab}`} tabIndex={0}>
+            <h3 className="settings-main-title">{navItems.find((item) => item.id === tab)?.label}</h3>
             {tab === "general" && (
               <div className="settings-section-stack">
-                <div className="settings-group">
-                  <div className="settings-group-title">
+                <div className="settings-group settings-preference-row">
+                  <div id="settings-language-label" className="settings-group-title">
                     {locale === "es" ? "Idioma de la interfaz" : "Interface language"}
                   </div>
-                  <div className="settings-group-desc">
-                    {locale === "es"
-                      ? "Cambia el idioma al instante sin reiniciar la aplicación."
-                      : "Switch the application language immediately without restarting."}
-                  </div>
-                  <div className="settings-lang-grid">
+                  <div className="settings-lang-grid" role="group" aria-labelledby="settings-language-label">
                     {languages.map((lang) => {
                       const active = locale === lang.code;
                       return (
@@ -175,13 +167,10 @@ export function SettingsModal({
                           key={lang.code}
                           type="button"
                           className={`settings-lang-card ${active ? "active" : ""}`}
+                          aria-pressed={active}
                           onClick={() => setLocale(lang.code)}
                         >
-                          <div className="settings-lang-top">
-                            <strong>{lang.native}</strong>
-                            {active && <Check size={14} style={{ color: "#a78bfa" }} />}
-                          </div>
-                          <span>{lang.desc}</span>
+                          {lang.label}
                         </button>
                       );
                     })}
@@ -192,38 +181,20 @@ export function SettingsModal({
                   <div className="settings-group-title">
                     {locale === "es" ? "Guardado de arneses" : "Harness saving"}
                   </div>
-                  <div className="settings-group-desc">
-                    {locale === "es"
-                      ? "Guarda automáticamente los cambios de los arneses de tu biblioteca y conserva las pestañas abiertas al reiniciar."
-                      : "Automatically save changes to library harnesses and restore open tabs on restart."}
-                  </div>
-                  <label
-                    className="settings-shortcut-row"
-                    style={{ cursor: "pointer", padding: "10px 12px", borderRadius: 8, background: "var(--panel-2)", border: "1px solid var(--border)" }}
-                  >
-                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                      <strong style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)" }}>
-                        {locale === "es" ? "Auto-guardado automático" : "Automatic auto-save"}
-                      </strong>
-                      <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
-                        {locale === "es"
-                          ? "Guarda tras 1,5 s de inactividad y al cerrar pestañas (siempre puedes usar Ctrl+S)."
-                          : "Saves after 1.5s of inactivity and when closing tabs (Ctrl+S always works)."}
-                      </span>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={autoSaveHarnesses}
-                      onChange={(e) => setAutoSaveHarnesses(e.target.checked)}
-                      style={{ width: 16, height: 16, accentColor: "#8b5cf6", cursor: "pointer", flexShrink: 0 }}
-                    />
+                  <label className="settings-toggle-row">
+                    <span>
+                      <strong>{locale === "es" ? "Guardar automáticamente" : "Autosave changes"}</strong>
+                      <small>{locale === "es"
+                        ? "Guarda los arneses de la biblioteca cuando dejas de editar y al cerrar la pestaña."
+                        : "Saves library harnesses after you stop editing and when you close a tab."}</small>
+                    </span>
+                    <input type="checkbox" role="switch" checked={autoSaveHarnesses}
+                      onChange={(event) => setAutoSaveHarnesses(event.target.checked)} />
                   </label>
                 </div>
 
-                <div className="settings-group">
-                  <div className="settings-group-title">
-                    {locale === "es" ? "Atajos de teclado" : "Keyboard shortcuts"}
-                  </div>
+                <details className="settings-group settings-shortcuts">
+                  <summary className="settings-group-title">{locale === "es" ? "Atajos de teclado" : "Keyboard shortcuts"}</summary>
                   <div className="settings-shortcuts-list">
                     <div className="settings-shortcut-row">
                       <span>{locale === "es" ? "Guardar arnés actual" : "Save current harness"}</span>
@@ -246,7 +217,7 @@ export function SettingsModal({
                       <kbd>Ctrl + Shift + B</kbd>
                     </div>
                   </div>
-                </div>
+                </details>
               </div>
             )}
 

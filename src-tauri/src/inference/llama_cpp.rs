@@ -62,6 +62,10 @@ pub fn agent_slot_context(total_context: u32) -> u32 {
     total_context / AGENT_SLOTS
 }
 
+pub fn agent_total_context(slot_context: u32) -> Option<u32> {
+    slot_context.checked_mul(AGENT_SLOTS)
+}
+
 struct ActiveRuntime {
     config: ModelLoadConfig,
     slots: Option<u32>,
@@ -680,6 +684,13 @@ fn pick_free_port() -> Result<u16, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_context_preserves_requested_capacity_per_slot() {
+        let total = agent_total_context(8192).unwrap();
+        assert_eq!(agent_slot_context(total), 8192);
+        assert_eq!(agent_total_context(u32::MAX), None);
+    }
 
     #[test]
     fn sse_preserves_utf8_across_chunk_boundaries() {

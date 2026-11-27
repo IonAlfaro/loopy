@@ -1,5 +1,5 @@
 ﻿import { ModalBackdrop } from "./ModalBackdrop";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -54,13 +54,14 @@ export function UpdateModal({
 }: UpdateModalProps) {
   const { locale, t } = useI18n();
   const L = (en: string, es: string) => (locale === "es" ? es : en);
-  const [appVersion, setAppVersion] = useState("0.1.0");
+  const [appVersion, setAppVersion] = useState<string | null>(null);
   const [result, setResult] = useState<UpdateCheckResult | null>(initialResult);
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [progress, setProgress] = useState<UpdateProgressEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const checkedOnOpen = useRef(false);
 
   useEffect(() => {
     setResult(initialResult);
@@ -84,34 +85,27 @@ export function UpdateModal({
   }, [onUpdateChecked]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      checkedOnOpen.current = false;
+      return;
+    }
     invoke<string>("get_app_version")
       .then(setAppVersion)
       .catch(() => {});
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || checkedOnOpen.current) return;
+    checkedOnOpen.current = true;
     if (!initialResult) {
       void runCheck();
     }
-
-    let cancelled = false;
-    let unlisten: (() => void) | undefined;
-    listen<UpdateProgressEvent>("loors://update-progress", (ev) => {
-      if (!cancelled) setProgress(ev.payload);
-    })
-      .then((fn) => {
-        unlisten = fn;
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-      if (unlisten) unlisten();
-    };
   }, [open, initialResult, runCheck]);
 
   if (!open) return null;
 
   const handleInstall = async () => {
-    if (!result?.assetUrl || !result.assetName) return;
+    if (checking || installing || !result?.updateAvailable || !result.assetUrl || !result.assetName) return;
     setInstalling(true);
     setError(null);
     setStatusMsg(null);
@@ -122,28 +116,44 @@ export function UpdateModal({
       percent: 0,
       message: L("Connecting to release server…", "Conectando con el servidor…"),
     });
+    let unlisten: (() => void) | undefined;
+    let restarting = false;
     try {
-      await invoke<string>("install_app_update", {
-        assetUrl: result.assetUrl,
-        assetName: result.assetName,
+      unlisten = await listen<UpdateProgressEvent>("loors://update-progress", (ev) => {
+        setProgress(ev.payload);
       });
-      setStatusMsg(
-        L(
-          "Installer launched silently — Loors will restart shortly.",
-          "Instalador silencioso iniciado — Loors se reiniciará en unos segundos."
-        )
-      );
+      restarting = await invoke<boolean>("install_app_update", {
+        expectedVersion: result.latestVersion,
+      });
+      const assetName = result.assetName.toLowerCase();
+      if (restarting) {
+        setStatusMsg(L("Loors will restart to apply the update.", "Loors se reiniciará para aplicar la actualización."));
+      } else if (assetName.endsWith(".dmg")) {
+        setStatusMsg(L(
+          "The disk image is open. Close Loors, then drag the new Loors app into Applications.",
+          "La imagen de disco está abierta. Cierra Loors y arrastra la nueva aplicación a Aplicaciones.",
+        ));
+      } else if (assetName.endsWith(".appimage")) {
+        setStatusMsg(L(
+          "Close Loors and replace your current AppImage with the downloaded one.",
+          "Cierra Loors y sustituye tu AppImage actual por el que acabas de descargar.",
+        ));
+      } else {
+        setStatusMsg(L("Complete the update using the downloaded package.", "Completa la actualización con el paquete descargado."));
+      }
     } catch (err) {
       setError(typeof err === "string" ? err : String(err));
-      setInstalling(false);
+    } finally {
+      unlisten?.();
+      if (!restarting) setInstalling(false);
     }
   };
 
   const pct = progress?.percent != null ? Math.min(100, Math.max(0, progress.percent)) : null;
   const stageLabel =
-    progress?.stage === "installing" || pct === 100
-      ? L("Installing & relaunching…", "Instalando y reiniciando…")
-      : progress?.stage === "starting"
+    progress?.stage === "installing"
+      ? L("Preparing installer…", "Preparando el instalador…")
+      : progress?.stage === "starting" || progress?.stage === "connecting"
         ? L("Connecting…", "Conectando…")
         : L("Downloading update…", "Descargando actualización…");
 
@@ -156,7 +166,7 @@ export function UpdateModal({
         <div className="update-version-meta">
           <span className="update-eyebrow">{t("updates.installed")}</span>
           <div className="update-version-pills tabular-nums">
-            <span className="update-ver-badge">v{appVersion}</span>
+            <span className="update-ver-badge">{result ? `v${result.currentVersion}` : appVersion ? `v${appVersion}` : "—"}</span>
             {result?.updateAvailable && (
               <>
                 <ArrowRight size={13} style={{ color: "var(--text-muted)" }} />
@@ -256,7 +266,7 @@ export function UpdateModal({
                 <button
                   type="button"
                   className="btn-primary update-install-btn"
-                  disabled={installing}
+                  disabled={checking || installing}
                   onClick={() => void handleInstall()}
                 >
                   <ArrowDownToLine size={14} />
@@ -275,16 +285,19 @@ export function UpdateModal({
               </div>
             )
           )}
+          {result.updateAvailable && (!result.assetUrl || !result.assetName) && (
+            <p>{L("This release has no installer for your platform. Check the release notes for details.", "Esta versión no incluye un instalador para tu plataforma. Consulta las notas de la versión.")}</p>
+          )}
         </div>
       )}
 
       {statusMsg && (
-        <div className="update-status-ok">
+        <div className="update-status-ok" role="status">
           <CheckCircle2 size={14} />
           <span>{statusMsg}</span>
         </div>
       )}
-      {error && <div className="hw-error">{error}</div>}
+      {error && <div className="hw-error" role="alert">{error}</div>}
     </div>
   );
 

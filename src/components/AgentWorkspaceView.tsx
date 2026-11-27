@@ -13,6 +13,7 @@ import { PanelResizer } from "./PanelResizer";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
+  ArrowUpRight,
   Boxes,
   Check,
   ChevronDown,
@@ -27,6 +28,7 @@ import {
   FolderPlus,
   GitBranch,
   Globe,
+  ListChecks,
   MessageSquare,
   MoreHorizontal,
   Paperclip,
@@ -195,6 +197,7 @@ export function AgentWorkspaceView() {
   const [pendingAttachments, setPendingAttachments] = useState<string[]>([]);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [compactPopoverOpen, setCompactPopoverOpen] = useState(false);
+  const [compactDraft, setCompactDraft] = useState<{ key: string; tokens: number } | null>(null);
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
   const [permMenuOpen, setPermMenuOpen] = useState(false);
   const [todoItems, setTodoItems] = useState<AgentTodoItem[]>([]);
@@ -240,8 +243,20 @@ export function AgentWorkspaceView() {
     updatedAt: Math.floor(Date.now() / 1000),
   }));
 
+  const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const [input, setInput] = useState("");
   const [workMode, setWorkMode] = useState<"chat" | "plan" | "agent">("agent");
+  const [workModeMenuOpen, setWorkModeMenuOpen] = useState(false);
+  const workModeMenuRef = useRef<HTMLDivElement>(null);
+  const workModeButtonRef = useRef<HTMLButtonElement>(null);
+  const workModeLabel = locale === "es" ? "Modo de trabajo" : "Work mode";
+  const workModes = [
+    { id: "chat", label: "Chat", icon: MessageSquare, description: locale === "es" ? "Conversar sin herramientas" : "Chat without tools" },
+    { id: "plan", label: "Plan", icon: ListChecks, description: locale === "es" ? "Consultar información y preparar un plan" : "Inspect and prepare a plan" },
+    { id: "agent", label: locale === "es" ? "Agente" : "Agent", icon: Boxes, description: locale === "es" ? "Ejecutar tareas según los permisos" : "Carry out tasks within the current permissions" },
+  ] as const;
+  const activeWorkMode = workModes.find((mode) => mode.id === workMode) ?? workModes[2];
+  const WorkModeIcon = activeWorkMode.icon;
   const composerPrompt = () => {
     const body = input.trim();
     if (/^\/(chat|plan|agent|resume|approve)(\s|$)/.test(body)) return body;
@@ -1303,6 +1318,7 @@ export function AgentWorkspaceView() {
       discardBufferedTokens.current(id);
       activeTurnIds.current.delete(id);
       runningTurns.current.delete(id);
+      clearHarnessProgress(id);
       setRunningSessionIds([...runningTurns.current.keys()]);
       const otherTurn = runningTurns.current.values().next().value;
       setAgentStatus(Boolean(otherTurn), otherTurn?.title ?? null);
@@ -1429,7 +1445,17 @@ export function AgentWorkspaceView() {
   );
   const effectiveCompactTokens = (isCurrentRunning ? usage?.compact_at_tokens : undefined)
     ?? configuredCompactTokens;
-  const compactPct = effectiveMaxTokens ? (effectiveCompactTokens / effectiveMaxTokens) * 100 : 0;
+  const compactKey = `${session.id}:${session.modelPath}`;
+  const shownCompactTokens = !isCurrentRunning && compactDraft?.key === compactKey
+    ? compactDraft.tokens : effectiveCompactTokens;
+  const compactPct = effectiveMaxTokens ? (shownCompactTokens / effectiveMaxTokens) * 100 : 0;
+  const commitCompactThreshold = (tokens: number) => {
+    setCompactDraft(null);
+    const current = sessionRef.current;
+    if (current.id !== session.id || current.modelPath !== session.modelPath ||
+      runningTurns.current.has(current.id) || !Number.isFinite(tokens) || tokens === effectiveCompactTokens) return;
+    void persistSession({ ...current, compactAtTokens: tokens });
+  };
   const usedPct = effectiveMaxTokens && usage ? (usage.used_tokens / effectiveMaxTokens) * 100 : 0;
   const formatTokens = (tokens: number) => tokens.toLocaleString(locale);
   const contextLabel = locale === "es" ? "Contexto" : "Context";
@@ -1444,6 +1470,25 @@ export function AgentWorkspaceView() {
     window.addEventListener("mousedown", onDown);
     return () => window.removeEventListener("mousedown", onDown);
   }, [wsMenuOpen]);
+
+  useEffect(() => {
+    if (!workModeMenuOpen) return;
+    const dismissOutside = (event: MouseEvent) => {
+      if (!workModeMenuRef.current?.contains(event.target as Node)) setWorkModeMenuOpen(false);
+    };
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setWorkModeMenuOpen(false);
+        workModeButtonRef.current?.focus();
+      }
+    };
+    window.addEventListener("mousedown", dismissOutside);
+    window.addEventListener("keydown", dismissOnEscape);
+    return () => {
+      window.removeEventListener("mousedown", dismissOutside);
+      window.removeEventListener("keydown", dismissOnEscape);
+    };
+  }, [workModeMenuOpen]);
 
   useEffect(() => {
     if (!permMenuOpen) return;
@@ -1936,7 +1981,7 @@ export function AgentWorkspaceView() {
             <button
               type="button"
               className="header-crumb-btn truncate-text"
-              title={`Proyecto activo: ${session.workspace}\nClic para cambiar carpeta`}
+              title={session.workspace || (locale === "es" ? "Elegir proyecto" : "Choose project")}
               onClick={() => void handlePickWorkspace()}
             >
               {activeWsShort}
@@ -1944,6 +1989,7 @@ export function AgentWorkspaceView() {
             <span className="header-crumb-sep">/</span>
             <input
               className="session-title-input"
+              aria-label={locale === "es" ? "Título de la conversación" : "Conversation title"}
               value={displaySessionTitle(session.title, locale)}
               onChange={(e) => setSession({ ...session, title: e.target.value })}
               onBlur={() => void persistSession(session)}
@@ -1955,7 +2001,8 @@ export function AgentWorkspaceView() {
                 type="button"
                 className={`workbench-tab-btn ${rightPanelOpen && rightPanelTab === "files" ? "active" : ""}`}
                 onClick={() => void handleOpenRightTab("files")}
-                title="Árbol de archivos del proyecto"
+                title={t("agent.files")}
+                aria-pressed={rightPanelOpen && rightPanelTab === "files"}
               >
                 <Folder size={13} />
                 <span>{t("agent.files")}</span>
@@ -1963,6 +2010,8 @@ export function AgentWorkspaceView() {
               <button
                 type="button"
                 className={`workbench-tab-btn ${rightPanelOpen && rightPanelTab === "diff" ? "active" : ""}`}
+                aria-pressed={rightPanelOpen && rightPanelTab === "diff"}
+                title={t("agent.diff")}
                 onClick={() => void handleOpenRightTab("diff")}
               >
                 <GitBranch size={13} />
@@ -1971,6 +2020,8 @@ export function AgentWorkspaceView() {
               <button
                 type="button"
                 className={`workbench-tab-btn ${rightPanelOpen && rightPanelTab === "browser" ? "active" : ""}`}
+                aria-pressed={rightPanelOpen && rightPanelTab === "browser"}
+                title={t("agent.browser")}
                 onClick={() => void handleOpenRightTab("browser")}
               >
                 <Globe size={13} />
@@ -1997,27 +2048,34 @@ export function AgentWorkspaceView() {
             <div className="agent-feed-inner">
               {session.messages.length === 0 && (
                 <div className="agent-zero-minimal">
-                  <span className="zero-ws-kicker">{activeWsShort}</span>
                   <h2>{t("agent.heroTitle")}</h2>
-
+                  <p>{locale === "es" ? "Escribe una tarea o parte de una idea." : "Write a task or start with an idea."}</p>
                   <div className="zero-suggestions">
                     {(session.workspace && session.workspace !== "."
-                      ? [t("suggest.ws1"), t("suggest.ws2"), t("suggest.ws3")]
-                      : [t("suggest.free1"), t("suggest.free2"), t("suggest.free3")]
-                    ).map((prompt) => (
+                      ? [
+                          { label: locale === "es" ? "Explorar el proyecto" : "Explore project", prompt: t("suggest.ws1"), Icon: FolderOpen },
+                          { label: locale === "es" ? "Revisar cambios" : "Review changes", prompt: t("suggest.ws2"), Icon: GitBranch },
+                          { label: locale === "es" ? "Revisar rendimiento" : "Review performance", prompt: t("suggest.ws3"), Icon: Zap },
+                        ]
+                      : [
+                          { label: locale === "es" ? "Investigar un tema" : "Research a topic", prompt: t("suggest.free1"), Icon: Globe },
+                          { label: locale === "es" ? "Diseñar una solución" : "Design a solution", prompt: t("suggest.free2"), Icon: Boxes },
+                          { label: locale === "es" ? "Analizar un archivo" : "Analyze a file", prompt: t("suggest.free3"), Icon: FileText },
+                        ]
+                    ).map(({ label, prompt, Icon }) => (
                       <button
                         key={prompt}
                         type="button"
                         className="zero-suggestion-btn"
+                        title={prompt}
                         onClick={() => {
-                          if (session.modelPath) {
-                            void sendTurn(prompt);
-                          } else {
-                            setInput(prompt);
-                          }
+                          setInput((draft) => draft.trim() ? `${draft}\n\n${prompt}` : prompt);
+                          composerInputRef.current?.focus();
                         }}
                       >
-                        <span>{prompt}</span>
+                        <Icon size={15} aria-hidden="true" />
+                        <span>{label}</span>
+                        <ArrowUpRight size={12} aria-hidden="true" />
                       </button>
                     ))}
                   </div>
@@ -2408,10 +2466,11 @@ export function AgentWorkspaceView() {
               )}
               {!isCurrentRunning && (
                 <AgentExecutionCheckpoint checkpoint={session.executionCheckpoint} workspace={session.workspace}
+                  showOutcome={!turnOutcomes[session.id]}
                   locale={locale} disabled={!session.modelPath || Boolean(input.trim()) || pendingAttachments.length > 0}
                   onContinue={(command) => void sendTurn(command, false, [])} />
               )}
-              <AgentComposerInput value={input} placeholder={isCurrentRunning ? t("agent.composerQueuePlaceholder") : t("agent.composerPlaceholder")} label={t("agent.composerPlaceholder")} onChange={setInput} onFiles={(files) => void stageExternalFiles(files)} onSend={() => void sendTurn(composerPrompt())} />
+              <AgentComposerInput inputRef={composerInputRef} value={input} placeholder={isCurrentRunning ? t("agent.composerQueuePlaceholder") : t("agent.composerPlaceholder")} label={t("agent.composerPlaceholder")} onChange={setInput} onFiles={(files) => void stageExternalFiles(files)} onSend={() => void sendTurn(composerPrompt())} />
 
               <div className="composer-bar">
                 <div className="composer-left">
@@ -2575,21 +2634,6 @@ export function AgentWorkspaceView() {
                     )}
                   </div>
 
-                  <select
-                    className="composer-env-pill"
-                    aria-label={locale === "es" ? "Modo de trabajo" : "Work mode"}
-                    title={locale === "es" ? "Modo de trabajo del agente" : "Agent work mode"}
-                    value={workMode}
-                    onChange={(event) => {
-                      const value = event.currentTarget.value;
-                      if (value === "chat" || value === "plan" || value === "agent") setWorkMode(value);
-                    }}
-                  >
-                    <option value="chat">Chat</option>
-                    <option value="plan">Plan</option>
-                    <option value="agent">Agent</option>
-                  </select>
-
                   <ReasoningEffortSelect
                     value={session.reasoningEffort ?? "medium"}
                     modelPath={session.modelPath}
@@ -2694,8 +2738,48 @@ export function AgentWorkspaceView() {
                   )}
                 </div>
 
+                <div className="effort-pop-wrap" ref={workModeMenuRef}>
+                  <button
+                    ref={workModeButtonRef}
+                    type="button"
+                    className={`composer-env-pill ${workModeMenuOpen ? "is-open" : ""}`}
+                    aria-label={`${workModeLabel}: ${activeWorkMode.label}`}
+                    aria-expanded={workModeMenuOpen}
+                    title={workModeLabel}
+                    onClick={() => {
+                      setPermMenuOpen(false);
+                      setWorkModeMenuOpen((open) => !open);
+                    }}
+                  >
+                    <WorkModeIcon size={12} />
+                    <span>{activeWorkMode.label}</span>
+                    <ChevronUp size={11} className="effort-pill-chev" />
+                  </button>
+                  {workModeMenuOpen && (
+                    <div className="effort-popover composer-work-mode-menu" role="group" aria-label={workModeLabel}>
+                      <div className="effort-popover-title">{workModeLabel}</div>
+                      {workModes.map(({ id, label, icon: Icon, description }) => (
+                        <button key={id} type="button" aria-pressed={id === workMode}
+                          className={`effort-pop-item ${id === workMode ? "active" : ""}`}
+                          onClick={() => {
+                            setWorkMode(id);
+                            setWorkModeMenuOpen(false);
+                            workModeButtonRef.current?.focus();
+                          }}>
+                          <Icon size={14} />
+                          <span className="effort-pop-item-text">
+                            <span className="effort-pop-item-label">{label}</span>
+                            <span className="effort-pop-item-desc">{description}</span>
+                          </span>
+                          {id === workMode && <Check size={12} />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <div className="effort-pop-wrap" ref={permMenuRef}>
-                  <AgentPermissionPicker mode={session.permissionMode} permMenuOpen={permMenuOpen} onToggle={() => setPermMenuOpen(v => !v)} onSelect={mode => { setPermMenuOpen(false); void persistSession({ ...sessionRef.current, permissionMode: mode }); }} />
+                  <AgentPermissionPicker mode={session.permissionMode} permMenuOpen={permMenuOpen} onToggle={() => { setWorkModeMenuOpen(false); setPermMenuOpen(v => !v); }} onSelect={mode => { setPermMenuOpen(false); void persistSession({ ...sessionRef.current, permissionMode: mode }); }} />
                 </div>
               </div>
 
@@ -2743,38 +2827,32 @@ export function AgentWorkspaceView() {
                             <label className="sheet-label" htmlFor="session-compaction">{compactLabel}</label>
                             <span className="sheet-readout tabular-nums">{Math.round(compactPct)}%</span>
                           </div>
-                          <div className="context-setting">
-                            <input
-                              id="session-compaction"
-                              key={`${session.id}:${session.modelPath}:${effectiveCompactTokens}`}
-                              type="number"
-                              min="1"
-                              max={effectiveMaxTokens}
-                              defaultValue={effectiveCompactTokens}
-                              disabled={isCurrentRunning}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  e.currentTarget.blur();
-                                }
-                              }}
-                              onBlur={(e) => {
-                                const value = e.currentTarget.valueAsNumber;
-                                const tokens = Number.isFinite(value)
-                                  ? Math.min(effectiveMaxTokens, Math.max(1, Math.round(value)))
-                                  : effectiveCompactTokens;
-                                e.currentTarget.value = String(tokens);
-                                if (tokens !== effectiveCompactTokens) {
-                                  void persistSession({ ...session, compactAtTokens: tokens });
-                                }
-                              }}
-                            />
+                          <input
+                            id="session-compaction"
+                            className="context-threshold-slider"
+                            type="range"
+                            min={1}
+                            max={effectiveMaxTokens}
+                            step={1}
+                            value={Math.max(1, shownCompactTokens)}
+                            aria-valuetext={`${Math.round(compactPct)}% · ${formatTokens(shownCompactTokens)} tokens`}
+                            disabled={isCurrentRunning}
+                            onChange={(event) => setCompactDraft({ key: compactKey, tokens: event.currentTarget.valueAsNumber })}
+                            onPointerUp={(event) => commitCompactThreshold(event.currentTarget.valueAsNumber)}
+                            onKeyUp={(event) => commitCompactThreshold(event.currentTarget.valueAsNumber)}
+                            onBlur={(event) => commitCompactThreshold(event.currentTarget.valueAsNumber)}
+                          />
+                          <div className="context-threshold-footer">
+                            <span className="context-hint tabular-nums">{formatTokens(shownCompactTokens)} tokens</span>
                             <button
                               type="button"
                               className={`sheet-pill-toggle ${inheritedCompact ? "active" : ""}`}
                               aria-pressed={inheritedCompact}
                               disabled={isCurrentRunning}
-                              onClick={() => void persistSession({ ...session, compactAtTokens: 0 })}
+                              onClick={() => {
+                                setCompactDraft(null);
+                                void persistSession({ ...sessionRef.current, compactAtTokens: 0 });
+                              }}
                             >
                               {modelDefaultCompact ? (locale === "es" ? "Del modelo" : "Model default") : "Auto · 75%"}
                             </button>
@@ -2793,31 +2871,43 @@ export function AgentWorkspaceView() {
                           }
                         />
                         <span>
-                          {locale === "es" ? "Índice RAG del proyecto" : "Project RAG index"}
+                          {locale === "es" ? "Búsqueda en el proyecto (RAG)" : "Project search (RAG)"}
                         </span>
                       </label>
 
+                      <p className="context-hint">{locale === "es"
+                        ? "Añade un mapa del proyecto y permite buscar fragmentos relevantes en sus archivos."
+                        : "Adds a project map and lets the agent search for relevant snippets in its files."}</p>
+
                       {skills.length > 0 && (
-                        <div className="skills-checklist" style={{ marginTop: 4 }}>
-                          {skills.map((sk) => {
-                            const checked = session.enabledSkills.includes(sk.path);
-                            return (
-                              <label key={sk.path} className="check-inline">
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => {
-                                    const next = checked
-                                      ? session.enabledSkills.filter((p) => p !== sk.path)
-                                      : [...session.enabledSkills, sk.path];
-                                    void persistSession({ ...session, enabledSkills: next });
-                                  }}
-                                />
-                                <span className="truncate-text">{sk.name}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
+                        <fieldset className="context-skills" aria-describedby="context-skills-help">
+                          <legend>{locale === "es" ? "Skills de la conversación" : "Conversation skills"}</legend>
+                          <p id="context-skills-help" className="context-hint">
+                            {locale === "es" ? "Marca las skills cuyas instrucciones quieres añadir al chat." : "Select the skills whose instructions you want to add to this chat."}
+                          </p>
+                          <div className="skills-checklist">
+                            {skills.map((sk) => {
+                              const checked = session.enabledSkills.includes(sk.path);
+                              return (
+                                <label key={sk.path} className="check-inline">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      const next = checked
+                                        ? session.enabledSkills.filter((p) => p !== sk.path)
+                                        : [...session.enabledSkills, sk.path];
+                                      void persistSession({ ...session, enabledSkills: next });
+                                    }}
+                                  />
+                                  <span className="truncate-text" title={sk.description}>{sk.name === "architect-loopy"
+                                    ? locale === "es" ? "Guía antigua de arneses" : "Legacy harness guide"
+                                    : sk.name}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </fieldset>
                       )}
                     </div>
                   )}
@@ -2890,7 +2980,6 @@ export function AgentWorkspaceView() {
                       onChange={(e) => {
                         const q = e.target.value;
                         setFileFilter(q);
-                        
                       }}
                     />
                   </div>

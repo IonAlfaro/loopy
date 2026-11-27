@@ -1559,7 +1559,7 @@ export interface ModelReasoningCaps {
   hint: string;
 }
 
-export function detectModelReasoningCaps(modelPath: string): ModelReasoningCaps {
+export function detectModelReasoningCaps(modelPath: string, locale: "en" | "es" = "es"): ModelReasoningCaps {
   const name = (modelPath.split(/[\\/]/).pop() ?? modelPath).toLowerCase();
   if (!name.trim()) {
     return { supported: false, allowOff: false, hint: "" };
@@ -1568,7 +1568,7 @@ export function detectModelReasoningCaps(modelPath: string): ModelReasoningCaps 
     return {
       supported: true,
       allowOff: false,
-      hint: "Niveles nativos low / medium / high",
+      hint: locale === "es" ? "Niveles nativos bajo, medio y alto" : "Native low, medium, and high levels",
     };
   }
   if (
@@ -1579,12 +1579,12 @@ export function detectModelReasoningCaps(modelPath: string): ModelReasoningCaps 
     return {
       supported: true,
       allowOff: true,
-      hint: "Thinking + presupuesto de tokens",
+      hint: locale === "es" ? "Razonamiento con presupuesto de tokens" : "Reasoning with a token budget",
     };
   }
   return {
     supported: false,
     allowOff: false,
-    hint: "Este modelo no usa thinking",
+    hint: locale === "es" ? "Razonamiento no detectado para este modelo" : "Reasoning support not detected for this model",
   };
 }

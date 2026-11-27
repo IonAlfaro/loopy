@@ -3,6 +3,7 @@ type Props = {
   workspace: string;
   locale: string;
   disabled: boolean;
+  showOutcome: boolean;
   onContinue: (command: string) => void;
 };
 
@@ -11,7 +12,7 @@ function object(value: unknown): Record<string, unknown> | undefined {
     ? value as Record<string, unknown> : undefined;
 }
 
-export function AgentExecutionCheckpoint({ checkpoint, workspace, locale, disabled, onContinue }: Props) {
+export function AgentExecutionCheckpoint({ checkpoint, workspace, locale, disabled, showOutcome, onContinue }: Props) {
   const data = object(checkpoint);
   const plan = object(data?.plan);
   if (data?.version !== 1 || data.workspace !== workspace || !Array.isArray(plan?.tasks)) return null;
@@ -42,8 +43,8 @@ export function AgentExecutionCheckpoint({ checkpoint, workspace, locale, disabl
           && Number.isFinite(used) && Number.isFinite(limit)
           ? <span key={label}>{label}: {used}/{limit}</span> : null)}
       </div>}
-      {outcome && typeof outcome.status === "string" && (
-        <div style={{ fontSize: 12, overflowWrap: "anywhere" }}>
+      {showOutcome && outcome && typeof outcome.status === "string" && (
+        <div role="status" style={{ fontSize: 12, overflowWrap: "anywhere" }}>
           <strong>{({
             completed: es ? "Turno completado" : "Turn completed",
             incomplete: es ? "Trabajo incompleto" : "Incomplete work",
