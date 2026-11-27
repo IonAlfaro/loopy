@@ -441,6 +441,12 @@ export function ToolActivityRow({
   onUndo?: () => void;
 }) {
   const { locale } = useI18n();
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  useEffect(() => {
+    if (copyState === "idle") return;
+    const timer = setTimeout(() => setCopyState("idle"), 1800);
+    return () => clearTimeout(timer);
+  }, [copyState]);
   const isRunning = call.status === "running";
   const isError = call.status === "error" || call.status === "rejected";
   const pres = getToolPresentation(call.name, isRunning);
@@ -522,13 +528,33 @@ export function ToolActivityRow({
             <div className="shot-preview-box">
               <img
                 src={`data:image/png;base64,${shotB64}`}
-                alt="Captura navegador"
+                alt={locale === "es" ? "Captura navegador" : "Browser screenshot"}
               />
               {call.cursorX != null && call.cursorY != null && (
                 <div className="shot-cursor-meta">
-                  Puntero en ({call.cursorX}, {call.cursorY})
+                  {locale === "es" ? "Puntero en" : "Pointer at"} ({call.cursorX}, {call.cursorY})
                 </div>
               )}
+            </div>
+          )}
+          {call.outputPreview && (
+            <div className="tool-output-toolbar" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "4px 8px" }}>
+              <span style={{ fontSize: 11, color: isError ? "var(--text-primary)" : "var(--text-muted)" }}>
+                {isError ? (locale === "es" ? "Error de ejecución" : "Execution error") : (locale === "es" ? "Vista previa del resultado" : "Output preview")}
+              </span>
+              <button type="button" className="icon-btn" aria-label={locale === "es" ? "Copiar resultado" : "Copy output"} title={locale === "es" ? "Copiar resultado" : "Copy output"} onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(call.outputPreview ?? "");
+                  setCopyState("copied");
+                } catch {
+                  setCopyState("error");
+                }
+              }}>
+                {copyState === "copied" ? <Check size={12} /> : <Copy size={12} />}
+              </button>
+              <span role="status" style={{ fontSize: 11 }}>
+                {copyState === "copied" ? (locale === "es" ? "Copiado" : "Copied") : copyState === "error" ? (locale === "es" ? "No se pudo copiar" : "Copy failed") : ""}
+              </span>
             </div>
           )}
           {call.outputPreview && (() => {
@@ -562,7 +588,7 @@ export function ToolActivityRow({
                     )}
                     {note && <div>{note}</div>}
                     <div style={{ fontSize: 10.5, color: "var(--text-muted)" }}>
-                      {interactiveCount} elementos interactivos · JS: {jsErrs} err · Red: {netErrs} err
+                      {interactiveCount} {locale === "es" ? "elementos interactivos" : "interactive elements"} · JS: {jsErrs} err · {locale === "es" ? "Red" : "Network"}: {netErrs} err
                     </div>
                   </div>
                 );
