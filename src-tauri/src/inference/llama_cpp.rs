@@ -451,6 +451,7 @@ impl LlamaCppManager {
             "messages": serialized_messages,
             "temperature": request.temperature,
             "stream": true,
+            "stream_options": { "include_usage": true },
         });
 
         if let Some(top_p) = request.top_p {
