@@ -792,17 +792,13 @@ export function AgentWorkspaceView() {
             .catch(() => {});
         }
         if (p.call.diffPreview || p.call.addedLines > 0 || p.call.removedLines > 0) {
-          setRightPanelOpen(true);
-          setRightPanelTab("diff");
-          invoke<string>("get_workspace_diff", {
-            workspace: session.workspace || ".",
-          })
-            .then(setGitDiffText)
+          const workspace = runningTurns.current.get(p.session_id)?.workspace ?? sessionRef.current.workspace;
+          const eventSessionId = p.session_id;
+          invoke<string>("get_workspace_diff", { workspace: workspace || "." })
+            .then((diff) => {
+              if (!cancelled && activeSessionIdRef.current === eventSessionId && sessionRef.current.workspace === workspace) setGitDiffText(diff);
+            })
             .catch(() => {});
-        }
-        if (p.call.name === "browser_action") {
-          setRightPanelOpen(true);
-          setRightPanelTab("browser");
         }
       }
     })
@@ -815,8 +811,6 @@ export function AgentWorkspaceView() {
     listen<BrowserFrameEvent>("loors://browser-frame", (ev) => {
       if (!cancelled && ev.payload.session_id === activeSessionIdRef.current) {
         setLiveBrowserFrame(ev.payload);
-        setRightPanelOpen(true);
-        setRightPanelTab("browser");
       }
     })
       .then((fn) => {
