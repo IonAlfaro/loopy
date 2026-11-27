@@ -280,6 +280,17 @@ export function AgentWorkspaceView() {
   const [selectedPreviewFile, setSelectedPreviewFile] = useState<string | null>(null);
   const [selectedPreviewContent, setSelectedPreviewContent] = useState<string>("");
   const [gitDiffText, setGitDiffText] = useState("");
+  const diffRequestId = useRef(0);
+  const refreshWorkspaceDiff = async (id: string, workspace: string) => {
+    const request = ++diffRequestId.current;
+    const current = () => request === diffRequestId.current && activeSessionIdRef.current === id && sessionRef.current.workspace === workspace;
+    try {
+      const diff = await invoke<string>("get_workspace_diff", { workspace: workspace || "." });
+      if (current()) setGitDiffText(diff);
+    } catch (err) {
+      if (current()) setGitDiffText(`Error: ${String(err)}`);
+    }
+  };
   const [contextUsage, setContextUsage] = useState<
     Record<string, Extract<AgentChatEvent, { type: "context_usage" }>>
   >({});
@@ -336,6 +347,12 @@ export function AgentWorkspaceView() {
 
   const showSession = (next: AgentSession) => {
     const previousId = activeSessionIdRef.current;
+    if (next.id !== previousId || next.workspace !== sessionRef.current.workspace) {
+      ++diffRequestId.current;
+      setGitDiffText("");
+      setSelectedPreviewFile(null);
+      setSelectedPreviewContent("");
+    }
     if (next.id !== previousId) {
       stickToBottomRef.current = true;
       setShowJumpToLatest(false);
@@ -802,11 +819,7 @@ export function AgentWorkspaceView() {
         if (p.call.diffPreview || p.call.addedLines > 0 || p.call.removedLines > 0) {
           const workspace = runningTurns.current.get(p.session_id)?.workspace ?? sessionRef.current.workspace;
           const eventSessionId = p.session_id;
-          invoke<string>("get_workspace_diff", { workspace: workspace || "." })
-            .then((diff) => {
-              if (!cancelled && activeSessionIdRef.current === eventSessionId && sessionRef.current.workspace === workspace) setGitDiffText(diff);
-            })
-            .catch(() => {});
+          if (!cancelled && activeSessionIdRef.current === eventSessionId) void refreshWorkspaceDiff(eventSessionId, workspace);
         }
       }
     })
@@ -962,6 +975,8 @@ export function AgentWorkspaceView() {
       pausedQueues.current.delete(id);
       turnErrors.current.delete(id);
       drafts.current.delete(id);
+      todosBySession.current.delete(id);
+      artifactsBySession.current.delete(id);
       if (activeSessionIdRef.current === id) {
         handleNewSession(sessionRef.current.workspace);
       }
@@ -1338,14 +1353,7 @@ export function AgentWorkspaceView() {
     setRightPanelOpen(true);
     setRightPanelTab(tab);
     if (tab === "diff") {
-      try {
-        const diff = await invoke<string>("get_workspace_diff", {
-          workspace: session.workspace || ".",
-        });
-        setGitDiffText(diff);
-      } catch (err) {
-        setGitDiffText(`Error: ${String(err)}`);
-      }
+      await refreshWorkspaceDiff(session.id, session.workspace);
     } else if (tab === "files" && session.workspace && session.workspace !== ".") {
       invoke<string[]>("find_workspace_files", {
         workspace: session.workspace,
@@ -3682,11 +3690,7 @@ export function AgentWorkspaceView() {
                       type="button"
                       className="btn-mini"
                       onClick={() => {
-                        invoke<string>("get_workspace_diff", {
-                          workspace: sessionRef.current.workspace || ".",
-                        })
-                          .then(setGitDiffText)
-                          .catch(() => {});
+                        void refreshWorkspaceDiff(activeSessionIdRef.current, sessionRef.current.workspace);
                       }}
                     >
                       <RefreshCw size={11} />
