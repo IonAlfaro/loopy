@@ -308,6 +308,7 @@ struct AgentTurnState {
     execution_plan: Mutex<Option<ExecutionPlan>>,
     task_evidence: Mutex<HashMap<String, Vec<String>>>,
     task_failed_checks: Mutex<HashMap<String, std::collections::HashSet<String>>>,
+    task_verification: Mutex<HashMap<String, bool>>,
     cancel: Arc<AtomicBool>,
     pending_permission: Mutex<Option<oneshot::Sender<PermissionDecision>>>,
     pending_question: Mutex<Option<oneshot::Sender<QuestionDecision>>>,
@@ -1803,13 +1804,26 @@ where
             }
             record.duration_ms = t0.elapsed().as_millis() as u64;
             record.output_preview = truncate_chars(&tool_output, 4000);
+            // A file mutation invalidates earlier command verification for the active task.
+            if let Some(task_id) = &record.task_id {
+                if let Ok(mut checks) = state.task_verification.lock() {
+                    if matches!(record.name.as_str(), "edit_file" | "write_file" | "delete_file")
+                        && record.status != "denied" {
+                        checks.insert(task_id.clone(), false);
+                    } else if record.name == "run_cmd" && record.status == "success" {
+                        if let Some(verified) = checks.get_mut(task_id) {
+                            *verified = true;
+                        }
+                    }
+                }
+            }
             if record.name == "run_cmd" {
                 if let Some(task_id) = &record.task_id {
                     if let Ok(mut failures) = state.task_failed_checks.lock() {
                         if record.status != "success" {
-                            failures.entry(task_id.clone()).or_default().insert(record.args_json.clone());
+                            failures.entry(task_id.clone()).or_default().insert(command_identity(&record.args_json));
                         } else if let Some(commands) = failures.get_mut(task_id) {
-                            commands.remove(&record.args_json);
+                            commands.remove(&command_identity(&record.args_json));
                         }
                     }
                 }
@@ -2181,7 +2195,15 @@ where
                     Ok(failures) => failures,
                     Err(_) => { record.status = "error".into(); return "Check lock poisoned.".into(); }
                 };
+                let verification = match state.task_verification.lock() {
+                    Ok(checks) => checks,
+                    Err(_) => { record.status = "error".into(); return "Verification lock poisoned.".into(); }
+                };
                 for task in &plan.tasks {
+                    if task.status == PlanTaskStatus::Done && verification.get(&task.id) == Some(&false) {
+                        record.status = "error".into();
+                        return format!("Task {} modified files after its last successful command. Run a relevant verification command before completing it.", task.id);
+                    }
                     if task.status == PlanTaskStatus::Done && failures.get(&task.id).map_or(false, |commands| !commands.is_empty()) {
                         record.status = "error".into();
                         return format!("Task {} has an unresolved failed command. Repair and rerun the same command successfully before completing it, or report the task as failed.", task.id);
@@ -2476,6 +2498,12 @@ async fn run_subagent_loop(
     } else {
         format!("[Subagent: {role}]\n{}", truncate_chars(&final_reply, 6000))
     }
+}
+
+fn command_identity(args: &str) -> String {
+    serde_json::from_str::<Value>(args).ok()
+        .and_then(|value| value.get("command").and_then(Value::as_str).map(str::to_owned))
+        .unwrap_or_else(|| args.to_owned())
 }
 
 fn command_exit_code(output: &str) -> Option<i32> {
