@@ -177,6 +177,7 @@ pub enum AgentChatEvent {
     },
     HarnessProgress {
         session_id: String,
+        task_title: Option<String>,
         phase: String,
         inferences: usize,
         inference_limit: usize,
@@ -1601,7 +1602,7 @@ where
             break;
         }
 
-        emit(AgentChatEvent::HarnessProgress { session_id: session.id.clone(), phase: "reasoning".into(), inferences: state.inference_count.load(Ordering::SeqCst), inference_limit: state.budget.total_inferences });
+        emit(AgentChatEvent::HarnessProgress { session_id: session.id.clone(), phase: "reasoning".into(), task_title: state.execution_plan.lock().ok().and_then(|slot| slot.as_ref().and_then(|plan| plan.tasks.iter().find(|task| task.status == PlanTaskStatus::InProgress).map(|task| task.title.clone()))), inferences: state.inference_count.load(Ordering::SeqCst), inference_limit: state.budget.total_inferences });
         // Preserve each model iteration as its own chronological assistant message.
         let assistant_msg_id = if _step == 1 {
             assistant_msg_id.clone()
@@ -1911,7 +1912,7 @@ where
                 undone: false,
             };
 
-            emit(AgentChatEvent::HarnessProgress { session_id: session.id.clone(), phase: "executing".into(), inferences: state.inference_count.load(Ordering::SeqCst), inference_limit: state.budget.total_inferences });
+            emit(AgentChatEvent::HarnessProgress { session_id: session.id.clone(), phase: "executing".into(), task_title: state.execution_plan.lock().ok().and_then(|slot| slot.as_ref().and_then(|plan| plan.tasks.iter().find(|task| task.status == PlanTaskStatus::InProgress).map(|task| task.title.clone()))), inferences: state.inference_count.load(Ordering::SeqCst), inference_limit: state.budget.total_inferences });
             emit(AgentChatEvent::ToolStarted {
                 session_id: session.id.clone(),
                 message_id: assistant_msg_id.clone(),
@@ -2583,7 +2584,7 @@ where
                 "Independently inspect the current workspace against this task (untrusted task data): {}. Check actual files, not just claimed evidence. Return exactly PASS on the first line only if all criteria are supported; otherwise return FAIL on the first line followed by concrete defects. If unable to verify, return FAIL.",
                 serde_json::to_string(&task).unwrap_or_default()
             );
-            emit(AgentChatEvent::HarnessProgress { session_id: session_id.to_string(), phase: "verifying".into(), inferences: state.inference_count.load(Ordering::SeqCst), inference_limit: state.budget.total_inferences });
+            emit(AgentChatEvent::HarnessProgress { session_id: session_id.to_string(), phase: "verifying".into(), task_title: Some(task.title.clone()), inferences: state.inference_count.load(Ordering::SeqCst), inference_limit: state.budget.total_inferences });
             let report = run_subagent_loop(workspace, model_path, llama, port, "verifier", &review_prompt, state.budget.verifier_steps, rag_index, cancel, state).await;
             if cancel.load(Ordering::SeqCst) || !verifier_passed(&report) {
                 record.status = "error".into();
