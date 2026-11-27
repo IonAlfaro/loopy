@@ -243,7 +243,7 @@ export function AgentWorkspaceView() {
   const [workMode, setWorkMode] = useState<"chat" | "plan" | "agent">("agent");
   const composerPrompt = () => {
     const body = input.trim();
-    if (/^\/(chat|plan|agent|resume)(\s|$)/.test(body)) return body;
+    if (/^\/(chat|plan|agent|resume|approve)(\s|$)/.test(body)) return body;
     if (!body && pendingAttachments.length === 0) return "";
     return workMode === "agent" ? body : `/${workMode} ${body}`;
   };
