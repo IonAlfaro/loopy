@@ -306,6 +306,7 @@ impl AgentChatState {
 #[derive(Default)]
 struct AgentTurnState {
     execution_plan: Mutex<Option<ExecutionPlan>>,
+    task_evidence: Mutex<HashMap<String, Vec<String>>>,
     cancel: Arc<AtomicBool>,
     pending_permission: Mutex<Option<oneshot::Sender<PermissionDecision>>>,
     pending_question: Mutex<Option<oneshot::Sender<QuestionDecision>>>,
@@ -1801,6 +1802,13 @@ where
             }
             record.duration_ms = t0.elapsed().as_millis() as u64;
             record.output_preview = truncate_chars(&tool_output, 4000);
+            if record.status == "success" && record.name != "set_execution_plan" && record.name != "update_todo_list" {
+                if let Some(task_id) = &record.task_id {
+                    if let Ok(mut evidence) = state.task_evidence.lock() {
+                        evidence.entry(task_id.clone()).or_default().push(record.id.clone());
+                    }
+                }
+            }
 
             if has_mmproj {
                 if let Some(ref shot) = record.screenshot_path {
@@ -2152,6 +2160,17 @@ where
                 if plan.tasks.iter().filter(|task| task.status == PlanTaskStatus::InProgress).count() > 1 {
                     record.status = "error".into();
                     return "Only one task may be in progress at a time.".into();
+                }
+                let evidence = match state.task_evidence.lock() {
+                    Ok(evidence) => evidence,
+                    Err(_) => { record.status = "error".into(); return "Evidence lock poisoned.".into(); }
+                };
+                for task in &plan.tasks {
+                    if task.status == PlanTaskStatus::Done &&
+                        !evidence.get(&task.id).map_or(false, |ids| !ids.is_empty()) {
+                        record.status = "error".into();
+                        return format!("Task {} has no successful recorded tool calls. Run a relevant check before completing it.", task.id);
+                    }
                 }
                 *slot = Some(plan.clone());
             },
@@ -2693,6 +2712,7 @@ mod tests {
                     status: "success".to_string(),
                     output_preview: String::new(),
                     duration_ms: 5,
+                    task_id: None,
                     file_path: Some("demo.txt".to_string()),
                     previous_content: Some("estado original\n".to_string()),
                     file_existed: true,
