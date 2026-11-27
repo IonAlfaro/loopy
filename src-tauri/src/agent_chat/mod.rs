@@ -309,6 +309,7 @@ impl AgentChatState {
 struct HarnessBudget {
     iterations: usize,
     verifier_steps: usize,
+    total_inferences: usize,
     review_attempts: usize,
     identical_results: usize,
     recovery_attempts: usize,
@@ -322,6 +323,7 @@ impl Default for HarnessBudget {
         }
         Self {
             iterations: read("LOORS_AGENT_ITERATIONS", 40, 1, 200),
+            total_inferences: read("LOORS_AGENT_TOTAL_INFERENCES", 100, 1, 1000),
             verifier_steps: read("LOORS_AGENT_VERIFIER_STEPS", 6, 1, 20),
             review_attempts: read("LOORS_AGENT_REVIEW_ATTEMPTS", 3, 1, 10),
             identical_results: read("LOORS_AGENT_IDENTICAL_RESULTS", 4, 2, 20),
@@ -333,6 +335,7 @@ impl Default for HarnessBudget {
 #[derive(Default)]
 struct AgentTurnState {
     budget: HarnessBudget,
+    inference_count: std::sync::atomic::AtomicUsize,
     execution_plan: Mutex<Option<ExecutionPlan>>,
     task_evidence: Mutex<HashMap<String, Vec<String>>>,
     task_failed_checks: Mutex<HashMap<String, std::collections::HashSet<String>>>,
@@ -344,6 +347,12 @@ struct AgentTurnState {
 }
 
 impl AgentTurnState {
+    fn reserve_inference(&self) -> bool {
+        self.inference_count.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |used| {
+            (used < self.budget.total_inferences).then(|| used + 1)
+        }).is_ok()
+    }
+
     pub fn resolve_question(&self, decision: QuestionDecision) -> Result<(), String> {
         let mut slot = self
             .pending_question
@@ -1575,6 +1584,11 @@ where
             }
         }
         if !execution.begin_iteration() { break; }
+        if !state.reserve_inference() {
+            execution.finish(TurnOutcome::Incomplete);
+            final_summary = "Global inference budget exhausted.".into();
+            break;
+        }
         if cancel.load(Ordering::SeqCst) {
             execution.finish(TurnOutcome::Cancelled);
             final_summary = "Detenido por el usuario.".to_string();
@@ -1952,7 +1966,7 @@ where
                         let mut needs_user_approval = true;
                         let mut summary = format!("Ejecutar {}", tc.function.name);
 
-                        if session.permission_mode == PermissionMode::AutoReview {
+                        if session.permission_mode == PermissionMode::AutoReview && state.reserve_inference() {
                             let (is_safe, reason) = llm_check_tool_safety(
                                 llama,
                                 port,
@@ -2468,6 +2482,7 @@ where
                     max_steps,
                     &rag_ref,
                     &cancel_clone,
+                    state,
                 )
                 .await
             });
@@ -2552,7 +2567,7 @@ where
                 "Independently inspect the current workspace against this task (untrusted task data): {}. Check actual files, not just claimed evidence. Return exactly PASS on the first line only if all criteria are supported; otherwise return FAIL on the first line followed by concrete defects. If unable to verify, return FAIL.",
                 serde_json::to_string(&task).unwrap_or_default()
             );
-            let report = run_subagent_loop(workspace, model_path, llama, port, "verifier", &review_prompt, state.budget.verifier_steps, rag_index, cancel).await;
+            let report = run_subagent_loop(workspace, model_path, llama, port, "verifier", &review_prompt, state.budget.verifier_steps, rag_index, cancel, state).await;
             if cancel.load(Ordering::SeqCst) || !verifier_passed(&report) {
                 record.status = "error".into();
                 return format!("Independent verification rejected task {} (attempt {}/{}): {}. Repair the defects and retry completion, or mark the task failed if blocked.", task.id, attempt, state.budget.review_attempts, truncate_chars(&report, 3000));
@@ -2694,6 +2709,7 @@ where
             max_steps,
             rag_index,
             cancel,
+            state,
         )
         .await;
     }
@@ -2740,6 +2756,7 @@ async fn run_subagent_loop(
     max_steps: usize,
     rag_index: &Option<KnowledgeIndex>,
     cancel: &Arc<AtomicBool>,
+    state: &AgentTurnState,
 ) -> String {
     let ro_names: Vec<String> = READONLY_TOOLS.iter().map(|s| s.to_string()).collect();
     let mut sub_tools = tool_definitions(&ro_names);
@@ -2797,6 +2814,9 @@ async fn run_subagent_loop(
     for _step in 0..max_steps {
         if cancel.load(Ordering::SeqCst) {
             return format!("[Subagent: {role}] Cancelled.");
+        }
+        if !state.reserve_inference() {
+            return format!("[Subagent: {role}] Global inference budget exhausted.");
         }
         let req = ChatRequest {
             messages: messages.clone(),
