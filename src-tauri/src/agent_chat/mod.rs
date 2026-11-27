@@ -574,6 +574,39 @@ impl ExecutionPlan {
         Ok(())
     }
 
+    fn validate_transition(&self, previous: &Self) -> Result<(), String> {
+        for old in &previous.tasks {
+            let new = self.tasks.iter().find(|task| task.id == old.id)
+                .ok_or_else(|| format!("Cannot remove active task {}.", old.id))?;
+            if old.status == PlanTaskStatus::Done &&
+                (new.status != old.status || new.title != old.title ||
+                 new.depends_on != old.depends_on || new.acceptance != old.acceptance ||
+                 new.evidence != old.evidence) {
+                return Err(format!("Completed task {} is immutable; add a follow-up task.", old.id));
+            }
+            if old.status != new.status {
+                let allowed = matches!((&old.status, &new.status),
+                    (PlanTaskStatus::Pending, PlanTaskStatus::InProgress) |
+                    (PlanTaskStatus::InProgress, PlanTaskStatus::Done) |
+                    (PlanTaskStatus::InProgress, PlanTaskStatus::Failed) |
+                    (PlanTaskStatus::Failed, PlanTaskStatus::Pending));
+                if !allowed {
+                    return Err(format!("Invalid status transition for task {}.", old.id));
+                }
+                if new.status == PlanTaskStatus::InProgress &&
+                    new.depends_on.iter().any(|dep| !previous.tasks.iter().any(|t| &t.id == dep && t.status == PlanTaskStatus::Done)) {
+                    return Err(format!("Task {} dependencies must be completed in an earlier update.", old.id));
+                }
+            }
+        }
+        for task in &self.tasks {
+            if !previous.tasks.iter().any(|old| old.id == task.id) && task.status != PlanTaskStatus::Pending {
+                return Err(format!("New task {} must start pending.", task.id));
+            }
+        }
+        Ok(())
+    }
+
     fn next_ready(&self) -> Option<&PlanTask> {
         self.tasks.iter().find(|task| task.status == PlanTaskStatus::Pending
             && task.depends_on.iter().all(|dep| self.tasks.iter().any(|t| &t.id == dep && t.status == PlanTaskStatus::Done)))
@@ -2092,11 +2125,9 @@ where
         match state.execution_plan.lock() {
             Ok(mut slot) => {
                 if let Some(previous) = slot.as_ref() {
-                    for old in &previous.tasks {
-                        if !plan.tasks.iter().any(|task| task.id == old.id) {
-                            record.status = "error".into();
-                            return format!("Cannot silently remove task {} from the active plan.", old.id);
-                        }
+                    if let Err(err) = plan.validate_transition(previous) {
+                        record.status = "error".into();
+                        return err;
                     }
                 } else if plan.tasks.iter().any(|task| task.status != PlanTaskStatus::Pending) {
                     record.status = "error".into();
