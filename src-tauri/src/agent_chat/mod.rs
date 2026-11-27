@@ -505,7 +505,16 @@ where
         );
         let ctx = load_cfg.context_size;
         let mm = load_cfg.mmproj_path.is_some();
-        let p = llama.ensure_loaded(load_cfg).await?;
+        let p = llama
+            .ensure_loaded_cancellable(load_cfg, Some(&cancel))
+            .await
+            .map_err(|e| {
+                if e == "__CANCELLED__" {
+                    "Generación detenida por el usuario.".to_string()
+                } else {
+                    e
+                }
+            })?;
         (ctx, mm, profile, Some(p))
     };
 

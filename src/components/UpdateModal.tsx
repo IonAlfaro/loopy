@@ -1,13 +1,14 @@
 ﻿import { useCallback, useEffect, useState } from "react";
 import {
   ArrowDownToLine,
+  ArrowRight,
   CheckCircle2,
   ExternalLink,
   RefreshCw,
+  Sparkles,
   X,
 } from "lucide-react";
-import { invoke } from "../lib/bridge";
-import { listen } from "../lib/bridge";
+import { invoke, listen } from "../lib/bridge";
 import { useI18n } from "../i18n";
 
 export interface UpdateCheckResult {
@@ -112,156 +113,178 @@ export function UpdateModal({
     if (!result?.assetUrl || !result.assetName) return;
     setInstalling(true);
     setError(null);
-    setProgress(null);
+    setStatusMsg(null);
+    setProgress({
+      stage: "starting",
+      downloadedBytes: 0,
+      totalBytes: result.assetSize,
+      percent: 0,
+      message: L("Connecting to release server…", "Conectando con el servidor…"),
+    });
     try {
-      const saved = await invoke<string>("install_app_update", {
+      await invoke<string>("install_app_update", {
         assetUrl: result.assetUrl,
         assetName: result.assetName,
       });
-      setStatusMsg(L(`Installer started: ${saved}`, `Instalador iniciado: ${saved}`));
+      setStatusMsg(
+        L(
+          "Installer launched silently — Loors will restart shortly.",
+          "Instalador silencioso iniciado — Loors se reiniciará en unos segundos."
+        )
+      );
     } catch (err) {
       setError(typeof err === "string" ? err : String(err));
       setInstalling(false);
     }
   };
 
+  const pct = progress?.percent != null ? Math.min(100, Math.max(0, progress.percent)) : null;
+  const stageLabel =
+    progress?.stage === "installing" || pct === 100
+      ? L("Installing & relaunching…", "Instalando y reiniciando…")
+      : progress?.stage === "starting"
+        ? L("Connecting…", "Conectando…")
+        : L("Downloading update…", "Descargando actualización…");
+
   const innerBody = (
-    <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 12, padding: embedded ? 0 : undefined }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "10px 12px",
-              borderRadius: 10,
-              background: "rgba(255,255,255,0.03)",
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <span style={{ fontSize: 12, color: "#94a3b8" }}>{t("updates.installed")}</span>
-              <strong style={{ fontSize: 14, color: "#f1f5f9" }}>v{appVersion}</strong>
+    <div
+      className="modal-body update-panel"
+      style={{ padding: embedded ? 0 : undefined }}
+    >
+      <div className="update-version-row">
+        <div className="update-version-meta">
+          <span className="update-eyebrow">{t("updates.installed")}</span>
+          <div className="update-version-pills tabular-nums">
+            <span className="update-ver-badge">v{appVersion}</span>
+            {result?.updateAvailable && (
+              <>
+                <ArrowRight size={13} style={{ color: "var(--text-muted)" }} />
+                <span className="update-ver-badge is-next">
+                  v{result.latestVersion}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={checking || installing}
+          onClick={() => void runCheck()}
+        >
+          <RefreshCw size={13} className={checking ? "spin" : ""} />
+          <span>{checking ? t("updates.checking") : t("updates.check")}</span>
+        </button>
+      </div>
+
+      {result && (
+        <div
+          className={`update-release-card ${
+            result.updateAvailable ? "is-available" : "is-current"
+          }`}
+        >
+          <div className="update-release-head">
+            <div className="update-release-title">
+              {result.updateAvailable ? (
+                <Sparkles size={15} style={{ color: "#a78bfa", flexShrink: 0 }} />
+              ) : (
+                <CheckCircle2 size={15} style={{ color: "#34d399", flexShrink: 0 }} />
+              )}
+              <span>
+                {result.updateAvailable
+                  ? L(
+                      `Loors v${result.latestVersion} is ready`,
+                      `Loors v${result.latestVersion} disponible`
+                    )
+                  : L(
+                      `You're on the latest version (v${result.currentVersion})`,
+                      `Ya tienes la última versión (v${result.currentVersion})`
+                    )}
+              </span>
             </div>
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={checking || installing}
-              onClick={() => void runCheck()}
-            >
-              <RefreshCw size={13} className={checking ? "spin" : ""} />
-              <span>{checking ? t("updates.checking") : t("updates.check")}</span>
-            </button>
+
+            {result.releaseUrl && (
+              <a
+                href={result.releaseUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="update-release-link"
+              >
+                <span>{L("Release notes", "Notas")}</span>
+                <ExternalLink size={11} />
+              </a>
+            )}
           </div>
 
-          {result && (
-            <div
-              style={{
-                padding: "12px",
-                borderRadius: 10,
-                background: result.updateAvailable
-                  ? "rgba(139,92,246,0.08)"
-                  : "rgba(16,185,129,0.07)",
-                border: result.updateAvailable
-                  ? "1px solid rgba(167,139,250,0.35)"
-                  : "1px solid rgba(16,185,129,0.28)",
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {result.updateAvailable ? (
-                    <ArrowDownToLine size={16} style={{ color: "#a78bfa" }} />
-                  ) : (
-                    <CheckCircle2 size={16} style={{ color: "#10b981" }} />
-                  )}
-                  <strong style={{ fontSize: 13.5, color: "#f8fafc" }}>
-                    {result.updateAvailable
-                      ? L(`New version available: v${result.latestVersion}`, `Nueva versión disponible: v${result.latestVersion}`)
-                      : L(`Loors is up to date (v${result.currentVersion})`, `Loors está actualizado (v${result.currentVersion})`)}
-                  </strong>
+          {result.releaseNotes.trim() && (
+            <pre className="update-notes-pre">{result.releaseNotes.trim()}</pre>
+          )}
+
+          {result.updateAvailable && result.assetUrl && result.assetName && (
+            installing && progress ? (
+              <div className="update-progress-inline">
+                <div className="update-progress-top">
+                  <span className="update-progress-stage">
+                    <span className="update-progress-dot" />
+                    <span>{stageLabel}</span>
+                  </span>
+                  <span className="update-progress-nums tabular-nums">
+                    {progress.downloadedBytes > 0 && (
+                      <>
+                        {formatSize(progress.downloadedBytes)}
+                        {progress.totalBytes
+                          ? ` / ${formatSize(progress.totalBytes)}`
+                          : ""}
+                        {pct !== null ? " · " : ""}
+                      </>
+                    )}
+                    {pct !== null ? `${Math.round(pct)}%` : ""}
+                  </span>
                 </div>
-                {result.releaseUrl && (
-                  <a
-                    href={result.releaseUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                      fontSize: 11.5,
-                      color: "#a78bfa",
-                      textDecoration: "none",
-                    }}
-                  >
-                    <span>{L("View release", "Ver release")}</span>
-                    <ExternalLink size={11} />
-                  </a>
-                )}
+                <div className="update-hairline-track">
+                  <div
+                    className={`update-hairline-fill ${
+                      pct === null ? "is-indeterminate" : ""
+                    }`}
+                    style={{ width: pct !== null ? `${Math.max(3, pct)}%` : "35%" }}
+                  />
+                </div>
               </div>
-
-              {result.releaseNotes.trim() && (
-                <pre
-                  style={{
-                    margin: 0,
-                    maxHeight: 140,
-                    overflowY: "auto",
-                    whiteSpace: "pre-wrap",
-                    fontSize: 12,
-                    color: "#cbd5e1",
-                    background: "rgba(15,23,42,0.55)",
-                    padding: "8px 10px",
-                    borderRadius: 6,
-                    fontFamily: "inherit",
-                  }}
-                >
-                  {result.releaseNotes.trim()}
-                </pre>
-              )}
-
-              {result.updateAvailable && result.assetUrl && result.assetName && (
+            ) : (
+              <div className="update-action-row">
                 <button
                   type="button"
-                  className="btn-primary"
+                  className="btn-primary update-install-btn"
                   disabled={installing}
                   onClick={() => void handleInstall()}
                 >
                   <ArrowDownToLine size={14} />
                   <span>
-                    {installing
-                      ? "Descargando actualización…"
-                      : `Descargar e instalar ${result.assetName}${
-                          result.assetSize ? ` (${formatSize(result.assetSize)})` : ""
-                        }`}
+                    {L(
+                      `Update to v${result.latestVersion}`,
+                      `Actualizar a v${result.latestVersion}`
+                    )}
                   </span>
+                  {result.assetSize && (
+                    <span className="update-size-chip tabular-nums">
+                      {formatSize(result.assetSize)}
+                    </span>
+                  )}
                 </button>
-              )}
-            </div>
+              </div>
+            )
           )}
-
-          {progress && (
-            <div className="download-box">
-              <div className="download-msg">{progress.message}</div>
-              {progress.percent !== null && (
-                <div className="progress-track">
-                  <div
-                    className="progress-fill"
-                    style={{
-                      width: `${Math.min(100, Math.max(0, progress.percent))}%`,
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          {statusMsg && (
-            <div style={{ fontSize: 12, color: "#34d399" }}>{statusMsg}</div>
-          )}
-          {error && <div className="hw-error">{error}</div>}
         </div>
+      )}
+
+      {statusMsg && (
+        <div className="update-status-ok">
+          <CheckCircle2 size={14} />
+          <span>{statusMsg}</span>
+        </div>
+      )}
+      {error && <div className="hw-error">{error}</div>}
+    </div>
   );
 
   if (embedded) return innerBody;
@@ -278,7 +301,12 @@ export function UpdateModal({
             <ArrowDownToLine size={17} style={{ color: "#38bdf8" }} />
             <span>{t("updates.title")}</span>
           </div>
-          <button type="button" className="icon-btn" aria-label={t("models.close")} onClick={onClose}>
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label={t("models.close")}
+            onClick={onClose}
+          >
             <X size={16} />
           </button>
         </div>

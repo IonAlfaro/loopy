@@ -1166,34 +1166,14 @@ export const NODE_BLUEPRINTS: Record<LoorsNodeKind, NodeBlueprint> = {
       { id: "error", label: "error", kind: "false" },
     ],
     defaultConfig: {
+      planningMode: "auto",
       objectiveTemplate: "{{current_prompt}}",
       coordinatorPrompt:
-        "Decompose the objective into concrete tasks, assign them to workers using swarm_post with @mentions, review their deliverables, and call swarm_finish with a complete synthesized report.",
+        "Analyze the objective and hardware budget, decide how many specialist workers or batch subtasks are needed, spawn them with swarm_spawn_worker or swarm_spawn_batch, review their deliverables, and call swarm_finish with a complete synthesized report.",
       maxRounds: 8,
-      maxConcurrency: 3,
+      maxConcurrency: 0,
       useWorktrees: false,
-      workers: [
-        {
-          id: "builder",
-          name: "Builder",
-          role: "Implementation",
-          systemPrompt:
-            "Implement assigned tasks cleanly, verify with tools, and report concrete results to @coordinator.",
-          modelPath: "",
-          tools: ["list_files", "grep_search", "read_file", "edit_file", "write_file", "run_cmd"],
-          maxSteps: 8,
-        },
-        {
-          id: "reviewer",
-          name: "Reviewer",
-          role: "QA & Verification",
-          systemPrompt:
-            "Audit deliverables, run tests or checks, and report pass/fail with concrete evidence to @coordinator.",
-          modelPath: "",
-          tools: ["read_file", "grep_search", "run_cmd", "git_diff"],
-          maxSteps: 6,
-        },
-      ],
+      workers: [],
     },
   },
   subgraph: {

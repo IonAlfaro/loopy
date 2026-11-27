@@ -912,7 +912,7 @@ async fn run_node(
                             ),
                         );
 
-                        match llama.ensure_loaded(load_cfg).await {
+                        match llama.ensure_loaded_cancellable(load_cfg, Some(&cancel)).await {
                             Ok(p) => {
                                 emit(EngineEvent::ModelState {
                                     loaded: true,
@@ -920,6 +920,12 @@ async fn run_node(
                                     context_size: Some(context_size),
                                 });
                                 Some(p)
+                            }
+                            Err(err) if err == "__CANCELLED__" => {
+                                return NodeStepOutcome::Finish(
+                                    RunOutcomeKind::Cancelled,
+                                    "Ejecución detenida inmediatamente por el usuario.".to_string(),
+                                );
                             }
                             Err(err) => {
                                 log(iter, LogStreamKind::Stderr, err.clone());
@@ -1910,7 +1916,7 @@ async fn run_node(
                             LogStreamKind::System,
                             format!("LLM Judge evaluando con '{}'...", model_path),
                         );
-                        (llama.ensure_loaded(load_cfg).await.map(Some), prof)
+                        (llama.ensure_loaded_cancellable(load_cfg, Some(&cancel)).await.map(Some), prof)
                     };
 
                     match port_res {
@@ -2250,7 +2256,7 @@ async fn run_node(
                                     if raw_ctx > 0 { Some(raw_ctx) } else { None },
                                     opt_config_str(model_node, "mmprojPath"),
                                 );
-                                (llama.ensure_loaded(load_cfg).await.map(Some), prof)
+                                (llama.ensure_loaded_cancellable(load_cfg, Some(&cancel)).await.map(Some), prof)
                             };
                             let temperature = config_f32(model_node, "temperature", model_profile.temperature);
                             match port_res {
