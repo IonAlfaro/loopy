@@ -3,6 +3,7 @@ import { PanelResizer } from "./PanelResizer";
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
+  ArrowDown,
   Bot,
   Boxes,
   Check,
@@ -311,6 +312,7 @@ export function AgentWorkspaceView() {
 
   const feedRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const attachMenuRef = useRef<HTMLDivElement>(null);
   const compactPopoverRef = useRef<HTMLDivElement>(null);
@@ -333,6 +335,8 @@ export function AgentWorkspaceView() {
   const showSession = (next: AgentSession) => {
     const previousId = activeSessionIdRef.current;
     if (next.id !== previousId) {
+      stickToBottomRef.current = true;
+      setShowJumpToLatest(false);
       const nextDraft = drafts.current.get(next.id);
       setInput(nextDraft?.text ?? "");
       setPendingAttachments(nextDraft?.attachments ?? []);
@@ -1363,10 +1367,12 @@ export function AgentWorkspaceView() {
     }
   };
 
-  const copyText = (id: string, text: string) => {
-    navigator.clipboard.writeText(text).catch(() => {});
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 1500);
+  const copyText = async (id: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId((current) => current === id ? null : current), 1500);
+    } catch { setCopiedId(null); }
   };
 
   const lastUsage = contextUsage[session.id];
@@ -1939,6 +1945,7 @@ export function AgentWorkspaceView() {
               if (!el) return;
               stickToBottomRef.current =
                 el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+              setShowJumpToLatest(!stickToBottomRef.current);
             }}
           >
             <div className="agent-feed-inner">
@@ -2156,6 +2163,16 @@ export function AgentWorkspaceView() {
             </div>
           </div>
 
+          {showJumpToLatest && (
+            <div style={{ display: "flex", justifyContent: "center", padding: "4px" }}>
+              <button type="button" className="btn-secondary btn-xs" onClick={() => {
+                stickToBottomRef.current = true;
+                setShowJumpToLatest(false);
+                const el = feedRef.current;
+                if (el) el.scrollTop = el.scrollHeight;
+              }}><ArrowDown size={13} /> {locale === "es" ? "Ir al último mensaje" : "Jump to latest"}</button>
+            </div>
+          )}
           <div className="composer-wrap">
             {pendingQuestion && (
               <div
