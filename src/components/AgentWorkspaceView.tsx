@@ -1,6 +1,6 @@
+import { AgentComposerAttachments } from "./AgentComposerAttachments";
 import { AgentComposerInput } from "./AgentComposerInput";
 import { AgentHistory } from "./AgentHistory";
-import { getAttachmentBadge } from "./AgentUserMessage";
 import { AgentDiff } from "./AgentDiff";
 import { PanelResizer } from "./PanelResizer";
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -2338,54 +2338,7 @@ export function AgentWorkspaceView() {
                   void sendTurn(next.text, false, next.attachments ?? []);
                 }}
               />
-              {(pendingAttachments.length > 0 || session.pinnedFiles.length > 0 || stagingFiles) && (
-                <div className="composer-attachments-tray">
-                  {pendingAttachments.map((att) => {
-                    const badge = getAttachmentBadge(att);
-                    const name = att.split(/[\\/]/).pop() ?? att;
-                    return (
-                      <span key={att} className="attachment-chip" title={att}>
-                        <span className={`attachment-ext-badge ${badge.cls}`}>
-                          {badge.tag}
-                        </span>
-                        <span className="truncate-text" style={{ maxWidth: 160 }}>
-                          {name}
-                        </span>
-                        <button
-                          type="button"
-                          title="Quitar adjunto"
-                          onClick={() =>
-                            setPendingAttachments((prev) => prev.filter((x) => x !== att))
-                          }
-                        >
-                          <X size={11} />
-                        </button>
-                      </span>
-                    );
-                  })}
-                  {session.pinnedFiles.map((rel) => (
-                    <span key={`pin-${rel}`} className="pinned-chip" title={`Fijado del proyecto: ${rel}`}>
-                      <Pin size={10} />
-                      <span className="truncate-text" style={{ maxWidth: 150 }}>
-                        {rel.split("/").pop()}
-                      </span>
-                      <button
-                        type="button"
-                        title="Desfijar archivo del proyecto"
-                        onClick={() => togglePinFile(rel)}
-                      >
-                        <X size={10} />
-                      </button>
-                    </span>
-                  ))}
-                  {stagingFiles && (
-                    <span className="attachment-chip">
-                      <RefreshCw size={11} className="spin" />
-                      <span>Procesando archivo…</span>
-                    </span>
-                  )}
-                </div>
-              )}
+              <AgentComposerAttachments pendingAttachments={pendingAttachments} pinnedFiles={session.pinnedFiles} stagingFiles={!!stagingFiles} locale={locale} onRemove={att => setPendingAttachments(prev => prev.filter(x => x !== att))} onUnpin={rel => void togglePinFile(rel)} />
 
               <AgentComposerInput value={input} placeholder={isCurrentRunning ? t("agent.composerQueuePlaceholder") : t("agent.composerPlaceholder")} label={t("agent.composerPlaceholder")} onChange={setInput} onFiles={(files) => void stageExternalFiles(files)} onSend={() => void sendTurn(input)} />
 
