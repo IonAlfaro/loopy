@@ -740,7 +740,8 @@ where
     let (work_mode, prompt_body) = AgentWorkMode::from_prompt(user_prompt.trim());
     let trimmed_prompt = prompt_body.to_string();
     // Resume is explicit: unrelated requests must not inherit an old plan.
-    let resume_requested = work_mode == AgentWorkMode::Agent && trimmed_prompt.eq_ignore_ascii_case("/resume");
+    let approve_requested = work_mode == AgentWorkMode::Agent && trimmed_prompt.eq_ignore_ascii_case("/approve");
+    let resume_requested = work_mode == AgentWorkMode::Agent && (trimmed_prompt.eq_ignore_ascii_case("/resume") || approve_requested);
     if resume_requested {
         let checkpoint = session.execution_checkpoint.as_ref()
             .ok_or_else(|| "No execution checkpoint to resume.".to_string())?;
@@ -751,6 +752,13 @@ where
         let plan: ExecutionPlan = serde_json::from_value(checkpoint["plan"].clone())
             .map_err(|err| format!("Invalid checkpoint plan: {err}"))?;
         plan.validate()?;
+        if approve_requested && (!checkpoint.get("awaitingApproval").and_then(Value::as_bool).unwrap_or(false)
+            || plan.tasks.iter().any(|task| task.status != PlanTaskStatus::Pending)) {
+            return Err("No pending proposal to approve.".into());
+        }
+        if !approve_requested && checkpoint.get("awaitingApproval").and_then(Value::as_bool).unwrap_or(false) {
+            return Err("Use /approve to authorize the proposed plan.".into());
+        }
         if plan.is_complete() {
             return Err("The checkpoint plan is already complete.".into());
         }
@@ -1755,7 +1763,14 @@ where
                     // Once a plan exists, side-effecting tools require an active task.
                     let plan_requires_task = state.execution_plan.lock()
                         .map(|slot| slot.is_some()).unwrap_or(true);
-                    if !work_mode.allows_tool(&tc.function.name) {
+                    if work_mode == AgentWorkMode::Plan && tc.function.name == "set_execution_plan"
+                        && serde_json::from_value::<ExecutionPlan>(parsed_args.clone())
+                            .map_or(true, |plan| plan.tasks.iter().any(|task| task.status != PlanTaskStatus::Pending))
+                    {
+                        denied = true;
+                        record.status = "denied".into();
+                        tool_output = "Plan mode permits only pending tasks. Use /approve to execute the proposal.".into();
+                    } else if !work_mode.allows_tool(&tc.function.name) {
                         denied = true;
                         record.status = "denied".into();
                         tool_output = "Tool unavailable in the selected work mode.".into();
@@ -1965,6 +1980,7 @@ where
                 if let Some(plan) = plan.as_ref() {
                     session.execution_checkpoint = Some(json!({
                         "version": 1,
+                        "awaitingApproval": work_mode == AgentWorkMode::Plan,
                         "workspace": session.workspace,
                         "plan": plan,
                         "evidence": &*evidence,
