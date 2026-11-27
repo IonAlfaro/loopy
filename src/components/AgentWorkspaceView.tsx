@@ -821,7 +821,11 @@ export function AgentWorkspaceView() {
         setError(locale === "es" ? "Espera a que termine la respuesta para guardar los cambios." : "Wait for the response to finish before saving changes.");
         return;
       }
-      setSession(next);
+      if (activeSessionIdRef.current === next.id) {
+        sessionRef.current = next;
+        setSession(next);
+      }
+      if (completedTurns.current.has(next.id)) completedTurns.current.set(next.id, next);
       try {
         await invoke("save_agent_session", { session: next });
         refreshSessions();
@@ -1253,8 +1257,9 @@ export function AgentWorkspaceView() {
       } else if (!pausedQueues.current.has(id) && !runningTurns.current.has(id)) {
         const next = queuedMessages.find((message) => message.sessionId === id);
         if (!next) continue;
+        const target = activeSessionIdRef.current === id ? sessionRef.current : completed;
+        if (target.id !== id || !target.modelPath) continue;
         setMessageQueue((prev) => prev.filter((message) => message.id !== next.id));
-        const target = completed;
         void sendTurn(next.text, false, next.attachments ?? [], target);
       }
     }
@@ -2300,8 +2305,8 @@ export function AgentWorkspaceView() {
                   if (activeSessionIdRef.current !== id || runningTurns.current.has(id)) return;
                   const next = queuedMessages.find(item => item.sessionId === id);
                   if (!next) return;
-                  const target = completedTurns.current.get(id) ?? sessionRef.current;
-                  if (target.id !== id) return;
+                  const target = sessionRef.current;
+                  if (target.id !== id || !target.modelPath) return;
                   setMessageQueue(prev => prev.filter(item => item.id !== next.id));
                   void sendTurn(next.text, false, next.attachments ?? [], target);
                 }}
