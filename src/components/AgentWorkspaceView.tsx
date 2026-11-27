@@ -202,6 +202,8 @@ export function AgentWorkspaceView() {
   const [wsMenuOpen, setWsMenuOpen] = useState(false);
   const [permMenuOpen, setPermMenuOpen] = useState(false);
   const [todoItems, setTodoItems] = useState<AgentTodoItem[]>([]);
+  const todosBySession = useRef(new Map<string, AgentTodoItem[]>());
+  const artifactsBySession = useRef(new Map<string, AgentArtifactPreview>());
   const [todoCollapsed, setTodoCollapsed] = useState(false);
   const [questions, setQuestions] = useState<Record<string, PendingAgentQuestion>>({});
   const setPendingQuestion = (question: PendingAgentQuestion | null, id = activeSessionIdRef.current) => {
@@ -340,8 +342,9 @@ export function AgentWorkspaceView() {
       const nextDraft = drafts.current.get(next.id);
       setInput(nextDraft?.text ?? "");
       setPendingAttachments(nextDraft?.attachments ?? []);
-      setTodoItems([]);
-      setActiveArtifact(null);
+      setTodoItems(todosBySession.current.get(next.id) ?? []);
+      setActiveArtifact(artifactsBySession.current.get(next.id) ?? null);
+      setArtifactExpanded(false);
       setGpuBusyPrompt(null);
     }
     activeSessionIdRef.current = next.id;
@@ -716,18 +719,23 @@ export function AgentWorkspaceView() {
         }
       };
 
-      if (!visible && p.type !== "token" && p.type !== "tool_started" && p.type !== "tool_finished") return;
+      if (!visible && p.type !== "token" && p.type !== "tool_started" && p.type !== "tool_finished" && p.type !== "todo_updated" && p.type !== "artifact_updated") return;
 
       if (p.type === "todo_updated") {
-        setTodoItems(p.items);
+        todosBySession.current.set(p.session_id, p.items);
+        if (visible) setTodoItems(p.items);
       } else if (p.type === "artifact_updated") {
-        setActiveArtifact({
+        const artifact: AgentArtifactPreview = {
           title: p.title,
           path: p.path,
           kind: p.kind,
           content: p.content,
-        });
-        setArtifactExpanded(false);
+        };
+        artifactsBySession.current.set(p.session_id, artifact);
+        if (visible) {
+          setActiveArtifact(artifact);
+          setArtifactExpanded(false);
+        }
       } else if (p.type === "token") {
         updateTurn((prev) => {
           const msgs = [...prev.messages];
@@ -2310,7 +2318,7 @@ export function AgentWorkspaceView() {
                       type="button"
                       className="agent-artifact-close"
                       title={locale === "es" ? "Cerrar artefacto" : "Dismiss artifact"}
-                      onClick={() => setActiveArtifact(null)}
+                      onClick={() => { artifactsBySession.current.delete(session.id); setActiveArtifact(null); }}
                     >
                       <X size={13} />
                     </button>
@@ -2366,6 +2374,7 @@ export function AgentWorkspaceView() {
                       title="Clear checklist"
                       onClick={(e) => {
                         e.stopPropagation();
+                        todosBySession.current.delete(session.id);
                         setTodoItems([]);
                       }}
                     >
