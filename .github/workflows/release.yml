@@ -6,12 +6,28 @@ on:
       - "v*"
   workflow_dispatch:
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   actions: read
 
 jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release tag against application version
+        shell: bash
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          test "$GITHUB_REF_TYPE" = tag
+          test "$GITHUB_REF_NAME" = "v$version"
+
   publish-unix:
+    needs: validate-tag
     name: Build & Publish (${{ matrix.platform }})
     strategy:
       fail-fast: false
@@ -52,7 +68,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           LOORS_UPDATE_REPO: ${{ github.repository }}
         with:
-          tagName: v__VERSION__
+          tagName: ${{ github.ref_name }}
           releaseName: "Loors v__VERSION__"
           releaseBody: "Native installers for Windows (.exe / .msi), macOS (.dmg), and Linux (.AppImage / .deb)."
           releaseDraft: true
@@ -60,6 +76,7 @@ jobs:
           args: ${{ matrix.args }}
 
   publish-windows:
+    needs: validate-tag
     name: Build, Sign (SignPath) & Publish (Windows)
     runs-on: windows-latest
     steps:
@@ -96,6 +113,7 @@ jobs:
         with:
           name: loors-windows-unsigned
           path: staging/
+          if-no-files-found: error
           retention-days: 1
 
       - name: Check if SignPath secrets are configured
@@ -138,8 +156,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.1.0' }}
-          name: "Loors ${{ github.ref_type == 'tag' && github.ref_name || 'v0.1.0' }}"
+          tag_name: ${{ github.ref_name }}
+          name: "Loors ${{ github.ref_name }}"
           body: "Native installers for Windows (.exe / .msi), macOS (.dmg), and Linux (.AppImage / .deb)."
           draft: true
+          fail_on_unmatched_files: true
           files: ${{ steps.pick-files.outputs.dir }}
+
+  finalize-release:
+    needs: [publish-unix, publish-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish completed release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
