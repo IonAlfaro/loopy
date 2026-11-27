@@ -1999,11 +1999,11 @@ export function AgentWorkspaceView() {
                           <button
                             type="button"
                             className="micro-action-btn"
-                            title="Reintentar este mensaje"
+                            title={locale === "es" ? "Reintentar este mensaje" : "Retry this message"}
                             onClick={() => void sendTurn(msg.content, false, msg.attachments)}
                           >
                             <RotateCcw size={11} />
-                            <span>Reintentar</span>
+                            <span>{locale === "es" ? "Reintentar" : "Retry"}</span>
                           </button>
                         )}
                       </div>
@@ -2035,7 +2035,7 @@ export function AgentWorkspaceView() {
                           onClick={() => copyText(msg.id, msg.content)}
                         >
                           {copiedId === msg.id ? <Check size={11} /> : <Copy size={11} />}
-                          <span>{copiedId === msg.id ? "Copiado" : "Copiar"}</span>
+                          <span>{copiedId === msg.id ? (locale === "es" ? "Copiado" : "Copied") : (locale === "es" ? "Copiar" : "Copy")}</span>
                         </button>
                       )}
                     </div>
@@ -2082,7 +2082,7 @@ export function AgentWorkspaceView() {
                         ) : (
                           <div className="agent-typing-hint">
                             <RefreshCw size={12} className="spin" />
-                            <span>Generando respuesta…</span>
+                            <span>{locale === "es" ? "Generando respuesta…" : "Generating response…"}</span>
                           </div>
                         )
                       )
@@ -2097,7 +2097,7 @@ export function AgentWorkspaceView() {
                   <div className="permission-head">
                     <Shield size={16} style={{ color: "#f59e0b" }} />
                     <span>
-                      Permiso requerido: <strong>{permissionReq.toolName}</strong>
+                      {locale === "es" ? "Permiso requerido:" : "Permission required:"} <strong>{permissionReq.toolName}</strong>
                     </span>
                   </div>
                   <pre className="permission-preview">{permissionReq.preview}</pre>
@@ -2107,7 +2107,7 @@ export function AgentWorkspaceView() {
                       className="btn-primary"
                       onClick={() => void handlePermission(true, false)}
                     >
-                      Aprobar 1 vez
+                      {locale === "es" ? "Aprobar 1 vez" : "Approve once"}
                     </button>
                     <button
                       type="button"
@@ -2121,7 +2121,7 @@ export function AgentWorkspaceView() {
                       className="btn-danger"
                       onClick={() => void handlePermission(false, false)}
                     >
-                      Rechazar
+                      {locale === "es" ? "Rechazar" : "Reject"}
                     </button>
                   </div>
                 </div>
