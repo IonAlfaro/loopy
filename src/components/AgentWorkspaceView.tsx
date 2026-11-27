@@ -267,6 +267,8 @@ export function AgentWorkspaceView() {
   const [selectedPreviewContent, setSelectedPreviewContent] = useState<string>("");
   const [gitDiffText, setGitDiffText] = useState("");
   const diffRequestId = useRef(0);
+  const previewRequestId = useRef(0);
+  const pinRequestId = useRef(0);
   const refreshWorkspaceDiff = async (id: string, workspace: string) => {
     const request = ++diffRequestId.current;
     const current = () => request === diffRequestId.current && activeSessionIdRef.current === id && sessionRef.current.workspace === workspace;
@@ -335,6 +337,9 @@ export function AgentWorkspaceView() {
     const previousId = activeSessionIdRef.current;
     if (next.id !== previousId || next.workspace !== sessionRef.current.workspace) {
       ++diffRequestId.current;
+      ++previewRequestId.current;
+      ++pinRequestId.current;
+      setPinResults([]);
       setGitDiffText("");
       setSelectedPreviewFile(null);
       setSelectedPreviewContent("");
@@ -606,22 +611,27 @@ export function AgentWorkspaceView() {
   const groupedPickerModels = useAgentModelGroups(localModels, modelPickerQuery);
 
   useEffect(() => {
-    invoke<SkillSummary[]>("list_skills", { workspace: session.workspace || "." })
-      .then((s) => setSkills(s.filter((item) => item.name !== "architect-loors")))
-      .catch(() => setSkills([]));
-    if (session.workspace && session.workspace !== ".") {
-      invoke<string[]>("find_workspace_files", {
-        workspace: session.workspace,
-        query: "",
-      })
-        .then(setWorkspaceFiles)
-        .catch(() => setWorkspaceFiles([]));
-    } else {
-      setWorkspaceFiles([]);
-    }
+    const workspace = session.workspace;
+    let cancelled = false;
+    setSkills([]);
+    setWorkspaceFiles([]);
+    invoke<SkillSummary[]>("list_skills", { workspace: workspace || "." })
+      .then(items => { if (!cancelled && sessionRef.current.workspace === workspace) setSkills(items.filter(item => item.name !== "architect-loors")); })
+      .catch(() => {});
     setSelectedPreviewFile(null);
     setSelectedPreviewContent("");
+    return () => { cancelled = true; };
   }, [session.workspace]);
+
+  useEffect(() => {
+    const workspace = session.workspace;
+    let cancelled = false;
+    if (!workspace || workspace === ".") { setWorkspaceFiles([]); return; }
+    invoke<string[]>("find_workspace_files", { workspace, query: fileFilter })
+      .then(files => { if (!cancelled && sessionRef.current.workspace === workspace) setWorkspaceFiles(files); })
+      .catch(() => { if (!cancelled && sessionRef.current.workspace === workspace) setWorkspaceFiles([]); });
+    return () => { cancelled = true; };
+  }, [session.workspace, fileFilter, rightPanelTab, rightPanelOpen]);
 
   // Listen to live Agent Chat events & Browser CDP frames
   useEffect(() => {
@@ -1095,14 +1105,16 @@ export function AgentWorkspaceView() {
 
   const handleSearchPin = async (q: string) => {
     setPinQuery(q);
+    const request = ++pinRequestId.current;
+    const current = () => request === pinRequestId.current;
     try {
       const matches = await invoke<string[]>("find_workspace_files", {
         workspace: session.workspace || ".",
         query: q,
       });
-      setPinResults(matches.slice(0, 12));
+      if (current()) setPinResults(matches.slice(0, 12));
     } catch {
-      setPinResults([]);
+      if (current()) setPinResults([]);
     }
   };
 
@@ -1323,26 +1335,24 @@ export function AgentWorkspaceView() {
     setRightPanelTab(tab);
     if (tab === "diff") {
       await refreshWorkspaceDiff(session.id, session.workspace);
-    } else if (tab === "files" && session.workspace && session.workspace !== ".") {
-      invoke<string[]>("find_workspace_files", {
-        workspace: session.workspace,
-        query: fileFilter,
-      })
-        .then(setWorkspaceFiles)
-        .catch(() => {});
     }
   };
 
   const handlePreviewWorkspaceFile = async (relPath: string) => {
+    const request = ++previewRequestId.current;
+    const id = session.id;
+    const workspace = session.workspace;
+    const current = () => request === previewRequestId.current && activeSessionIdRef.current === id && sessionRef.current.workspace === workspace;
     setSelectedPreviewFile(relPath);
+    setSelectedPreviewContent("");
     try {
       const content = await invoke<string>("read_workspace_file_preview", {
         workspace: session.workspace || ".",
         relPath,
       });
-      setSelectedPreviewContent(content);
+      if (current()) setSelectedPreviewContent(content);
     } catch (err) {
-      setSelectedPreviewContent(`Error leyendo archivo: ${String(err)}`);
+      if (current()) setSelectedPreviewContent(`${locale === "es" ? "Error leyendo archivo" : "Error reading file"}: ${String(err)}`);
     }
   };
 
@@ -2777,14 +2787,7 @@ export function AgentWorkspaceView() {
                       onChange={(e) => {
                         const q = e.target.value;
                         setFileFilter(q);
-                        if (session.workspace && session.workspace !== ".") {
-                          invoke<string[]>("find_workspace_files", {
-                            workspace: session.workspace,
-                            query: q,
-                          })
-                            .then(setWorkspaceFiles)
-                            .catch(() => {});
-                        }
+                        
                       }}
                     />
                   </div>
