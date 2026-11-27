@@ -646,7 +646,7 @@ async fn run_single_swarm_agent_turn(
             .acquire()
             .await
             .map_err(|_| "Semaphore closed".to_string())?;
-        let port = llama.ensure_loaded(cfg).await?;
+        let port = llama.ensure_loaded_cancellable(cfg, Some(cancel)).await?;
         local_port = Some(port);
     }
 
