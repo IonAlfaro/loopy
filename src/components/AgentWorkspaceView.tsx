@@ -2025,14 +2025,15 @@ export function AgentWorkspaceView() {
                   !msg.content &&
                   !msg.toolCalls.some((t) => t.status === "running");
                 const thinkOpen = expandedThinking[msg.id] ?? false;
+                const continuation = idx > 0 && session.messages[idx - 1].role === "assistant";
 
                 return (
-                  <div key={msg.id} className="agent-assistant-row">
+                  <div key={msg.id} className={`agent-assistant-row${continuation ? " agent-assistant-continuation" : ""}`}>
                     <div className="agent-assistant-head">
                       <span className="agent-model-tag">
-                        <Bot size={13} style={{ color: "#a855f7" }} />
+                        {!continuation && <Bot size={13} style={{ color: "#a855f7" }} />}
                         <span>
-                          {session.modelPath.split(/[\\/]/).pop() || "Agente Loors"}
+                          {continuation ? (locale === "es" ? "Continuación" : "Continuation") : (session.modelPath.split(/[\\/]/).pop() || "Agente Loors")}
                         </span>
                       </span>
                       {msg.content && (
@@ -2058,22 +2059,6 @@ export function AgentWorkspaceView() {
                       />
                     )}
 
-                    {msg.toolCalls.length > 0 && (
-                      <ToolCallGroup
-                        calls={msg.toolCalls}
-                        expandedTools={expandedTools}
-                        onToggleTool={(id, next) =>
-                          setExpandedTools((p) => ({ ...p, [id]: next }))
-                        }
-                        extras={(call) => ({
-                          shotB64: call.screenshotPath
-                            ? savedShots[call.screenshotPath]
-                            : undefined,
-                          onUndo: () => void handleUndoToolCall(msg.id, call.id),
-                        })}
-                      />
-                    )}
-
                     {msg.content ? (
                       <div className="agent-assistant-body">
                         <MarkdownContent text={msg.content} />
@@ -2094,6 +2079,22 @@ export function AgentWorkspaceView() {
                         )
                       )
                     )}
+                    {msg.toolCalls.length > 0 && (
+                      <ToolCallGroup
+                        calls={msg.toolCalls}
+                        expandedTools={expandedTools}
+                        onToggleTool={(id, next) =>
+                          setExpandedTools((p) => ({ ...p, [id]: next }))
+                        }
+                        extras={(call) => ({
+                          shotB64: call.screenshotPath
+                            ? savedShots[call.screenshotPath]
+                            : undefined,
+                          onUndo: () => void handleUndoToolCall(msg.id, call.id),
+                        })}
+                      />
+                    )}
+
                   </div>
                 );
               })}
