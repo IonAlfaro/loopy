@@ -332,6 +332,10 @@ export interface AgentChatMessage {
   timestamp: number;
   inferenceMs?: number | null;
   firstTokenMs?: number | null;
+  tokensPerSecond?: number | null;
+  prefillMs?: number | null;
+  generationMs?: number | null;
+  promptTokens?: number | null;
 }
 
 export interface AgentSession {

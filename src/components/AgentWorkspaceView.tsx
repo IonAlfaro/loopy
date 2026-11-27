@@ -2038,6 +2038,10 @@ export function AgentWorkspaceView() {
                           {continuation ? (locale === "es" ? "Continuación" : "Continuation") : (session.modelPath.split(/[\\/]/).pop() || "Agente Loors")}
                         </span>
                       </span>
+                      {msg.tokensPerSecond != null && <span className="agent-model-tag">{msg.tokensPerSecond.toFixed(1)} tok/s</span>}
+                      {msg.promptTokens != null && <span className="agent-model-tag">{msg.promptTokens.toLocaleString()} ctx tokens</span>}
+                      {msg.prefillMs != null && <span className="agent-model-tag">Prefill {(msg.prefillMs / 1000).toFixed(2)} s</span>}
+                      {msg.generationMs != null && <span className="agent-model-tag">Gen {(msg.generationMs / 1000).toFixed(2)} s</span>}
                       {msg.inferenceMs != null && <span className="agent-model-tag" title={locale === "es" ? "Duración de inferencia / primer fragmento" : "Inference duration / first chunk"}>{(msg.inferenceMs / 1000).toFixed(2)} s{msg.firstTokenMs != null ? ` · TTFT ${(msg.firstTokenMs / 1000).toFixed(2)} s` : ""}</span>}
                       {msg.content && (
                         <button

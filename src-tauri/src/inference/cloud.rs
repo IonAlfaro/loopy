@@ -528,6 +528,7 @@ where
     }
 
     Ok(ChatResponse {
+        tokens_per_second: None, prefill_ms: None, generation_ms: None, prompt_tokens: None,
         content: full_content,
         tool_calls: tool_calls_map.into_values().collect(),
         finish_reason,
@@ -860,6 +861,7 @@ where
     }
 
     Ok(ChatResponse {
+        tokens_per_second: None, prefill_ms: None, generation_ms: None, prompt_tokens: None,
         content: full_content,
         tool_calls: tool_calls_map.into_values().collect(),
         finish_reason,

@@ -97,6 +97,14 @@ pub struct AgentChatMessage {
     pub inference_ms: Option<u64>,
     #[serde(default)]
     pub first_token_ms: Option<u64>,
+    #[serde(default)]
+    pub tokens_per_second: Option<f64>,
+    #[serde(default)]
+    pub prefill_ms: Option<f64>,
+    #[serde(default)]
+    pub generation_ms: Option<f64>,
+    #[serde(default)]
+    pub prompt_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -564,6 +572,7 @@ where
             timestamp: now_epoch_secs(),
                 inference_ms: None,
                 first_token_ms: None,
+                tokens_per_second: None, prefill_ms: None, generation_ms: None, prompt_tokens: None,
         });
     }
 
@@ -615,6 +624,7 @@ where
         timestamp: now_epoch_secs(),
                 inference_ms: None,
                 first_token_ms: None,
+                tokens_per_second: None, prefill_ms: None, generation_ms: None, prompt_tokens: None,
     });
     // Optional RAG index & Mini-Repo-Map (only when a real project workspace is linked)
     let has_workspace =
@@ -1136,6 +1146,7 @@ where
                 timestamp: now_epoch_secs(),
                 inference_ms: None,
                 first_token_ms: None,
+                tokens_per_second: None, prefill_ms: None, generation_ms: None, prompt_tokens: None,
             });
             id
         };
@@ -1273,6 +1284,12 @@ where
             }
         };
 
+        if let Some(last) = session.messages.last_mut() {
+            last.tokens_per_second = resp.tokens_per_second;
+            last.prefill_ms = resp.prefill_ms;
+            last.generation_ms = resp.generation_ms;
+            last.prompt_tokens = resp.prompt_tokens;
+        }
         let mut tool_calls = resp.tool_calls.clone();
         if tool_calls.is_empty() && resp.content.contains("<tool_call>") {
             tool_calls = parse_inline_tool_calls(&resp.content);
@@ -2358,6 +2375,7 @@ mod tests {
                 timestamp: 1,
                 inference_ms: None,
                 first_token_ms: None,
+                tokens_per_second: None, prefill_ms: None, generation_ms: None, prompt_tokens: None,
                 tool_calls: vec![AgentToolCallRecord {
                     id: "c1".to_string(),
                     name: "edit_file".to_string(),

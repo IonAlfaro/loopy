@@ -404,6 +404,10 @@ pub struct ChatRequest {
 
 #[derive(Debug, Clone)]
 pub struct ChatResponse {
+    pub tokens_per_second: Option<f64>,
+    pub prefill_ms: Option<f64>,
+    pub generation_ms: Option<f64>,
+    pub prompt_tokens: Option<u64>,
     pub content: String,
     pub tool_calls: Vec<ToolCall>,
     pub finish_reason: Option<String>,

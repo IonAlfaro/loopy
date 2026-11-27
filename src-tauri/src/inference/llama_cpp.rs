@@ -529,6 +529,7 @@ impl LlamaCppManager {
         let mut full_content = String::new();
         let mut tool_acc: BTreeMap<usize, (String, String, String)> = BTreeMap::new();
         let mut finish_reason: Option<String> = None;
+        let (mut tokens_per_second, mut prefill_ms, mut generation_ms, mut prompt_tokens) = (None, None, None, None);
 
         loop {
             if let Some(flag) = cancel {
@@ -569,6 +570,13 @@ impl LlamaCppManager {
                 let Ok(parsed) = serde_json::from_str::<Value>(data) else {
                     continue;
                 };
+                if let Some(t) = parsed.get("timings") {
+                    tokens_per_second = t.get("predicted_per_second").and_then(Value::as_f64).or(tokens_per_second);
+                    prefill_ms = t.get("prompt_ms").and_then(Value::as_f64).or(prefill_ms);
+                    generation_ms = t.get("predicted_ms").and_then(Value::as_f64).or(generation_ms);
+                    prompt_tokens = t.get("prompt_n").and_then(Value::as_u64).or(prompt_tokens);
+                }
+                prompt_tokens = parsed.get("usage").and_then(|u| u.get("prompt_tokens")).and_then(Value::as_u64).or(prompt_tokens);
                 let Some(choice0) = parsed.get("choices").and_then(|c| c.get(0)) else {
                     continue;
                 };
@@ -637,6 +645,7 @@ impl LlamaCppManager {
             .collect();
 
         Ok(ChatResponse {
+            tokens_per_second, prefill_ms, generation_ms, prompt_tokens,
             content: full_content,
             tool_calls,
             finish_reason,
