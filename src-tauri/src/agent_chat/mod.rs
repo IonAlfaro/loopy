@@ -307,6 +307,7 @@ impl AgentChatState {
 struct AgentTurnState {
     execution_plan: Mutex<Option<ExecutionPlan>>,
     task_evidence: Mutex<HashMap<String, Vec<String>>>,
+    task_failed_checks: Mutex<HashMap<String, std::collections::HashSet<String>>>,
     cancel: Arc<AtomicBool>,
     pending_permission: Mutex<Option<oneshot::Sender<PermissionDecision>>>,
     pending_question: Mutex<Option<oneshot::Sender<QuestionDecision>>>,
@@ -1802,6 +1803,17 @@ where
             }
             record.duration_ms = t0.elapsed().as_millis() as u64;
             record.output_preview = truncate_chars(&tool_output, 4000);
+            if record.name == "run_cmd" {
+                if let Some(task_id) = &record.task_id {
+                    if let Ok(mut failures) = state.task_failed_checks.lock() {
+                        if record.status != "success" {
+                            failures.entry(task_id.clone()).or_default().insert(record.args_json.clone());
+                        } else if let Some(commands) = failures.get_mut(task_id) {
+                            commands.remove(&record.args_json);
+                        }
+                    }
+                }
+            }
             if record.status == "success" && record.name != "set_execution_plan" && record.name != "update_todo_list" {
                 if let Some(task_id) = &record.task_id {
                     if let Ok(mut evidence) = state.task_evidence.lock() {
@@ -2165,7 +2177,15 @@ where
                     Ok(evidence) => evidence,
                     Err(_) => { record.status = "error".into(); return "Evidence lock poisoned.".into(); }
                 };
+                let failures = match state.task_failed_checks.lock() {
+                    Ok(failures) => failures,
+                    Err(_) => { record.status = "error".into(); return "Check lock poisoned.".into(); }
+                };
                 for task in &plan.tasks {
+                    if task.status == PlanTaskStatus::Done && failures.get(&task.id).map_or(false, |commands| !commands.is_empty()) {
+                        record.status = "error".into();
+                        return format!("Task {} has an unresolved failed command. Repair and rerun the same command successfully before completing it, or report the task as failed.", task.id);
+                    }
                     if task.status == PlanTaskStatus::Done &&
                         !evidence.get(&task.id).map_or(false, |ids| !ids.is_empty()) {
                         record.status = "error".into();
