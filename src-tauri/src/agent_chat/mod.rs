@@ -1571,6 +1571,13 @@ where
         if stagnant {
             if work_mode == AgentWorkMode::Agent && replans < state.budget.recovery_attempts {
                 replans += 1;
+                emit(AgentChatEvent::HarnessProgress {
+                    session_id: session.id.clone(),
+                    phase: "recovering".into(),
+                    task_title: state.execution_plan.lock().ok().and_then(|slot| slot.as_ref().and_then(|plan| plan.tasks.iter().find(|task| task.status == PlanTaskStatus::InProgress).map(|task| task.title.clone()))),
+                    inferences: state.inference_count.load(Ordering::SeqCst),
+                    inference_limit: state.budget.total_inferences,
+                });
                 stagnant = false;
                 observed_results.clear();
                 last_call_sig.clear();
