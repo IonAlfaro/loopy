@@ -22,7 +22,8 @@
     "rehype-katex": "^7.0.1",
     "katex": "^0.16.22",
     "rehype-highlight": "^7.0.2",
-    "highlight.js": "^11.11.1"
+    "highlight.js": "^11.11.1",
+    "mermaid": "^11.12.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.2.0",

@@ -1,3 +1,4 @@
+import mermaid from "mermaid";
 import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
@@ -629,6 +630,30 @@ export function MessageQueueTray({
 }
 
 
+let diagramSequence = 0;
+function MermaidDiagram({ source }: { source: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const timer = setTimeout(() => {
+      mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral", suppressErrorRendering: true });
+      void mermaid.render("loors-diagram-" + (++diagramSequence), source).then(({ svg }) => {
+        if (!active || !ref.current) return;
+        // Render in an image rather than injecting executable markup into the app.
+        const img = document.createElement("img");
+        img.alt = "Mermaid diagram";
+        img.style.maxWidth = "100%";
+        img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+        ref.current.replaceChildren(img);
+        setFailed(false);
+      }).catch(() => { if (active) setFailed(true); });
+    }, 350);
+    return () => { active = false; clearTimeout(timer); };
+  }, [source]);
+  return <div style={{ overflowX: "auto", padding: 8 }}><div ref={ref} />{failed && <pre className="md-code-pre">{source}</pre>}</div>;
+}
+
 function CodeBlock({ lang, code, highlighted }: { lang: string; code: string; highlighted?: ReactNode }) {
   const [copied, setCopied] = useState(false);
   const [wrap, setWrap] = useState(false);
@@ -657,6 +682,7 @@ function CodeBlock({ lang, code, highlighted }: { lang: string; code: string; hi
         </button>
         </div>
       </div>
+      {lang.toLowerCase() === "mermaid" && <MermaidDiagram source={code} />}
       <pre className="md-code-pre" style={wrap ? { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } : undefined}>
         <code>{highlighted ?? code}</code>
       </pre>
