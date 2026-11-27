@@ -137,6 +137,8 @@ pub struct AgentSession {
     #[serde(default)]
     pub messages: Vec<AgentChatMessage>,
     #[serde(default)]
+    pub execution_checkpoint: Option<serde_json::Value>,
+    #[serde(default)]
     pub updated_at: u64,
 }
 
@@ -1847,6 +1849,23 @@ where
             if let Some(last) = session.messages.last_mut() {
                 last.tool_calls.push(record.clone());
             }
+            if let (Ok(plan), Ok(evidence), Ok(failures), Ok(verification)) = (
+                state.execution_plan.lock(),
+                state.task_evidence.lock(),
+                state.task_failed_checks.lock(),
+                state.task_verification.lock(),
+            ) {
+                if let Some(plan) = plan.as_ref() {
+                    session.execution_checkpoint = Some(json!({
+                        "version": 1,
+                        "workspace": session.workspace,
+                        "plan": plan,
+                        "evidence": &*evidence,
+                        "failedChecks": &*failures,
+                        "verification": &*verification,
+                    }));
+                }
+            }
             session.updated_at = now_epoch_secs();
             save_session_in(&dir, &session)?;
 
@@ -2767,6 +2786,7 @@ mod tests {
             allowed_session_tools: Vec::new(),
             pinned: false,
             updated_at: 1,
+            execution_checkpoint: None,
             messages: vec![AgentChatMessage {
                 id: "m1".to_string(),
                 role: "assistant".to_string(),
