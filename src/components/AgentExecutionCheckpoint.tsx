@@ -21,6 +21,7 @@ export function AgentExecutionCheckpoint({ checkpoint, workspace, locale, disabl
   const approval = data.awaitingApproval === true;
   const es = locale === "es";
   const telemetry = object(data.telemetry);
+  const outcome = object(data.outcome);
   const counters = [
     [es ? "Inferencias" : "Inferences", telemetry?.inferences, telemetry?.inferenceLimit],
     [es ? "Iteraciones" : "Iterations", telemetry?.iterations, telemetry?.iterationLimit],
@@ -41,6 +42,18 @@ export function AgentExecutionCheckpoint({ checkpoint, workspace, locale, disabl
           && Number.isFinite(used) && Number.isFinite(limit)
           ? <span key={label}>{label}: {used}/{limit}</span> : null)}
       </div>}
+      {outcome && typeof outcome.status === "string" && (
+        <div style={{ fontSize: 12, overflowWrap: "anywhere" }}>
+          <strong>{({
+            completed: es ? "Turno completado" : "Turn completed",
+            incomplete: es ? "Trabajo incompleto" : "Incomplete work",
+            cancelled: es ? "Cancelado" : "Cancelled",
+            step_limit: es ? "Límite de iteraciones" : "Iteration limit",
+            error: es ? "Error de ejecución" : "Execution error",
+          } as Record<string, string>)[outcome.status] ?? outcome.status}</strong>
+          {typeof outcome.summary === "string" && outcome.summary && <div>{outcome.summary}</div>}
+        </div>
+      )}
       <details open={approval}>
         <summary>{es ? "Tareas y criterios" : "Tasks and criteria"}</summary>
         <ol style={{ maxHeight: 220, overflowY: "auto", paddingLeft: 24 }}>
