@@ -1722,6 +1722,129 @@ body,
   justify-content: center;
 }
 
+.architect-patch-card {
+  margin-top: 8px;
+  padding: 10px 11px;
+  border-radius: 9px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.architect-patch-summary {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.architect-patch-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.architect-patch-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.architect-patch-list strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.patch-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.patch-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.patch-tag.patch-add {
+  background: rgba(34, 197, 94, 0.16);
+  color: #4ade80;
+}
+
+.patch-tag.patch-upd {
+  background: rgba(56, 189, 248, 0.16);
+  color: #38bdf8;
+}
+
+.patch-tag.patch-rem {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+}
+
+.patch-tag.patch-edge {
+  background: rgba(168, 85, 247, 0.16);
+  color: #c084fc;
+}
+
+.architect-patch-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.architect-patch-actions .apply-graph-btn {
+  margin-top: 0;
+  flex: 1;
+}
+
+.architect-undo-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  border-radius: 7px;
+}
+
+.architect-json-details {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.architect-json-details summary {
+  cursor: pointer;
+  user-select: none;
+  opacity: 0.85;
+}
+
+.architect-json-details pre {
+  margin: 6px 0 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  max-height: 220px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
 .architect-input-bar {
   padding: 10px;
   border-top: 1px solid var(--border);

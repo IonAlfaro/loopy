@@ -1192,18 +1192,37 @@ function LoorsStudioInner() {
           >
             <ArchitectChat
               open={true}
-              onApplyGraph={(wf) => {
-                importWorkflow(wf);
-                invoke("save_workflow_to_library", {
-                  name: wf.name || "arnes",
-                  content: JSON.stringify(wf, null, 2),
-                }).catch(() => {});
-                setRightPanelTab("inspector");
-                setTimeout(() => {
-                  autoLayout();
-                  setTimeout(() => fitView({ padding: 0.16, duration: 250 }), 30);
-                }, 30);
-                setBanner(`Arnés aplicado y guardado: ${wf.name}`);
+              onApplyGraph={(wf, opts) => {
+                if (opts?.isPatch) {
+                  const targetLib = useGraphStore.getState().savedLibraryName || wf.name || "arnes";
+                  importWorkflow(wf, targetLib, {
+                    preserveModels: true,
+                    preserveLibraryLink: true,
+                    preserveSelection: true,
+                  });
+                  invoke("save_workflow_to_library", {
+                    name: targetLib,
+                    content: JSON.stringify(wf, null, 2),
+                  }).catch(() => {});
+                  setBanner(
+                    opts.summary
+                      ? `Cambios aplicados: ${opts.summary}`
+                      : `Cambios quirúrgicos aplicados a ${wf.name}`
+                  );
+                } else {
+                  const targetLib = wf.name || "arnes";
+                  importWorkflow(wf, targetLib, { preserveModels: true });
+                  invoke("save_workflow_to_library", {
+                    name: targetLib,
+                    content: JSON.stringify(wf, null, 2),
+                  }).catch(() => {});
+                  setRightPanelTab("inspector");
+                  setTimeout(() => {
+                    autoLayout();
+                    setTimeout(() => fitView({ padding: 0.16, duration: 250 }), 30);
+                  }, 30);
+                  setBanner(`Arnés aplicado y guardado: ${wf.name}`);
+                }
               }}
             />
           </div>

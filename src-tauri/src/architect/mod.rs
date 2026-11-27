@@ -38,18 +38,21 @@ name: architect-loors
 description: "Guía completa de arquitectura de arneses Loors: nodos, puertos, variables, herramientas, patrones cíclicos y reglas de generación .loors.json."
 ---
 
-# Arquitecto de Arneses Loors (v4)
+# Arquitecto de Arneses Loors (v5)
 
-Eres el **Arquitecto de Arneses de Loors**, una aplicación visual de grafos cíclicos para ejecutar agentes autónomos locales con `llama.cpp`. Tu trabajo es ayudar al usuario a diseñar, auditar, depurar y mejorar arneses (`.loors.json`).
+Eres el **Arquitecto de Arneses de Loors**, una aplicación visual de grafos cíclicos para ejecutar agentes autónomos locales con `llama.cpp`. Tu trabajo es ayudar al usuario a diseñar, auditar, depurar y mejorar arneses (`.loors.json`) de forma ágil, conversacional y **quirúrgica**.
 
 ## 1. Cómo trabajar (MUY IMPORTANTE)
+- **Adapta tu respuesta a lo que pide el usuario (3 modos)**:
+  1. **Modo conversación / consulta / auditoría**: Si el usuario hace una pregunta, pide explicar un nodo, analizar un error o discutir ideas, **responde directamente en texto claro y conciso SIN emitir ningún bloque JSON de arnés**.
+  2. **Modo edición quirúrgica (`"patch": true`) — POR DEFECTO al modificar un arnés existente**: Si ya hay un grafo en el canvas y el usuario pide un cambio concreto (ajustar un prompt, cambiar un parámetro/comando/modelo, añadir o quitar 1–3 nodos o conexiones, arreglar un paso), **NO regeneres el flujo entero**. Devuelve únicamente un bloque ```` ```json ```` compacto con `"patch": true` que contenga SOLO los cambios exactos (ver sección 7A).
+  3. **Modo grafo completo (`"schemaVersion": 1`)**: Devuelve el JSON completo **únicamente** cuando el usuario pida crear un arnés nuevo desde cero o rehacer completamente el grafo actual (ver sección 7B).
 - **Inspección rápida y acotada (máx. 2–3 lecturas)**: Tienes herramientas de solo lectura (`list_files`, `find_files`, `grep_search`, `read_file`, `list_loors_capabilities`, `read_skill`).
   - Revisa primero la sección **Repositorios locales detectados** del inventario antes de buscar carpetas a ciegas.
   - Si el usuario menciona un proyecto concreto, haz como máximo **2 o 3 lecturas rápidas** (`README.md`, `AGENTS.md` o `SKILL.md`). **NO** leas carpetas `output/`, registros históricos, logs ni código fuente extenso.
-- **Pregunta antes de generar si el diseño tiene decisiones abiertas**:
-  - Cuando el usuario pida crear un arnés nuevo o transformar un proyecto en arnés y NO haya especificado todas las piezas (o diga algo abierto), **NO sueltes todavía el `.loors.json` gigante**.
-  - En su lugar, tras tu inspección rápida, presenta un resumen breve con **2 opciones claras** (p. ej. **Opción A: Pipeline modular por fases** —recomendada— vs **Opción B: Flujo compacto**) y **2–3 preguntas rápidas** (disparador: Cron / Telegram / Manual; si quiere `llm_judge` + `loop_guard`; si quiere notificación `notify` por Telegram/Discord).
-  - En cuanto el usuario responda (o si desde el principio pide explícitamente *"genéralo ya sin preguntar"* o da la arquitectura cerrada), genera directamente el bloque ```json ... ``` completo y válido.
+- **Pregunta solo cuando haga falta**:
+  - Cuando el usuario pida crear un arnés nuevo y el diseño sea muy abierto, presenta brevemente **2 opciones claras** y **2–3 preguntas rápidas** antes de generar el JSON completo.
+  - Si pide un cambio concreto sobre el grafo actual, **aplica el parche quirúrgico directamente** sin ser burocrático ni interrogarle innecesariamente.
 - **Arquitectura modular por fases (evita mega-agentes monolíticos)**:
   - Un arnés visual brilla cuando cada fase es un nodo especializado y pequeño (p. ej. `Shell` determinista para descubrir/validar → `Agent Selector` → `Condition` de salida temprana → `Agent Investigador` → `Agent Redactor` → `LLM Judge` + `Loop Guard` solo sobre el redactor → `Shell/Agent Publicador` → `Notify`).
   - Pasa resultados entre fases con `{{node:<id>}}`, `{{stdout}}` y `{{agent_output}}`. Así el modelo local no contamina su contexto y los reintentos son quirúrgicos.
@@ -75,6 +78,8 @@ Usa **exactamente** estos `kind` y nombres de puertos (`sourceHandle` / `targetH
 - `memory_file`: in `[exec]` out `[exec]` | config: `{ mode ("read"|"append"|"write"), filePath, template, workspace (opcional) }`
 - `condition`: in `[exec]` out `[true, false]` | config: `{ expression }`
 - `loop_guard`: in `[exec, feedback]` out `[retry, exhausted]` | config: `{ maxIterations (0=Continuo infinito), feedbackTemplate }`
+- `for_each`: in `[exec]` out `[item, done]` | config: `{ sourceTemplate, itemTemplate, maxItems }`
+- `json_validator`: in `[exec]` out `[valid, invalid]` | config: `{ sourceTemplate, requiredKeys, schemaJson }`
 - `git_checkpoint`: in `[exec]` out `[exec]` | config: `{ mode ("diff"|"snapshot"|"rollback"), workspace (opcional) }`
 - `context_compactor`: in `[exec]` out `[exec]` | config: `{ maxChars, template }`
 - `human_gate`: in `[exec]` out `[approved, rejected]` | config: `{ message }`
@@ -122,7 +127,47 @@ Soportadas en `agent.systemPrompt`, `shell.command`, `memory_file.template`, `lo
 5. **Conexiones de modelo obligatorias**: Todo nodo `agent` y `llm_judge` debe recibir una arista desde `local_model` (`sourceHandle: "model_ref"`, `targetHandle: "model_ref"`).
 
 ## 7. Reglas de salida JSON
-Cuando el usuario pida crear, modificar o mejorar un arnés:
+
+### 7A. Parche quirúrgico (USAR POR DEFECTO al editar un arnés existente)
+Cuando el usuario pida un cambio concreto sobre el grafo actual (modificar prompts, comandos, timeouts, modelo, añadir/quitar algunos nodos o aristas):
+1. Explica en 1–3 líneas qué cambias y por qué.
+2. Devuelve **SOLO** un bloque ```` ```json ... ``` ```` con `"patch": true` y únicamente las claves que necesites (todas las listas son opcionales):
+   ```json
+   {
+     "patch": true,
+     "summary": "Resumen corto del cambio",
+     "rename": "Nuevo nombre del arnés (opcional)",
+     "updateNodes": [
+       {
+         "id": "id-del-nodo-existente",
+         "title": "Nuevo título (opcional)",
+         "position": { "x": 920, "y": 160 },
+         "config": { "timeoutSec": 300 }
+       }
+     ],
+     "addNodes": [
+       {
+         "id": "n-nuevo",
+         "type": "loorsNode",
+         "position": { "x": 1500, "y": 280 },
+         "data": { "kind": "notify", "title": "Notificar", "status": "idle", "config": { "channel": "telegram", "messageTemplate": "{{agent_output}}" } }
+       }
+     ],
+     "removeNodes": ["id-nodo-a-eliminar"],
+     "addEdges": [
+       { "id": "e-new-1", "source": "n-prev", "sourceHandle": "exec", "target": "n-nuevo", "targetHandle": "exec" }
+     ],
+     "removeEdges": [
+       "id-arista-a-eliminar",
+       { "source": "n-a", "target": "n-b" }
+     ]
+   }
+   ```
+   - En `updateNodes`, el campo `config` se **fusiona** sobre el `config` actual del nodo: incluye SOLO las propiedades que cambian.
+   - Si añades un nodo `agent` o `llm_judge`, incluye también en `addEdges` su arista `model_ref` desde el `local_model` existente.
+   - Respeta las posiciones existentes de los nodos que no tocas.
+
+### 7B. Grafo completo (SOLO para crear un arnés nuevo o rehacerlo entero)
 1. Explica brevemente tus decisiones y mejoras.
 2. Devuelve el grafo **COMPLETO** dentro de un bloque ```` ```json ... ``` ```` con este formato exacto:
    ```json
@@ -276,7 +321,7 @@ pub fn ensure_and_load_architect_skill(workspace: &str) -> (String, ArchitectSki
     let needs_seed = if !global_skill.is_file() {
         true
     } else if let Ok(existing) = fs::read_to_string(&global_skill) {
-        existing.contains("# Arquitecto de Arneses Loors") && !existing.contains("(v4)")
+        existing.contains("# Arquitecto de Arneses Loors") && !existing.contains("(v5)")
     } else {
         false
     };
@@ -412,7 +457,7 @@ pub fn build_environment_inventory(workspace: &str, skill_info: &ArchitectSkillI
         }
     }
 
-    out.push_str("\n### Custom Nodes instalados (usables en nodos `custom_node`)\n");
+    out.push_str("\n### Custom Nodes instalados (usables en nodos `custom`)\n");
     if custom_nodes.is_empty() {
         out.push_str("- (ninguno)\n");
     } else {
@@ -503,55 +548,223 @@ fn append_architect_log(file: &mut Option<std::fs::File>, line: &str) {
     }
 }
 
-fn validate_architect_workflow_json(reply: &str) -> Option<String> {
-    let json_str = if let Some(start_tag) = reply.find("```json") {
-        let rest = &reply[start_tag + 7..];
-        rest.find("```").map(|end| rest[..end].trim())
-    } else if let Some(start_tag) = reply.find("```") {
-        let rest = &reply[start_tag + 3..];
-        rest.find("```").map(|end| rest[..end].trim())
-    } else {
-        None
-    };
+fn extract_fenced_blocks(reply: &str) -> Vec<&str> {
+    let mut blocks = Vec::new();
+    let mut rest = reply;
+    while let Some(start) = rest.find("```") {
+        let after_ticks = &rest[start + 3..];
+        let body_start = match after_ticks.find('\n') {
+            Some(nl) => &after_ticks[nl + 1..],
+            None => break,
+        };
+        let Some(end) = body_start.find("```") else {
+            // Unclosed fenced block — still return it so truncated JSON gets caught
+            blocks.push(body_start.trim());
+            break;
+        };
+        blocks.push(body_start[..end].trim());
+        rest = &body_start[end + 3..];
+    }
+    blocks
+}
 
-    let raw = json_str?;
-    let parsed: Value = match serde_json::from_str(raw) {
-        Ok(v) => v,
-        Err(e) => return Some(format!("JSON inválido o truncado: {e}")),
-    };
-    let Some(nodes) = parsed.get("nodes").and_then(|v| v.as_array()) else {
-        return Some("Falta el array 'nodes' en el JSON.".to_string());
-    };
-    let Some(edges) = parsed.get("edges").and_then(|v| v.as_array()) else {
-        return Some("Falta el array 'edges' en el JSON.".to_string());
-    };
+fn validate_architect_workflow_json(reply: &str, current_graph_json: &str) -> Option<(bool, String)> {
+    for raw in extract_fenced_blocks(reply) {
+        let trimmed = raw.trim();
+        if !trimmed.starts_with('{') {
+            continue;
+        }
 
-    let mut problems = Vec::new();
-    for n in nodes {
-        let id = n.get("id").and_then(|v| v.as_str()).unwrap_or("");
-        let kind = n
-            .get("data")
-            .and_then(|d| d.get("kind"))
-            .and_then(|k| k.as_str())
-            .unwrap_or("");
-        if kind == "agent" || kind == "llm_judge" {
-            let has_model = edges.iter().any(|e| {
-                e.get("target").and_then(|v| v.as_str()) == Some(id)
-                    && e.get("targetHandle").and_then(|v| v.as_str()) == Some("model_ref")
-            });
-            if !has_model {
-                problems.push(format!(
-                    "El nodo '{id}' ({kind}) no tiene conectado un 'local_model' al puerto targetHandle='model_ref'."
-                ));
+        let parsed: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(e) => {
+                // Only flag syntax errors if this block was clearly trying to be a workflow or patch
+                let looks_like_graph = trimmed.contains("\"nodes\"")
+                    || trimmed.contains("\"edges\"")
+                    || trimmed.contains("\"patch\"")
+                    || trimmed.contains("\"updateNodes\"")
+                    || trimmed.contains("\"addNodes\"");
+                if looks_like_graph {
+                    let is_patch = trimmed.contains("\"patch\"")
+                        || trimmed.contains("\"updateNodes\"")
+                        || trimmed.contains("\"addNodes\"");
+                    return Some((is_patch, format!("JSON inválido o truncado: {e}")));
+                }
+                continue;
             }
+        };
+
+        let Some(obj) = parsed.as_object() else {
+            continue;
+        };
+
+        let is_patch = obj.get("patch").and_then(|v| v.as_bool()) == Some(true)
+            || obj.contains_key("updateNodes")
+            || obj.contains_key("addNodes")
+            || obj.contains_key("removeNodes")
+            || obj.contains_key("addEdges")
+            || obj.contains_key("removeEdges");
+
+        if is_patch {
+            let current_val = serde_json::from_str::<Value>(current_graph_json).ok();
+            let existing_node_ids: std::collections::HashSet<String> = current_val
+                .as_ref()
+                .and_then(|v| v.get("nodes"))
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|n| n.get("id").and_then(|i| i.as_str()).map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let existing_edges: Vec<Value> = current_val
+                .as_ref()
+                .and_then(|v| v.get("edges"))
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+
+            let removed_node_ids: std::collections::HashSet<String> = obj
+                .get("removeNodes")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let added_nodes: Vec<&Value> = obj
+                .get("addNodes")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().collect())
+                .unwrap_or_default();
+            let added_node_ids: std::collections::HashSet<String> = added_nodes
+                .iter()
+                .filter_map(|n| n.get("id").and_then(|i| i.as_str()).map(|s| s.to_string()))
+                .collect();
+            let added_edges: Vec<&Value> = obj
+                .get("addEdges")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().collect())
+                .unwrap_or_default();
+
+            let mut problems = Vec::new();
+            if let Some(updates) = obj.get("updateNodes").and_then(|v| v.as_array()) {
+                for u in updates {
+                    let id = u.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    if id.is_empty() {
+                        problems.push("Una entrada de 'updateNodes' no tiene 'id'.".to_string());
+                    } else if !existing_node_ids.is_empty()
+                        && !existing_node_ids.contains(id)
+                        && !added_node_ids.contains(id)
+                    {
+                        problems.push(format!(
+                            "updateNodes referencia el nodo '{id}', que no existe en el grafo actual."
+                        ));
+                    }
+                }
+            }
+
+            for n in &added_nodes {
+                let id = n.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let kind = n
+                    .get("data")
+                    .and_then(|d| d.get("kind"))
+                    .and_then(|k| k.as_str())
+                    .unwrap_or("");
+                if id.is_empty() || kind.is_empty() {
+                    problems.push("Un nodo en 'addNodes' carece de 'id' o 'data.kind'.".to_string());
+                    continue;
+                }
+                if kind == "agent" || kind == "llm_judge" {
+                    let has_model = added_edges.iter().any(|e| {
+                        e.get("target").and_then(|v| v.as_str()) == Some(id)
+                            && e.get("targetHandle").and_then(|v| v.as_str()) == Some("model_ref")
+                    }) || existing_edges.iter().any(|e| {
+                        e.get("target").and_then(|v| v.as_str()) == Some(id)
+                            && e.get("targetHandle").and_then(|v| v.as_str()) == Some("model_ref")
+                    });
+                    if !has_model {
+                        problems.push(format!(
+                            "El nodo nuevo '{id}' ({kind}) en 'addNodes' necesita una arista en 'addEdges' desde el 'local_model' a targetHandle='model_ref'."
+                        ));
+                    }
+                }
+            }
+
+            // Verify addEdges reference nodes that will exist after the patch
+            if !existing_node_ids.is_empty() {
+                let mut valid_after: std::collections::HashSet<String> = existing_node_ids
+                    .difference(&removed_node_ids)
+                    .cloned()
+                    .collect();
+                valid_after.extend(added_node_ids.iter().cloned());
+                for e in &added_edges {
+                    let src = e.get("source").and_then(|v| v.as_str()).unwrap_or("");
+                    let tgt = e.get("target").and_then(|v| v.as_str()).unwrap_or("");
+                    if !src.is_empty() && !valid_after.contains(src) {
+                        problems.push(format!(
+                            "addEdges referencia source='{src}', que no existe en el grafo."
+                        ));
+                    }
+                    if !tgt.is_empty() && !valid_after.contains(tgt) {
+                        problems.push(format!(
+                            "addEdges referencia target='{tgt}', que no existe en el grafo."
+                        ));
+                    }
+                }
+            }
+
+            if !problems.is_empty() {
+                return Some((true, problems.join(" | ")));
+            }
+            continue;
+        }
+
+        // Ignore small illustrative JSON snippets in conversational replies (neither a full workflow nor a patch)
+        let is_full_workflow = obj.contains_key("nodes")
+            || obj.contains_key("edges")
+            || obj.contains_key("schemaVersion");
+        if !is_full_workflow {
+            continue;
+        }
+
+        let Some(nodes) = parsed.get("nodes").and_then(|v| v.as_array()) else {
+            return Some((false, "Falta el array 'nodes' en el JSON.".to_string()));
+        };
+        let Some(edges) = parsed.get("edges").and_then(|v| v.as_array()) else {
+            return Some((false, "Falta el array 'edges' en el JSON.".to_string()));
+        };
+
+        let mut problems = Vec::new();
+        for n in nodes {
+            let id = n.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let kind = n
+                .get("data")
+                .and_then(|d| d.get("kind"))
+                .and_then(|k| k.as_str())
+                .unwrap_or("");
+            if kind == "agent" || kind == "llm_judge" {
+                let has_model = edges.iter().any(|e| {
+                    e.get("target").and_then(|v| v.as_str()) == Some(id)
+                        && e.get("targetHandle").and_then(|v| v.as_str()) == Some("model_ref")
+                });
+                if !has_model {
+                    problems.push(format!(
+                        "El nodo '{id}' ({kind}) no tiene conectado un 'local_model' al puerto targetHandle='model_ref'."
+                    ));
+                }
+            }
+        }
+
+        if !problems.is_empty() {
+            return Some((false, problems.join(" | ")));
         }
     }
 
-    if problems.is_empty() {
-        None
-    } else {
-        Some(problems.join(" | "))
-    }
+    None
 }
 
 async fn execute_architect_tool(workspace: &str, skill_info: &ArchitectSkillInfo, name: &str, args: &Value) -> String {
@@ -851,12 +1064,14 @@ where
                     resp.content
                 ),
             );
-            if let Some(validation_err) = validate_architect_workflow_json(&resp.content) {
+            if let Some((is_patch, validation_err)) =
+                validate_architect_workflow_json(&resp.content, &current_graph_json)
+            {
                 if self_repair_attempts < 1 && step < max_tool_steps {
                     self_repair_attempts += 1;
                     append_architect_log(
                         &mut log_file,
-                        &format!("[AUTO-REPAIR] {validation_err}"),
+                        &format!("[AUTO-REPAIR patch={is_patch}] {validation_err}"),
                     );
                     on_event(ArchitectStreamEvent::Token {
                         is_thinking: true,
@@ -869,11 +1084,18 @@ where
                         tool_call_id: None,
                         image_paths: Vec::new(),
                     });
+                    let repair_prompt = if is_patch {
+                        format!(
+                            "El parche quirúrgico JSON tiene un error de validación: {validation_err}. Corrige únicamente el bloque ```json ... ``` con \"patch\": true (NO regeneres el grafo completo)."
+                        )
+                    } else {
+                        format!(
+                            "El JSON generado tiene un error de validación: {validation_err}. Corrige el JSON y devuelve el bloque ```json ... ``` completo y válido."
+                        )
+                    };
                     chat_msgs.push(ChatMessage {
                         role: "user".into(),
-                        content: Some(format!(
-                            "El JSON generado tiene un error de validación: {validation_err}. Corrige el JSON y devuelve el bloque ```json ... ``` completo y válido."
-                        )),
+                        content: Some(repair_prompt),
                         tool_calls: None,
                         tool_call_id: None,
                         image_paths: Vec::new(),
@@ -982,5 +1204,47 @@ mod tests {
         assert_eq!(parsed.name, "architect-loors");
         assert!(parsed.body.contains("{{current_prompt}}"));
         assert!(parsed.body.contains("list_loors_capabilities"));
+        assert!(parsed.body.contains("\"patch\": true"));
+    }
+
+    #[test]
+    fn validator_ignores_conversational_json_snippets_and_validates_patches() {
+        let current = r#"{
+            "schemaVersion": 1,
+            "name": "Demo",
+            "nodes": [
+                { "id": "m-1", "type": "loorsNode", "position": {"x":0,"y":0}, "data": { "kind": "local_model", "title": "Model", "status": "idle", "config": {} } },
+                { "id": "a-1", "type": "loorsNode", "position": {"x":300,"y":0}, "data": { "kind": "agent", "title": "Agent", "status": "idle", "config": {} } }
+            ],
+            "edges": [
+                { "id": "e-1", "source": "m-1", "sourceHandle": "model_ref", "target": "a-1", "targetHandle": "model_ref" }
+            ]
+        }"#;
+
+        // Illustrative config snippet in a Q&A answer must NOT trigger auto-repair
+        let qa_reply = "Puedes cambiar el timeout así:\n```json\n{\"timeoutSec\": 300}\n```";
+        assert!(validate_architect_workflow_json(qa_reply, current).is_none());
+
+        // Valid surgical patch
+        let good_patch = "Listo:\n```json\n{\"patch\": true, \"updateNodes\": [{\"id\": \"a-1\", \"config\": {\"maxSteps\": 8}}]}\n```";
+        assert!(validate_architect_workflow_json(good_patch, current).is_none());
+
+        // Invalid surgical patch targeting nonexistent node
+        let bad_target = "```json\n{\"patch\": true, \"updateNodes\": [{\"id\": \"missing\", \"config\": {}}]}\n```";
+        let err = validate_architect_workflow_json(bad_target, current).unwrap();
+        assert!(err.0);
+        assert!(err.1.contains("missing"));
+
+        // Invalid surgical patch adding agent without model_ref edge
+        let bad_agent = "```json\n{\"patch\": true, \"addNodes\": [{\"id\": \"a-2\", \"type\": \"loorsNode\", \"position\": {\"x\": 600, \"y\": 0}, \"data\": {\"kind\": \"agent\", \"title\": \"New\", \"status\": \"idle\", \"config\": {}}} ]}\n```";
+        let err2 = validate_architect_workflow_json(bad_agent, current).unwrap();
+        assert!(err2.0);
+        assert!(err2.1.contains("model_ref"));
+
+        // Multi-block reply: snippet first, patch with dangling edge second -> still caught
+        let multi = "Ejemplo:\n```json\n{\"timeoutSec\": 120}\n```\nParche:\n```json\n{\"patch\": true, \"addEdges\": [{\"id\": \"e-bad\", \"source\": \"a-1\", \"target\": \"ghost\"}]}\n```";
+        let err3 = validate_architect_workflow_json(multi, current).unwrap();
+        assert!(err3.0);
+        assert!(err3.1.contains("ghost"));
     }
 }

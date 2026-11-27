@@ -262,7 +262,11 @@ interface GraphStoreState {
   updateNodeConfig: (id: string, patch: Record<string, unknown>) => void;
   deleteNode: (id: string) => void;
   exportWorkflow: () => LoorsWorkflowFile;
-  importWorkflow: (file: LoorsWorkflowFile, libraryName?: string | null) => void;
+  importWorkflow: (
+    file: LoorsWorkflowFile,
+    libraryName?: string | null,
+    opts?: { preserveModels?: boolean; preserveLibraryLink?: boolean; preserveSelection?: boolean }
+  ) => void;
 }
 
 function formatNow(): string {
@@ -1290,37 +1294,51 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     edges: get().edges,
   }),
 
-  importWorkflow: (file, libraryName) => {
+  importWorkflow: (file, libraryName, opts) => {
     const activeModel = get().activeModelPath.trim();
     const shortModelTitle =
       activeModel.split(/[\\/]/).pop()?.replace(/\.gguf$/i, "") || "";
     const resolvedName = file.name || "imported-workflow";
-    const resolvedLib = libraryName ?? null;
+    const resolvedLib = opts?.preserveLibraryLink
+      ? (libraryName ?? get().savedLibraryName ?? null)
+      : (libraryName ?? null);
+    const nextNodes = (file.nodes || []).map((n) => {
+      const explicitModelPath = String(n.data?.config?.modelPath ?? "").trim();
+      const shouldOverrideModel =
+        !opts?.preserveModels &&
+        n.data.kind === "local_model" &&
+        activeModel &&
+        (!explicitModelPath || explicitModelPath === "models/qwen2.5-coder-7b-instruct-q4_k_m.gguf");
+      if (shouldOverrideModel) {
+        return {
+          ...n,
+          type: "loorsNode" as const,
+          data: {
+            ...n.data,
+            title: shortModelTitle || n.data.title,
+            config: { ...n.data.config, modelPath: activeModel },
+            status: "idle" as const,
+          },
+        };
+      }
+      return {
+        ...n,
+        type: "loorsNode" as const,
+        data: { ...n.data, status: "idle" as const },
+      };
+    });
+    const prevSelected = get().selectedNodeId;
+    const nextSelected =
+      opts?.preserveSelection && prevSelected && nextNodes.some((n) => n.id === prevSelected)
+        ? prevSelected
+        : null;
     set({
       workflowName: resolvedName,
       savedLibraryName: resolvedLib,
       dirty: false,
-      nodes: (file.nodes || []).map((n) => {
-        if (n.data.kind === "local_model" && activeModel) {
-          return {
-            ...n,
-            type: "loorsNode",
-            data: {
-              ...n.data,
-              title: shortModelTitle || n.data.title,
-              config: { ...n.data.config, modelPath: activeModel },
-              status: "idle",
-            },
-          };
-        }
-        return {
-          ...n,
-          type: "loorsNode",
-          data: { ...n.data, status: "idle" },
-        };
-      }),
+      nodes: nextNodes,
       edges: file.edges || [],
-      selectedNodeId: null,
+      selectedNodeId: nextSelected,
       runStatus: "idle",
       runSummary: null,
       pendingGate: null,

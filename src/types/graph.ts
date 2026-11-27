@@ -447,6 +447,248 @@ export function parseWorkflowJson(raw: string): LoorsWorkflowFile {
   };
 }
 
+export interface LoorsNodeUpdate {
+  id: string;
+  title?: string;
+  position?: { x: number; y: number };
+  config?: Record<string, unknown>;
+  /** Some local LLMs mirror the React Flow node shape (`data: { title, config }`). */
+  data?: {
+    title?: string;
+    config?: Record<string, unknown>;
+  };
+}
+
+export type LoorsEdgeRemoveSpec =
+  | string
+  | {
+      id?: string;
+      source?: string;
+      target?: string;
+      sourceHandle?: string;
+      targetHandle?: string;
+    };
+
+export interface LoorsGraphPatch {
+  patch: true;
+  summary?: string;
+  rename?: string;
+  updateNodes?: LoorsNodeUpdate[];
+  addNodes?: LoorsFlowNode[];
+  removeNodes?: string[];
+  addEdges?: LoorsFlowEdge[];
+  removeEdges?: LoorsEdgeRemoveSpec[];
+}
+
+export function parseGraphPatch(raw: string): LoorsGraphPatch | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const obj = parsed as Record<string, unknown>;
+  const hasPatchOps =
+    obj.patch === true ||
+    Array.isArray(obj.updateNodes) ||
+    Array.isArray(obj.addNodes) ||
+    Array.isArray(obj.removeNodes) ||
+    Array.isArray(obj.addEdges) ||
+    Array.isArray(obj.removeEdges) ||
+    (obj.patch === true && typeof obj.rename === "string");
+
+  if (!hasPatchOps) return null;
+  // If it's actually a full workflow file (has nodes & edges arrays), let parseWorkflowJson handle it
+  if (Array.isArray(obj.nodes) && Array.isArray(obj.edges) && obj.patch !== true) {
+    return null;
+  }
+
+  return {
+    patch: true,
+    summary: typeof obj.summary === "string" ? obj.summary.trim() : undefined,
+    rename: typeof obj.rename === "string" && obj.rename.trim() ? obj.rename.trim() : undefined,
+    updateNodes: Array.isArray(obj.updateNodes)
+      ? (obj.updateNodes as LoorsNodeUpdate[]).filter((u) => u && typeof u.id === "string")
+      : undefined,
+    addNodes: Array.isArray(obj.addNodes)
+      ? (obj.addNodes as LoorsFlowNode[]).filter((n) => n && typeof n.id === "string" && n.data?.kind)
+      : undefined,
+    removeNodes: Array.isArray(obj.removeNodes)
+      ? (obj.removeNodes as unknown[]).filter((x): x is string => typeof x === "string")
+      : undefined,
+    addEdges: Array.isArray(obj.addEdges)
+      ? (obj.addEdges as LoorsFlowEdge[]).filter(
+          (e) => e && typeof e.source === "string" && typeof e.target === "string"
+        )
+      : undefined,
+    removeEdges: Array.isArray(obj.removeEdges)
+      ? (obj.removeEdges as LoorsEdgeRemoveSpec[])
+      : undefined,
+  };
+}
+
+export function applyGraphPatch(
+  current: LoorsWorkflowFile,
+  patch: LoorsGraphPatch
+): LoorsWorkflowFile {
+  const removeNodeSet = new Set(patch.removeNodes ?? []);
+  let nextNodes: LoorsFlowNode[] = current.nodes
+    .filter((n) => !removeNodeSet.has(n.id))
+    .map((n) => ({
+      ...n,
+      position: { ...n.position },
+      data: {
+        ...n.data,
+        config: { ...(n.data.config ?? {}) },
+      },
+    }));
+
+  // 1. Update existing nodes (shallow-merge config, supporting both flat and nested `data` shapes)
+  if (patch.updateNodes && patch.updateNodes.length > 0) {
+    const updateMap = new Map(patch.updateNodes.map((u) => [u.id, u]));
+    nextNodes = nextNodes.map((n) => {
+      const upd = updateMap.get(n.id);
+      if (!upd) return n;
+      const nextTitle =
+        (typeof upd.title === "string" && upd.title.trim()) ||
+        (typeof upd.data?.title === "string" && upd.data.title.trim()) ||
+        n.data.title;
+      const mergedConfig = {
+        ...n.data.config,
+        ...(upd.data?.config ?? {}),
+        ...(upd.config ?? {}),
+      };
+      return {
+        ...n,
+        position: upd.position
+          ? { x: Number(upd.position.x) || 0, y: Number(upd.position.y) || 0 }
+          : n.position,
+        data: {
+          ...n.data,
+          title: nextTitle,
+          config: mergedConfig,
+        },
+      };
+    });
+  }
+
+  // 2. Add new nodes (avoiding duplicate IDs)
+  if (patch.addNodes && patch.addNodes.length > 0) {
+    const maxX = nextNodes.reduce((acc, n) => Math.max(acc, n.position?.x ?? 0), 80);
+    let offsetIdx = 0;
+    for (const rawNode of patch.addNodes) {
+      const existingIdx = nextNodes.findIndex((n) => n.id === rawNode.id);
+      const pos =
+        rawNode.position &&
+        typeof rawNode.position.x === "number" &&
+        typeof rawNode.position.y === "number"
+          ? rawNode.position
+          : { x: maxX + 300 * (offsetIdx + 1), y: 200 };
+      offsetIdx += 1;
+      const normalized: LoorsFlowNode = {
+        ...rawNode,
+        type: "loorsNode",
+        position: pos,
+        data: {
+          ...rawNode.data,
+          status: "idle",
+          config: { ...(rawNode.data?.config ?? {}) },
+        },
+      };
+      if (existingIdx >= 0) {
+        nextNodes[existingIdx] = normalized;
+      } else {
+        nextNodes.push(normalized);
+      }
+    }
+  }
+
+  // 3. Remove edges (explicit removals + edges attached to removed nodes)
+  const removeSpecs = patch.removeEdges ?? [];
+  let nextEdges: LoorsFlowEdge[] = current.edges.filter((e) => {
+    if (removeNodeSet.has(e.source) || removeNodeSet.has(e.target)) {
+      return false;
+    }
+    for (const spec of removeSpecs) {
+      if (typeof spec === "string") {
+        if (e.id === spec) return false;
+      } else if (spec && typeof spec === "object") {
+        if (spec.id && e.id === spec.id) return false;
+        const srcOk = !spec.source || e.source === spec.source;
+        const tgtOk = !spec.target || e.target === spec.target;
+        const shOk =
+          !spec.sourceHandle ||
+          (e.sourceHandle ?? "exec") === spec.sourceHandle;
+        const thOk =
+          !spec.targetHandle ||
+          (e.targetHandle ?? "exec") === spec.targetHandle;
+        if ((spec.source || spec.target) && srcOk && tgtOk && shOk && thOk) {
+          return false;
+        }
+      }
+    }
+    return true;
+  });
+
+  // 4. Add new edges (deduplicated, preserving model_ref styling)
+  if (patch.addEdges && patch.addEdges.length > 0) {
+    const validNodeIds = new Set(nextNodes.map((n) => n.id));
+    for (const rawEdge of patch.addEdges) {
+      if (!validNodeIds.has(rawEdge.source) || !validNodeIds.has(rawEdge.target)) {
+        continue;
+      }
+      const dup = nextEdges.some(
+        (e) =>
+          (rawEdge.id && e.id === rawEdge.id) ||
+          (e.source === rawEdge.source &&
+            e.target === rawEdge.target &&
+            (e.sourceHandle ?? "exec") === (rawEdge.sourceHandle ?? "exec") &&
+            (e.targetHandle ?? "exec") === (rawEdge.targetHandle ?? "exec"))
+      );
+      if (dup) continue;
+      const isModelRef =
+        rawEdge.sourceHandle === "model_ref" || rawEdge.targetHandle === "model_ref";
+      nextEdges.push({
+        ...rawEdge,
+        id:
+          rawEdge.id ||
+          `e-${rawEdge.source}-${rawEdge.target}-${Math.random().toString(36).slice(2, 6)}`,
+        ...(isModelRef && !rawEdge.style
+          ? { style: { stroke: "#a855f7", strokeDasharray: "5 4" } }
+          : {}),
+      });
+    }
+  }
+
+  return {
+    schemaVersion: 1,
+    name: patch.rename || current.name,
+    nodes: nextNodes,
+    edges: nextEdges,
+  };
+}
+
+export function summarizeGraphPatch(patch: LoorsGraphPatch, locale: "es" | "en"): string {
+  const parts: string[] = [];
+  const addedN = patch.addNodes?.length ?? 0;
+  const updatedN = patch.updateNodes?.length ?? 0;
+  const removedN = patch.removeNodes?.length ?? 0;
+  const addedE = patch.addEdges?.length ?? 0;
+  const removedE = patch.removeEdges?.length ?? 0;
+
+  if (addedN > 0) parts.push(locale === "es" ? `+${addedN} nodo${addedN > 1 ? "s" : ""}` : `+${addedN} node${addedN > 1 ? "s" : ""}`);
+  if (updatedN > 0) parts.push(locale === "es" ? `~${updatedN} editado${updatedN > 1 ? "s" : ""}` : `~${updatedN} updated`);
+  if (removedN > 0) parts.push(locale === "es" ? `-${removedN} eliminado${removedN > 1 ? "s" : ""}` : `-${removedN} removed`);
+  if (addedE > 0) parts.push(locale === "es" ? `+${addedE} conexión${addedE > 1 ? "es" : ""}` : `+${addedE} edge${addedE > 1 ? "s" : ""}`);
+  if (removedE > 0) parts.push(locale === "es" ? `-${removedE} conexión${removedE > 1 ? "es" : ""}` : `-${removedE} edge${removedE > 1 ? "s" : ""}`);
+  if (patch.rename) parts.push(locale === "es" ? "renombrar" : "rename");
+
+  return parts.join(", ") || (locale === "es" ? "parche" : "patch");
+}
+
 export type RuntimeBackendKind = "auto" | "cuda" | "vulkan" | "metal" | "cpu";
 
 export interface GpuInfo {

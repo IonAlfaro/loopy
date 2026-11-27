@@ -11,6 +11,7 @@ import {
   Sparkles,
   Square,
   Trash2,
+  Undo2,
   Wand2,
   X,
 } from "lucide-react";
@@ -19,9 +20,13 @@ import { listen } from "../lib/bridge";
 import { useGraphStore } from "../store/useGraphStore";
 import { useI18n } from "../i18n";
 import {
+  applyGraphPatch,
+  parseGraphPatch,
   parseWorkflowJson,
+  summarizeGraphPatch,
   type CloudProviderConfig,
   type LocalModelFile,
+  type LoorsGraphPatch,
   type LoorsWorkflowFile,
 } from "../types/graph";
 import {
@@ -43,6 +48,10 @@ interface ChatMsg {
   thinking?: string;
   toolCalls?: ActivityToolItem[];
   workflow?: LoorsWorkflowFile | null;
+  patch?: LoorsGraphPatch | null;
+  rawActionJson?: string | null;
+  applied?: boolean;
+  previousWorkflow?: LoorsWorkflowFile | null;
 }
 
 type ArchitectStreamEvent =
@@ -65,7 +74,10 @@ interface ArchitectSkillInfo {
 
 interface ArchitectChatProps {
   open: boolean;
-  onApplyGraph: (wf: LoorsWorkflowFile) => void;
+  onApplyGraph: (
+    wf: LoorsWorkflowFile,
+    opts?: { isPatch?: boolean; summary?: string }
+  ) => void;
 }
 
 function getAttachTag(pathOrName: string): { tag: string; cls: string } {
@@ -83,12 +95,29 @@ function getAttachTag(pathOrName: string): { tag: string; cls: string } {
   };
 }
 
-function extractWorkflowFromReply(text: string): LoorsWorkflowFile | null {
+function extractGraphActionFromReply(text: string): {
+  workflow: LoorsWorkflowFile | null;
+  patch: LoorsGraphPatch | null;
+  rawActionJson: string | null;
+  displayText: string;
+} {
   const regex = /```(?:json)?\s*([\s\S]*?)```/gi;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(text)) !== null) {
+    const raw = match[1].trim();
+    const patch = parseGraphPatch(raw);
+    if (patch) {
+      const displayText = (
+        text.slice(0, match.index) + text.slice(match.index + match[0].length)
+      ).trim();
+      return { workflow: null, patch, rawActionJson: raw, displayText };
+    }
     try {
-      return parseWorkflowJson(match[1].trim());
+      const workflow = parseWorkflowJson(raw);
+      const displayText = (
+        text.slice(0, match.index) + text.slice(match.index + match[0].length)
+      ).trim();
+      return { workflow, patch: null, rawActionJson: raw, displayText };
     } catch {
       // try next block
     }
@@ -96,13 +125,21 @@ function extractWorkflowFromReply(text: string): LoorsWorkflowFile | null {
   const firstBrace = text.indexOf("{");
   const lastBrace = text.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const raw = text.slice(firstBrace, lastBrace + 1);
+    const patch = parseGraphPatch(raw);
+    if (patch) {
+      const displayText = (text.slice(0, firstBrace) + text.slice(lastBrace + 1)).trim();
+      return { workflow: null, patch, rawActionJson: raw, displayText };
+    }
     try {
-      return parseWorkflowJson(text.slice(firstBrace, lastBrace + 1));
+      const workflow = parseWorkflowJson(raw);
+      const displayText = (text.slice(0, firstBrace) + text.slice(lastBrace + 1)).trim();
+      return { workflow, patch: null, rawActionJson: raw, displayText };
     } catch {
-      return null;
+      return { workflow: null, patch: null, rawActionJson: null, displayText: text };
     }
   }
-  return null;
+  return { workflow: null, patch: null, rawActionJson: null, displayText: text };
 }
 
 export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
@@ -392,16 +429,23 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
         currentGraphJson,
       });
 
-      const parsedWf = extractWorkflowFromReply(reply);
+      const {
+        workflow: parsedWf,
+        patch: parsedPatch,
+        rawActionJson,
+        displayText,
+      } = extractGraphActionFromReply(reply);
       setMessages((prev) => [
         ...prev,
         {
           id: `a-${Date.now()}`,
           role: "assistant",
-          content: reply,
+          content: parsedWf || parsedPatch ? displayText : reply,
           thinking: streamThinkingRef.current || undefined,
           toolCalls: streamToolsRef.current.length > 0 ? [...streamToolsRef.current] : undefined,
           workflow: parsedWf,
+          patch: parsedPatch,
+          rawActionJson,
         },
       ]);
     } catch (err) {
@@ -603,19 +647,208 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
                   )}
                 </div>
               )}
+              {m.patch && (
+                <div className="architect-patch-card">
+                  {m.patch.summary && (
+                    <div className="architect-patch-summary">{m.patch.summary}</div>
+                  )}
+                  <ul className="architect-patch-list">
+                    {m.patch.updateNodes?.map((u) => {
+                      const existing = nodes.find((n) => n.id === u.id);
+                      const cfgKeys = Object.keys({
+                        ...(u.data?.config ?? {}),
+                        ...(u.config ?? {}),
+                      });
+                      const label = existing?.data.title || u.id;
+                      return (
+                        <li key={`upd-${u.id}`}>
+                          <span className="patch-tag patch-upd">~</span>
+                          <strong>{label}</strong>
+                          <span className="patch-meta">
+                            ({u.id})
+                            {cfgKeys.length > 0 ? ` · ${cfgKeys.join(", ")}` : ""}
+                          </span>
+                        </li>
+                      );
+                    })}
+                    {m.patch.addNodes?.map((n) => (
+                      <li key={`add-${n.id}`}>
+                        <span className="patch-tag patch-add">+</span>
+                        <strong>{n.data?.title || n.id}</strong>
+                        <span className="patch-meta">
+                          ({n.data?.kind})
+                        </span>
+                      </li>
+                    ))}
+                    {m.patch.removeNodes?.map((id) => {
+                      const existing = nodes.find((n) => n.id === id);
+                      return (
+                        <li key={`rem-${id}`}>
+                          <span className="patch-tag patch-rem">-</span>
+                          <strong>{existing?.data.title || id}</strong>
+                          <span className="patch-meta">({id})</span>
+                        </li>
+                      );
+                    })}
+                    {((m.patch.addEdges?.length ?? 0) > 0 ||
+                      (m.patch.removeEdges?.length ?? 0) > 0) && (
+                      <li>
+                        <span className="patch-tag patch-edge">⇄</span>
+                        <span>
+                          {locale === "es" ? "Conexiones" : "Edges"}:{" "}
+                          {(m.patch.addEdges?.length ?? 0) > 0
+                            ? `+${m.patch.addEdges!.length}`
+                            : ""}
+                          {(m.patch.addEdges?.length ?? 0) > 0 &&
+                          (m.patch.removeEdges?.length ?? 0) > 0
+                            ? " / "
+                            : ""}
+                          {(m.patch.removeEdges?.length ?? 0) > 0
+                            ? `-${m.patch.removeEdges!.length}`
+                            : ""}
+                        </span>
+                      </li>
+                    )}
+                  </ul>
+
+                  <div className="architect-patch-actions">
+                    <button
+                      type="button"
+                      className="btn-primary apply-graph-btn"
+                      onClick={() => {
+                        const currentWf = exportWorkflow();
+                        const patched = applyGraphPatch(currentWf, m.patch!);
+                        const summary =
+                          m.patch!.summary ||
+                          summarizeGraphPatch(m.patch!, locale === "es" ? "es" : "en");
+                        onApplyGraph(patched, { isPatch: true, summary });
+                        setMessages((prev) =>
+                          prev.map((item) =>
+                            item.id === m.id
+                              ? {
+                                  ...item,
+                                  applied: true,
+                                  previousWorkflow: item.previousWorkflow ?? currentWf,
+                                }
+                              : item
+                          )
+                        );
+                      }}
+                    >
+                      {m.applied ? <Check size={14} /> : <Wand2 size={14} />}
+                      <span>
+                        {m.applied
+                          ? locale === "es"
+                            ? `Aplicado (${summarizeGraphPatch(m.patch, "es")})`
+                            : `Applied (${summarizeGraphPatch(m.patch, "en")})`
+                          : locale === "es"
+                            ? `Aplicar cambios (${summarizeGraphPatch(m.patch, "es")})`
+                            : `Apply patch (${summarizeGraphPatch(m.patch, "en")})`}
+                      </span>
+                    </button>
+                    {m.applied && m.previousWorkflow && (
+                      <button
+                        type="button"
+                        className="btn-secondary architect-undo-btn"
+                        title={locale === "es" ? "Deshacer este parche" : "Undo this patch"}
+                        onClick={() => {
+                          onApplyGraph(m.previousWorkflow!, {
+                            isPatch: true,
+                            summary:
+                              locale === "es"
+                                ? "Parche deshecho"
+                                : "Patch reverted",
+                          });
+                          setMessages((prev) =>
+                            prev.map((item) =>
+                              item.id === m.id
+                                ? { ...item, applied: false, previousWorkflow: null }
+                                : item
+                            )
+                          );
+                        }}
+                      >
+                        <Undo2 size={13} />
+                        <span>{locale === "es" ? "Deshacer" : "Undo"}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {m.rawActionJson && (
+                    <details className="architect-json-details">
+                      <summary>
+                        {locale === "es" ? "Ver JSON del parche" : "View patch JSON"}
+                      </summary>
+                      <pre>{m.rawActionJson}</pre>
+                    </details>
+                  )}
+                </div>
+              )}
               {m.workflow && (
-                <button
-                  type="button"
-                  className="btn-primary apply-graph-btn"
-                  onClick={() => onApplyGraph(m.workflow!)}
-                >
-                  <Wand2 size={14} />
-                  <span>
-                    {locale === "es"
-                      ? `Aplicar "${m.workflow.name}" al Canvas (${m.workflow.nodes.length} nodos)`
-                      : `Apply "${m.workflow.name}" to Canvas (${m.workflow.nodes.length} nodes)`}
-                  </span>
-                </button>
+                <div className="architect-patch-card">
+                  <div className="architect-patch-actions">
+                    <button
+                      type="button"
+                      className="btn-primary apply-graph-btn"
+                      onClick={() => {
+                        const currentWf = exportWorkflow();
+                        onApplyGraph(m.workflow!, { isPatch: false });
+                        setMessages((prev) =>
+                          prev.map((item) =>
+                            item.id === m.id
+                              ? {
+                                  ...item,
+                                  applied: true,
+                                  previousWorkflow: item.previousWorkflow ?? currentWf,
+                                }
+                              : item
+                          )
+                        );
+                      }}
+                    >
+                      {m.applied ? <Check size={14} /> : <Wand2 size={14} />}
+                      <span>
+                        {locale === "es"
+                          ? `Aplicar "${m.workflow.name}" al Canvas (${m.workflow.nodes.length} nodos)`
+                          : `Apply "${m.workflow.name}" to Canvas (${m.workflow.nodes.length} nodes)`}
+                      </span>
+                    </button>
+                    {m.applied && m.previousWorkflow && (
+                      <button
+                        type="button"
+                        className="btn-secondary architect-undo-btn"
+                        title={locale === "es" ? "Restaurar arnés anterior" : "Restore previous harness"}
+                        onClick={() => {
+                          onApplyGraph(m.previousWorkflow!, {
+                            isPatch: true,
+                            summary:
+                              locale === "es"
+                                ? "Arnés anterior restaurado"
+                                : "Previous harness restored",
+                          });
+                          setMessages((prev) =>
+                            prev.map((item) =>
+                              item.id === m.id
+                                ? { ...item, applied: false, previousWorkflow: null }
+                                : item
+                            )
+                          );
+                        }}
+                      >
+                        <Undo2 size={13} />
+                        <span>{locale === "es" ? "Deshacer" : "Undo"}</span>
+                      </button>
+                    )}
+                  </div>
+                  {m.rawActionJson && (
+                    <details className="architect-json-details">
+                      <summary>
+                        {locale === "es" ? "Ver JSON completo" : "View full JSON"}
+                      </summary>
+                      <pre>{m.rawActionJson}</pre>
+                    </details>
+                  )}
+                </div>
               )}
             </div>
           );
