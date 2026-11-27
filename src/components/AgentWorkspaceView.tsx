@@ -2036,6 +2036,7 @@ export function AgentWorkspaceView() {
                           {continuation ? (locale === "es" ? "Continuación" : "Continuation") : (session.modelPath.split(/[\\/]/).pop() || "Agente Loors")}
                         </span>
                       </span>
+                      {msg.inferenceMs != null && <span className="agent-model-tag" title={locale === "es" ? "Duración de inferencia / primer fragmento" : "Inference duration / first chunk"}>{(msg.inferenceMs / 1000).toFixed(2)} s{msg.firstTokenMs != null ? ` · TTFT ${(msg.firstTokenMs / 1000).toFixed(2)} s` : ""}</span>}
                       {msg.content && (
                         <button
                           type="button"
