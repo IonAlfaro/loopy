@@ -35,10 +35,10 @@
 
 Most AI tools force you to choose between a simple chat window and brittle CLI scripts — or lock you into a single cloud provider. **Loors** brings desktop polish, visual cyclic harnesses, an interactive shared browser, and a headless server binary together in a lightweight native stack (~4.4 MB desktop installer):
 
-- **Agent Mode** — A clean, Codex/Cursor-inspired workspace with file tree, live Git diff, **interactive embedded browser**, subagents, live checklists, persistent artifacts, global MCP servers, and 4-tier safety permissions.
+- **Agent Mode** — A clean, Codex/Cursor-inspired workspace with file tree, live Git diff, **interactive embedded browser**, subagents, live checklists, persistent artifacts, global MCP servers, 4-tier safety permissions, and live model-context usage.
 - **Visual Harness Studio** — Build repeatable, **cyclic** agent loops (e.g., *Coder → Tests → LLM Judge → Loop Guard → Human Gate → Done*) with `For Each` iterators, `JSON Validator`, global run budgets, *Run from here* resume, webhooks, cron, and Telegram triggers.
 - **AI Architect** — Built-in assistant that inspects your workspace and designs or refactors `.loors.json` harnesses for you.
-- **Headless CLI & Self-Hosted Web Panel (`loors-cli`)** — Execute harnesses in CI/CD, cron, or SSH (`loors-cli run`) or launch `loors-cli serve` to access the full Loors Web UI remotely with Bearer token auth and SSE streaming.
+- **Headless Agent, CLI & Self-Hosted Web Panel (`loors-cli`)** — Run an agent from a terminal, optionally in an isolated Git worktree, select a local inference backend and context size, then review the saved session in the desktop app. Also execute harnesses in CI/CD, cron, or SSH, or launch the web panel with Bearer token auth and SSE streaming.
 - **Local AI or Cloud APIs — Your Choice** — Run 100% private local GGUF models with 1-click `llama.cpp` GPU installation (CUDA, Vulkan, Metal, CPU), dynamic Hugging Face discovery, or connect OpenAI, Anthropic (Claude), Google Gemini, GitHub Models/Copilot, OpenRouter, LM Studio, Ollama, or any custom endpoint.
 
 ---
@@ -49,10 +49,10 @@ Most AI tools force you to choose between a simple chat window and brittle CLI s
 | :--- | :--- |
 | **Local Inference (`llama.cpp`)** | Automatic GPU detection (CUDA / Vulkan / Metal / CPU), 1-click runtime download, **dynamic Hugging Face GGUF explorer** (Trending, Most Downloaded, Most Liked, Most Recent), automatic LM Studio local model detection, custom `llama-server` binary support, KV-cache & context tuning, and live VRAM load/unload progress. |
 | **Cloud & Local API Providers** | Native streaming SSE for **OpenAI / ChatGPT**, **Anthropic / Claude** (including extended thinking & tool use), **Google Gemini**, **GitHub Models / Copilot**, **OpenRouter / OpenCode**, dedicated **LM Studio** (`:1234`) & **Ollama** (`:11434`) with selectable OpenAI/Anthropic compatibility & optional server secret, and custom endpoints. Automatic `/models` discovery + `${ENV_VAR}` secret expansion. |
-| **Autonomous Agent Mode** | 4-tier safety permissions (**Read-only**, **Ask**, **Auto** with AI safety reviewer, **Turbo**), isolated & parallel subagents, live todo checklist, background process manager, scheduled tasks, interactive user questions, persistent Markdown/HTML artifacts, global MCP servers, Thinking/Effort selector, and live context counter. |
+| **Autonomous Agent Mode** | 4-tier safety permissions (**Read-only**, **Ask**, **Auto** with AI safety reviewer, **Turbo**), isolated & parallel subagents, live todo checklist, background process manager, scheduled tasks, interactive user questions, persistent Markdown/HTML artifacts, global MCP servers, Thinking/Effort selector, and live context counter for local-model context tracking. |
 | **Interactive Embedded Browser** | Pure-Rust Chrome DevTools Protocol (CDP) browser with Chrome-style tabs, editable omnibox, direct click/type/scroll forwarding, and a persistent profile shared live between you and the AI Agent (log in manually and let the agent continue on the same authenticated page). Zero Node.js or Playwright dependencies. |
 | **Cyclic Visual Harnesses** | Drag-and-drop React Flow canvas with `Agent`, `Shell / Test`, `For Each / Iterator`, `JSON Validator`, `LLM Judge`, `Loop Guard`, `Human Gate`, `Git Checkpoint`, `Context Compactor`, `Knowledge / RAG`, `Memory / State`, `HTTP Request`, `Notify`, `Trigger` (Webhook / Cron / Telegram), `MCP Server`, `Skills`, `Parallel Fan-Out`, `Subgraph`, and `Custom Nodes` — plus global run budgets, per-node latency badges, 1-click resource wiring, and *Run from here* resume. |
-| **Headless CLI & Web Server** | Dedicated `loors-cli` binary sharing 100% of the Rust engine: run harnesses one-shot (`run --jsonl` / `--quiet`), host the full React Web Panel over HTTP + SSE (`serve --host 0.0.0.0 --port 7700 --token ...`), and trigger runs via REST API (`/api/health`, `/api/workflows`, `/api/runs`). |
+| **Headless Agent, CLI & Web Server** | Dedicated `loors-cli` binary sharing 100% of the Rust engine: run an agent with a GGUF or cloud model, choose `--backend` and per-slot `--context`, optionally isolate changes in a Git worktree, and review the saved conversation in desktop Agent Mode. It also runs harnesses one-shot (`run --jsonl` / `--quiet`), hosts the React Web Panel over HTTP + SSE, and exposes run-control REST APIs. |
 
 ---
 
@@ -83,8 +83,8 @@ Manage local GGUF models, dynamic Hugging Face downloads, MCP servers, `llama.cp
 Loors ships with a dedicated headless binary (`loors-cli`) for servers, SSH, cron jobs, and CI/CD pipelines:
 
 ```bash
-# Start an agent in an isolated worktree from the repository's committed HEAD
-loors-cli agent --worktree --model /path/to/model.gguf --context 16384 "Fix the failing test"
+# Start an agent from committed HEAD in an isolated worktree, using llama.cpp Vulkan
+loors-cli agent --worktree --model /path/to/model.gguf --backend vulkan --context 16384 "Fix the failing test"
 
 # Run a harness once (with optional overrides & structured JSONL output)
 loors-cli run ./my-harness.loors.json --workspace ./repo --prompt "Fix failing tests" --jsonl
@@ -104,7 +104,7 @@ loors-cli workflows
 loors-cli models
 ```
 
-The agent asks before running commands or editing files. It prints the session ID and workspace path, and saves the session in Agent Mode for desktop review. With `--worktree`, Loors keeps the worktree so you can inspect the diff after the CLI exits. You can set `LOORS_MODEL` to reuse a model across runs.
+The agent asks before running commands or editing files. It prints the session ID and workspace path, and saves the conversation in Agent Mode for desktop review. With `--worktree`, Loors creates an isolated worktree from committed `HEAD` and keeps it after the CLI exits so you can inspect the diff. `--backend` selects `auto`, `cuda`, `vulkan`, `metal`, or `cpu`; `--context` sets the requested token window for each local agent slot. Use `cloud::provider/model` with `--model` for cloud APIs. You can set `LOORS_MODEL` to reuse a model across runs.
 
 | Exit Code | Meaning |
 | :--- | :--- |
