@@ -369,6 +369,7 @@ export function ThinkingDisclosure({
   open: boolean;
   onToggle: () => void;
 }) {
+  const { locale } = useI18n();
   const preRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
 
@@ -390,14 +391,14 @@ export function ThinkingDisclosure({
         </span>
         {isStreaming && <span className="codex-think-dot" />}
         <span className="codex-think-label">
-          {isStreaming ? "Pensando…" : "Pensado"}
+          {isStreaming ? (locale === "es" ? "Pensando…" : "Thinking…") : (locale === "es" ? "Razonamiento" : "Reasoning")}
         </span>
         {!open && isStreaming && tailPreview && (
           <span className="codex-think-preview truncate-text">{tailPreview}</span>
         )}
         {!isStreaming && (
           <span className="codex-think-meta">
-            {Math.max(1, lines.length)} {lines.length === 1 ? "línea" : "líneas"}
+            {Math.max(1, lines.length)} {locale === "es" ? (lines.length === 1 ? "línea" : "líneas") : (lines.length === 1 ? "line" : "lines")}
           </span>
         )}
       </button>
@@ -623,6 +624,7 @@ export function MessageQueueTray({
 
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
   const [copied, setCopied] = useState(false);
+  const { locale } = useI18n();
   return (
     <div className="md-code-wrap">
       <div className="md-code-head">
@@ -639,7 +641,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
           }}
         >
           {copied ? <Check size={11} /> : <Copy size={11} />}
-          <span>{copied ? "Copiado" : "Copiar"}</span>
+          <span>{copied ? (locale === "es" ? "Copiado" : "Copied") : (locale === "es" ? "Copiar" : "Copy")}</span>
         </button>
       </div>
       <pre className="md-code-pre">
@@ -719,12 +721,13 @@ export const MarkdownContent = memo(function MarkdownContent({ text }: { text: s
     const line = lines[i];
 
     // Fenced code block ```lang
-    const fenceMatch = line.match(/^\s*```([a-zA-Z0-9_+-]*)\s*$/);
+    const fenceMatch = line.match(/^\s*(`{3,}|~{3,})\s*([^\s`~]*)[^\n]*$/);
     if (fenceMatch) {
-      const lang = fenceMatch[1] || "";
+      const fence = fenceMatch[1];
+      const lang = fenceMatch[2] || "";
       const codeLines: string[] = [];
       i++;
-      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) {
+      while (i < lines.length && !(lines[i].trim().length >= fence.length && [...lines[i].trim()].every((c) => c === fence[0]))) {
         codeLines.push(lines[i]);
         i++;
       }
@@ -863,7 +866,7 @@ export const MarkdownContent = memo(function MarkdownContent({ text }: { text: s
     while (
       i < lines.length &&
       lines[i].trim() !== "" &&
-      !/^\s*```/.test(lines[i]) &&
+      !/^\s*(?:`{3,}|~{3,})/.test(lines[i]) &&
       !/^#{1,4}\s+/.test(lines[i]) &&
       !/^\s*>\s?/.test(lines[i]) &&
       !/^\s*[-*•]\s+/.test(lines[i]) &&
