@@ -1776,12 +1776,16 @@ export function Inspector() {
           const workers = Array.isArray(cfg.workers)
             ? (cfg.workers as import("../types/graph").SwarmWorkerSpec[])
             : [];
+          const planningMode = String(
+            cfg.planningMode ?? (workers.length > 0 ? "manual" : "auto")
+          );
           const setWorkers = (next: import("../types/graph").SwarmWorkerSpec[]) =>
-            updateNodeConfig(node.id, { workers: next });
+            updateNodeConfig(node.id, { planningMode: "manual", workers: next });
 
           const applyPreset = (preset: "engineering" | "research" | "security") => {
             if (preset === "engineering") {
               updateNodeConfig(node.id, {
+                planningMode: "manual",
                 useWorktrees: true,
                 maxRounds: 8,
                 coordinatorPrompt:
@@ -1818,6 +1822,7 @@ export function Inspector() {
               });
             } else if (preset === "research") {
               updateNodeConfig(node.id, {
+                planningMode: "manual",
                 useWorktrees: false,
                 maxRounds: 6,
                 coordinatorPrompt:
@@ -1854,6 +1859,7 @@ export function Inspector() {
               });
             } else {
               updateNodeConfig(node.id, {
+                planningMode: "manual",
                 useWorktrees: false,
                 maxRounds: 8,
                 coordinatorPrompt:
@@ -1884,8 +1890,40 @@ export function Inspector() {
 
           return (
             <>
+              <label className="field">
+                <span>{L("Team Planning Mode", "Planificación del equipo")}</span>
+                <select
+                  value={planningMode}
+                  onChange={(e) =>
+                    updateNodeConfig(node.id, { planningMode: e.target.value })
+                  }
+                >
+                  <option value="auto">
+                    {L(
+                      "Auto (Planner decides worker count & roles from task + hardware)",
+                      "Auto (El Planner decide cuántos workers y tareas según hardware)"
+                    )}
+                  </option>
+                  <option value="manual">
+                    {L(
+                      "Manual (Fixed roster configured below)",
+                      "Manual (Equipo fijo configurado abajo)"
+                    )}
+                  </option>
+                </select>
+              </label>
+
+              {planningMode === "auto" && (
+                <div className="hw-note">
+                  {L(
+                    "In Auto mode, the Coordinator analyzes your prompt and your machine's RAM/CPU/VRAM (or Cloud API) to spawn the exact workers or batch subtasks (1 to 200) on the fly, queued safely through the hardware pool.",
+                    "En modo Auto, el Coordinador analiza tu tarea y la RAM/CPU/VRAM de tu PC (o Cloud API) para crear los workers o lotes de subtareas exactos sobre la marcha (de 1 a 200), encolándolos de forma segura."
+                  )}
+                </div>
+              )}
+
               <div className="field">
-                <span>{L("Team Presets", "Presets de equipo")}</span>
+                <span>{L("Team Presets (switches to Manual)", "Presets de equipo (pasa a Manual)")}</span>
                 <div className="swarm-presets-row">
                   <button type="button" className="btn-secondary" onClick={() => applyPreset("engineering")}>
                     {L("Engineering (3)", "Ingeniería (3)")}
@@ -1931,14 +1969,16 @@ export function Inspector() {
                   />
                 </label>
                 <label className="field">
-                  <span>{L("Max Parallel", "Paralelo máx.")}</span>
+                  <span>{L("Max Parallel (0 = Auto HW)", "Paralelo máx. (0 = Auto HW)")}</span>
                   <input
                     type="number"
-                    min={1}
-                    max={8}
-                    value={Number(cfg.maxConcurrency ?? 3)}
+                    min={0}
+                    max={24}
+                    value={Number(cfg.maxConcurrency ?? 0)}
                     onChange={(e) =>
-                      updateNodeConfig(node.id, { maxConcurrency: Math.max(1, Number(e.target.value) || 3) })
+                      updateNodeConfig(node.id, {
+                        maxConcurrency: Math.max(0, Math.min(24, Number(e.target.value) || 0)),
+                      })
                     }
                   />
                 </label>
@@ -1959,6 +1999,7 @@ export function Inspector() {
                 </select>
               </label>
 
+              {planningMode === "manual" && (
               <div className="field">
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>
@@ -2081,6 +2122,7 @@ export function Inspector() {
                   ))}
                 </div>
               </div>
+              )}
 
               <div className="hw-note">
                 {L(
