@@ -230,6 +230,7 @@ export function AgentWorkspaceView() {
 
   const [input, setInput] = useState("");
   const runningTurns = useRef(new Map<string, AgentSession>());
+  const discardBufferedTokens = useRef<(id: string) => void>(() => {});
   const [runningSessionIds, setRunningSessionIds] = useState<string[]>([]);
   const running = runningSessionIds.length > 0;
   const isCurrentRunning = runningSessionIds.includes(session.id);
@@ -665,6 +666,7 @@ export function AgentWorkspaceView() {
     let unlistenBrowser: (() => void) | undefined;
     let renderTimer: ReturnType<typeof setTimeout> | undefined;
     const pendingTokens = new Map<string, Map<string, { content: string; thinking: string }>>();
+    discardBufferedTokens.current = (id) => { pendingTokens.delete(id); };
     const flushTokens = (publish = true) => {
       if (renderTimer !== undefined) clearTimeout(renderTimer);
       renderTimer = undefined;
@@ -836,6 +838,7 @@ export function AgentWorkspaceView() {
     return () => {
       cancelled = true;
       flushTokens(false);
+      discardBufferedTokens.current = () => {};
       if (unlistenAgent) unlistenAgent();
       if (unlistenBrowser) unlistenBrowser();
     };
@@ -1237,6 +1240,7 @@ export function AgentWorkspaceView() {
         overrideCtx: null,
         attachments: attachmentsToSend,
       });
+      discardBufferedTokens.current(id);
       completedTurns.current.set(id, updated);
       setSessions((prev) => [summarizeSession(updated), ...prev.filter((summary) => summary.id !== id)]);
       if (activeSessionIdRef.current === id) showSession(updated);
@@ -1244,6 +1248,7 @@ export function AgentWorkspaceView() {
       const msg = String(err);
       pausedQueues.current.add(id);
       const persisted = await invoke<AgentSession>("load_agent_session", { id }).catch(() => curSession);
+      discardBufferedTokens.current(id);
       completedTurns.current.set(id, persisted);
       const needsRetry = persisted.messages.length === curSession.messages.length;
       if (needsRetry && !drafts.current.has(id)) {
@@ -1264,6 +1269,7 @@ export function AgentWorkspaceView() {
       }
       turnErrors.current.set(id, msg);
     } finally {
+      discardBufferedTokens.current(id);
       runningTurns.current.delete(id);
       setRunningSessionIds([...runningTurns.current.keys()]);
       const otherTurn = runningTurns.current.values().next().value;
