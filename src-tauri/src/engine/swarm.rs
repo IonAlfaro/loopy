@@ -1,4 +1,4 @@
-use crate::engine::executor::{capture_git_diff, parse_inline_tool_calls, EventEmitter};
+use crate::engine::executor::{parse_inline_tool_calls, EventEmitter};
 use crate::engine::types::{EngineEvent, LogStreamKind};
 use crate::hardware::{detect_hardware_profile, HardwareProfile, RuntimeBackendKind};
 use crate::inference::llama_cpp::LlamaCppManager;
@@ -30,7 +30,7 @@ pub struct SwarmWorkerSpec {
     pub task: String,
     #[serde(default)]
     pub model_path: String,
-    #[serde(default)]
+    #[serde(default = "default_worker_tools")]
     pub tools: Vec<String>,
     #[serde(default)]
     pub max_steps: usize,
@@ -222,6 +222,10 @@ pub fn compute_hardware_concurrency(
     (slots, note)
 }
 
+fn default_worker_tools() -> Vec<String> {
+    vec!["list_files".into(), "grep_search".into(), "read_file".into()]
+}
+
 fn sanitize_worker_spec(mut w: SwarmWorkerSpec, fallback_idx: usize) -> SwarmWorkerSpec {
     let clean_id: String = w
         .id
@@ -240,14 +244,6 @@ fn sanitize_worker_spec(mut w: SwarmWorkerSpec, fallback_idx: usize) -> SwarmWor
     }
     if w.max_steps == 0 {
         w.max_steps = 8;
-    }
-    if w.tools.is_empty() {
-        w.tools = vec![
-            "list_files".into(),
-            "grep_search".into(),
-            "read_file".into(),
-            "run_cmd".into(),
-        ];
     }
     w
 }
@@ -546,9 +542,20 @@ pub struct SwarmModelDefaults {
     pub repeat_penalty: Option<f32>,
 }
 
-async fn run_git_cmd(workspace: &str, args: &[&str]) -> Result<String, String> {
+async fn run_git_cmd(workspace: &str, args: &[&str]) -> Result<Vec<u8>, String> {
+    run_git_with_index(workspace, args, None).await
+}
+
+async fn run_git_with_index(
+    workspace: &str,
+    args: &[&str],
+    index: Option<&Path>,
+) -> Result<Vec<u8>, String> {
     let mut cmd = tokio::process::Command::new("git");
-    cmd.args(args).current_dir(workspace);
+    cmd.args(args).current_dir(workspace).kill_on_drop(true);
+    if let Some(index) = index {
+        cmd.env("GIT_INDEX_FILE", index);
+    }
     #[cfg(target_os = "windows")]
     {
         cmd.creation_flags(0x08000000);
@@ -558,10 +565,58 @@ async fn run_git_cmd(workspace: &str, args: &[&str]) -> Result<String, String> {
         .await
         .map_err(|e| format!("git error: {e}"))?;
     if out.status.success() {
-        Ok(String::from_utf8_lossy(&out.stdout).to_string())
+        Ok(out.stdout)
     } else {
         Err(String::from_utf8_lossy(&out.stderr).to_string())
     }
+}
+
+async fn create_worker_checkout(workspace: &str) -> Result<(PathBuf, String), String> {
+    let base = run_git_cmd(workspace, &["rev-parse", "HEAD"]).await?;
+    let base = String::from_utf8_lossy(&base).trim().to_owned();
+    let dir = tempfile::Builder::new()
+        .prefix("loors-swarm-")
+        .tempdir()
+        .map_err(|err| err.to_string())?;
+    let index = dir.path().join("snapshot.index");
+    run_git_with_index(workspace, &["read-tree", &base], Some(&index)).await?;
+    run_git_with_index(workspace, &["add", "-A", "--", ".", ":(exclude).loors/swarms"], Some(&index)).await?;
+    let snapshot = run_git_with_index(workspace, &["write-tree"], Some(&index)).await?;
+    let snapshot = String::from_utf8_lossy(&snapshot).trim().to_owned();
+    let checkout = dir.keep().join("checkout");
+    let checkout_path = checkout.to_string_lossy();
+    let result = async {
+        run_git_cmd(workspace, &["worktree", "add", "--detach", &checkout_path, &base]).await?;
+        run_git_cmd(&checkout_path, &["read-tree", "--reset", "-u", &snapshot]).await?;
+        Ok::<_, String>(())
+    }.await;
+    result
+        .map_err(|err| format!("Cannot create isolated worktree at {}: {err}", checkout.display()))?;
+    Ok((checkout, snapshot))
+}
+
+async fn integrate_worker_checkout(workspace: &str, checkout: &Path, base: &str) -> Result<(), String> {
+    let checkout_path = checkout.to_string_lossy();
+    let result = async {
+        run_git_cmd(&checkout_path, &["add", "-A", "--", "."]).await?;
+        let patch = run_git_cmd(
+            &checkout_path,
+            &["diff", "--cached", "--binary", "--no-ext-diff", "--no-color", base, "--"],
+        ).await?;
+        let artifact_dir = checkout.parent().expect("worker checkout has an artifact directory");
+        let patch_path = artifact_dir.join("delivery.diff");
+        if !patch.is_empty() {
+            fs::write(&patch_path, patch).map_err(|err| err.to_string())?;
+            run_git_cmd(workspace, &["apply", "--", &patch_path.to_string_lossy()]).await?;
+        }
+        run_git_cmd(workspace, &["worktree", "remove", "--force", &checkout_path]).await
+            .map_err(|err| format!("Delivery applied but checkout cleanup failed: {err}"))?;
+        let _ = fs::remove_file(patch_path);
+        let _ = fs::remove_file(artifact_dir.join("snapshot.index"));
+        let _ = fs::remove_dir(artifact_dir);
+        Ok::<_, String>(())
+    }.await;
+    result.map_err(|err| format!("{err}. Worktree preserved at {}", checkout.display()))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -575,6 +630,7 @@ async fn run_single_swarm_agent_turn(
     agent_role: &str,
     is_coordinator: bool,
     allow_spawn: bool,
+    can_finish: bool,
     system_prompt: &str,
     turn_prompt: &str,
     workspace: &str,
@@ -832,7 +888,7 @@ async fn run_single_swarm_agent_turn(
                         .get("tools")
                         .and_then(|v| v.as_array())
                         .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
-                        .unwrap_or_default();
+                        .unwrap_or_else(default_worker_tools);
                     let raw_steps = args.get("max_steps").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
 
                     let mut guard = roster.lock().unwrap();
@@ -898,7 +954,7 @@ async fn run_single_swarm_agent_turn(
                             .get("tools")
                             .and_then(|v| v.as_array())
                             .map(|a| a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
-                            .unwrap_or_default();
+                            .unwrap_or_else(default_worker_tools);
                         let raw_steps = item.get("max_steps").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
                         let idx = guard.len();
                         let spec = sanitize_worker_spec(
@@ -950,6 +1006,9 @@ async fn run_single_swarm_agent_turn(
                     let list_preview: Vec<String> = spawned_ids.iter().map(|(id, _, _, _)| format!("@{id}")).collect();
                     format!("Batch spawned {} workers: {}", spawned_ids.len(), list_preview.join(", "))
                 }
+                "swarm_finish" if is_coordinator && (!can_finish || mentioned_targets.iter().any(|id| id != "coordinator")) => {
+                    "There are pending or failed worker tasks. Resolve them before finishing.".into()
+                }
                 "swarm_finish" if is_coordinator => {
                     let summary = args
                         .get("summary")
@@ -962,6 +1021,16 @@ async fn run_single_swarm_agent_turn(
                     } else {
                         summary
                     };
+                    if final_summary.is_empty() {
+                        messages.push(ChatMessage {
+                            role: "tool".into(),
+                            content: Some("Provide a non-empty final summary.".into()),
+                            tool_calls: None,
+                            tool_call_id: Some(call.id.clone()),
+                            image_paths: Vec::new(),
+                        });
+                        continue;
+                    }
                     board.set_finished(final_summary.clone());
                     let entry = board.post(agent_id, Vec::new(), &format!("[DONE] {final_summary}"));
                     posted_this_turn = true;
@@ -977,9 +1046,14 @@ async fn run_single_swarm_agent_turn(
                     emit_status("done", "Enjambre completado");
                     "Swarm marked finished.".to_string()
                 }
+                _ if !enabled_tools.iter().any(|name| name == tool_name) => {
+                    format!("Tool '{tool_name}' is disabled for this agent.")
+                }
                 _ => {
                     emit_status("working", &format!("Paso {step}: {tool_name}"));
-                    let mut res = tools::execute_tool(workspace, tool_name, &args).await;
+                    let mut res = tools::execute_tool_cancellable(
+                        workspace, tool_name, &args, Some(cancel),
+                    ).await;
                     if res.len() > 8000 {
                         let end = res.floor_char_boundary(8000);
                         res = format!("{}\n... [truncado]", &res[..end]);
@@ -1082,7 +1156,7 @@ async fn run_single_swarm_agent_turn(
                             });
                         }
                     }
-                    "swarm_finish" if is_coordinator => {
+                    "swarm_finish" if is_coordinator && can_finish && mentioned_targets.iter().all(|id| id == "coordinator") => {
                         let summary = args.get("summary").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
                         let final_summary = if summary.is_empty() { final_text.clone() } else { summary };
                         if !final_summary.is_empty() {
@@ -1135,7 +1209,7 @@ async fn run_single_swarm_agent_turn(
 
     if board.finished_summary().is_none() {
         emit_status(
-            if is_coordinator { "waiting" } else { "done" },
+            "waiting",
             if is_coordinator {
                 "Esperando entregas de los workers"
             } else {
@@ -1247,6 +1321,8 @@ pub async fn run_swarm_node(
 
     let mut coord_last_seq: u64 = 0;
     let mut worker_last_seq: HashMap<String, u64> = HashMap::new();
+    let mut pending_workers = HashSet::new();
+    let mut failed_workers = HashSet::new();
 
     for round in 1..=cfg.max_rounds {
         if cancel.load(Ordering::SeqCst) {
@@ -1290,7 +1366,7 @@ pub async fn run_swarm_node(
                     .join("\n")
             };
             format!(
-                "Ronda {round}/{}. Nuevos mensajes en la pizarra:\n{delta_text}\n\nEvalúa el progreso: si ya está completo, llama a `swarm_finish(summary)`; si no, coordina los siguientes pasos con `swarm_post`{}.",
+                "Ronda {round}/{}. Nuevos mensajes en la pizarra:\n{delta_text}\n\nEvalúa el progreso. Reintenta las tareas fallidas mencionando al worker. Despacha las tareas dependientes, como QA, tras recibir la entrega que necesitan. Cuando todo esté verificado llama a `swarm_finish(summary)`; usa `swarm_post` para asignar los siguientes pasos{}.",
                 cfg.max_rounds,
                 if allow_spawn { " (o crea nuevos workers si hacen falta)" } else { "" }
             )
@@ -1306,6 +1382,8 @@ pub async fn run_swarm_node(
             if allow_spawn { "Planner & Lead" } else { "Swarm Lead" },
             true,
             allow_spawn,
+            pending_workers.is_empty() && failed_workers.is_empty()
+                && (round > 1 || cfg.workers.is_empty()),
             &coord_system,
             &coord_turn_prompt,
             workspace,
@@ -1339,21 +1417,20 @@ pub async fn run_swarm_node(
             continue;
         }
 
-        // Determine which workers to wake up this round
-        let target_ids: Vec<String> = {
-            let mentioned_workers: Vec<String> = coord_mentions
-                .into_iter()
-                .filter(|id| valid_worker_ids.contains(id))
-                .collect();
-            if mentioned_workers.is_empty() {
-                valid_worker_ids.clone()
-            } else {
-                mentioned_workers
-            }
-        };
+        pending_workers.extend(coord_mentions);
+        if round == 1 && pending_workers.iter().all(|id| id == "coordinator") {
+            pending_workers.extend(current_roster.iter()
+                .filter(|worker| !worker.task.trim().is_empty())
+                .map(|worker| worker.id.clone()));
+        }
+        let target_ids: Vec<_> = valid_worker_ids.into_iter()
+            .filter(|id| pending_workers.contains(id))
+            .collect();
+        pending_workers.clear();
 
         let concurrency_sem = Arc::new(Semaphore::new(effective_concurrency.max(1)));
         let mut join_set = JoinSet::new();
+        let round_seq = board.latest_seq();
 
         for wid in target_ids {
             let Some(worker) = current_roster.iter().find(|w| w.id == wid).cloned() else {
@@ -1363,10 +1440,11 @@ pub async fn run_swarm_node(
             let new_msgs = board.read_since(prev_seq);
             let board_snapshot = new_msgs
                 .iter()
+                .take_while(|entry| entry.seq <= round_seq)
                 .map(|e| format!("[#{} @{}] {}", e.seq, e.from, e.content))
                 .collect::<Vec<_>>()
                 .join("\n");
-            worker_last_seq.insert(wid.clone(), board.latest_seq());
+            worker_last_seq.insert(wid.clone(), round_seq);
 
             let run_id_c = run_id.to_string();
             let node_id_c = node_id.to_string();
@@ -1386,170 +1464,154 @@ pub async fn run_swarm_node(
             let use_wt = worker.use_worktree.unwrap_or(cfg.use_worktrees);
 
             join_set.spawn(async move {
-                emit_c(EngineEvent::SwarmAgentStatus {
-                    run_id: run_id_c.clone(),
-                    node_id: node_id_c.clone(),
-                    agent_id: worker.id.clone(),
-                    agent_name: worker.name.clone(),
-                    role: worker.role.clone(),
-                    status: "queued".into(),
-                    summary: if worker.task.is_empty() {
-                        "Esperando turno en el pool".into()
-                    } else {
-                        worker.task.chars().take(80).collect()
-                    },
-                });
-                let _conc_permit = conc_sem_c
-                    .acquire()
-                    .await
-                    .map_err(|_| "Concurrency semaphore closed".to_string())?;
-
-                // Optional isolated git worktree per worker
-                let mut wt_dir: Option<PathBuf> = None;
-                let effective_ws = if use_wt {
-                    let ts = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis();
-                    let wt = std::env::temp_dir().join(format!("loors-swarm-{}-{ts}", worker.id));
-                    let wt_str = wt.to_string_lossy().to_string();
-                    if run_git_cmd(&ws_orig, &["worktree", "add", "--detach", &wt_str, "HEAD"])
-                        .await
-                        .is_ok()
-                        && wt.exists()
-                    {
-                        wt_dir = Some(wt);
-                        wt_str
-                    } else {
-                        ws_orig.clone()
-                    }
-                } else {
-                    ws_orig.clone()
-                };
-
-                let worker_model = if worker.model_path.trim().is_empty() {
-                    defaults_c.model_path.clone()
-                } else {
-                    worker.model_path.clone()
-                };
-
-                let worker_sys = format!(
-                    "Eres @{} ({}, rol: {}) en un enjambre coordinado de Loors.\n{}\n\nUsa `swarm_post(message, mentions)` para reportar resultados concretos a `@coordinator` (o a otro compañero si necesitas algo). Sé directo, basado en evidencia y conciso.",
-                    worker.id, worker.name, worker.role, worker.system_prompt
-                );
-                let task_block = if worker.task.trim().is_empty() {
-                    String::new()
-                } else {
-                    format!("\n\n## Tu tarea asignada\n{}", worker.task)
-                };
-                let worker_prompt = format!(
-                    "## Objetivo general\n{objective_c}{task_block}\n\n## Mensajes recientes en la pizarra\n{board_snapshot}\n\nEjecuta tu parte ahora y reporta en la pizarra con `swarm_post`."
-                );
-
-                let res = run_single_swarm_agent_turn(
-                    &run_id_c,
-                    &node_id_c,
-                    &node_title_c,
-                    iteration,
-                    &worker.id,
-                    &worker.name,
-                    &worker.role,
-                    false,
-                    false,
-                    &worker_sys,
-                    &worker_prompt,
-                    &effective_ws,
-                    &worker_model,
-                    &defaults_c,
-                    &worker.tools,
-                    worker.max_steps,
-                    &roster_c,
-                    &board_c,
-                    &backend_c,
-                    &llama_c,
-                    &gpu_sem_c,
-                    &cancel_c,
-                    &emit_c,
-                )
-                .await;
-
-                // If worker ran in an isolated worktree, capture its diff and clean up
-                let worker_diff = if let Some(ref wt) = wt_dir {
-                    let diff = capture_git_diff(&effective_ws).await;
-                    let wt_str = wt.to_string_lossy().to_string();
-                    let _ = run_git_cmd(&ws_orig, &["worktree", "remove", "--force", &wt_str]).await;
-                    let _ = fs::remove_dir_all(wt);
-                    diff
-                } else {
-                    String::new()
-                };
-
-                if !worker_diff.trim().is_empty() {
-                    let _git_guard = git_lock_c.lock().await;
-                    let patch_path = Path::new(&ws_orig)
-                        .join(".loors")
-                        .join("swarms")
-                        .join(format!("patch-{}.diff", worker.id));
-                    let _ = fs::write(&patch_path, &worker_diff);
-                    let apply_res = run_git_cmd(
-                        &ws_orig,
-                        &["apply", "--3way", &patch_path.to_string_lossy()],
-                    )
-                    .await;
-                    let note = match apply_res {
-                        Ok(_) => format!(
-                            "[Worktree] Cambios de @{} aplicados limpiamente al workspace ({} bytes de diff).",
-                            worker.id,
-                            worker_diff.len()
-                        ),
-                        Err(err) => format!(
-                            "[Worktree] Conflicto al aplicar diff de @{}: {}. Patch guardado en {}.",
-                            worker.id,
-                            err.trim(),
-                            patch_path.display()
-                        ),
-                    };
-                    let entry = board_c.post(&worker.id, vec!["coordinator".into()], &note);
-                    emit_c(EngineEvent::SwarmBoardMessage {
+                let worker_id = worker.id.clone();
+                let result = async {
+                    emit_c(EngineEvent::SwarmAgentStatus {
                         run_id: run_id_c.clone(),
                         node_id: node_id_c.clone(),
-                        seq: entry.seq,
-                        from: entry.from,
-                        mentions: entry.mentions,
-                        content: entry.content,
-                        timestamp: entry.timestamp,
+                        agent_id: worker.id.clone(),
+                        agent_name: worker.name.clone(),
+                        role: worker.role.clone(),
+                        status: "queued".into(),
+                        summary: if worker.task.is_empty() {
+                            "Esperando turno en el pool".into()
+                        } else {
+                            worker.task.chars().take(80).collect()
+                        },
                     });
-                }
+                    let _conc_permit = conc_sem_c
+                        .acquire()
+                        .await
+                        .map_err(|_| "Concurrency semaphore closed".to_string())?;
 
-                res.map(|_| worker.id)
+                    if cancel_c.load(Ordering::SeqCst) {
+                        return Err("__CANCELLED__".into());
+                    }
+                    let isolated = if use_wt {
+                        let _guard = git_lock_c.lock().await;
+                        let root = run_git_cmd(&ws_orig, &["rev-parse", "--show-toplevel"]).await?;
+                        let prefix = run_git_cmd(&ws_orig, &["rev-parse", "--show-prefix"]).await?;
+                        let root = String::from_utf8_lossy(&root).trim_end_matches(['\r', '\n']).to_owned();
+                        let prefix = String::from_utf8_lossy(&prefix).trim_end_matches(['\r', '\n']).to_owned();
+                        let (checkout, base) = create_worker_checkout(&root).await?;
+                        Some((root, checkout, base, prefix))
+                    } else {
+                        None
+                    };
+                    let effective_ws = isolated.as_ref()
+                        .map(|(_, checkout, _, prefix)| checkout.join(prefix).to_string_lossy().into_owned())
+                        .unwrap_or_else(|| ws_orig.clone());
+
+                    let worker_model = if worker.model_path.trim().is_empty() {
+                        defaults_c.model_path.clone()
+                    } else {
+                        worker.model_path.clone()
+                    };
+
+                    let worker_sys = format!(
+                        "Eres @{} ({}, rol: {}) en un enjambre coordinado de Loors.\n{}\n\nUsa `swarm_post(message, mentions)` para reportar resultados concretos a `@coordinator` (o a otro compañero si necesitas algo). Sé directo, basado en evidencia y conciso.",
+                        worker.id, worker.name, worker.role, worker.system_prompt
+                    );
+                    let task_block = if worker.task.trim().is_empty() {
+                        String::new()
+                    } else {
+                        format!("\n\n## Tu tarea asignada\n{}", worker.task)
+                    };
+                    let worker_prompt = format!(
+                        "## Objetivo general\n{objective_c}{task_block}\n\n## Mensajes recientes en la pizarra\n{board_snapshot}\n\nEjecuta tu parte ahora y reporta en la pizarra con `swarm_post`."
+                    );
+
+                    let res = run_single_swarm_agent_turn(
+                        &run_id_c,
+                        &node_id_c,
+                        &node_title_c,
+                        iteration,
+                        &worker.id,
+                        &worker.name,
+                        &worker.role,
+                        false,
+                        false,
+                        false,
+                        &worker_sys,
+                        &worker_prompt,
+                        &effective_ws,
+                        &worker_model,
+                        &defaults_c,
+                        &worker.tools,
+                        worker.max_steps,
+                        &roster_c,
+                        &board_c,
+                        &backend_c,
+                        &llama_c,
+                        &gpu_sem_c,
+                        &cancel_c,
+                        &emit_c,
+                    )
+                    .await;
+
+                    let (_, mentions) = res.map_err(|err| {
+                        if use_wt && err != "__CANCELLED__" {
+                            format!("{err}. Worktree preserved at {effective_ws}")
+                        } else {
+                            err
+                        }
+                    })?;
+                    if cancel_c.load(Ordering::SeqCst) {
+                        return Err("__CANCELLED__".into());
+                    }
+                    if let Some((root, checkout, base, _)) = isolated {
+                        let _guard = git_lock_c.lock().await;
+                        if cancel_c.load(Ordering::SeqCst) {
+                            return Err("__CANCELLED__".into());
+                        }
+                        integrate_worker_checkout(&root, &checkout, &base).await?;
+                    }
+                    emit_c(EngineEvent::SwarmAgentStatus {
+                        run_id: run_id_c,
+                        node_id: node_id_c,
+                        agent_id: worker.id,
+                        agent_name: worker.name,
+                        role: worker.role,
+                        status: "done".into(),
+                        summary: "Entrega completada".into(),
+                    });
+                    Ok::<_, String>(mentions)
+                }.await;
+                (worker_id, result)
             });
         }
 
+        let mut cancelled = false;
         while let Some(joined) = join_set.join_next().await {
-            match joined {
-                Ok(Ok(_wid)) => {}
-                Ok(Err(e)) if e == "__CANCELLED__" => return Err("__CANCELLED__".into()),
-                Ok(Err(e)) => {
-                    emit(EngineEvent::NodeLog {
-                        run_id: run_id.to_string(),
-                        node_id: node_id.to_string(),
-                        node_title: node_title.to_string(),
-                        iteration,
-                        stream: LogStreamKind::Stderr,
-                        text: format!("Error en worker del enjambre: {e}"),
-                    });
+            let (worker, error) = match joined {
+                Ok((worker, Ok(mentions))) => {
+                    failed_workers.remove(&worker);
+                    pending_workers.extend(mentions.into_iter().filter(|id| id != "coordinator"));
+                    continue;
                 }
-                Err(e) => {
-                    emit(EngineEvent::NodeLog {
-                        run_id: run_id.to_string(),
-                        node_id: node_id.to_string(),
-                        node_title: node_title.to_string(),
-                        iteration,
-                        stream: LogStreamKind::Stderr,
-                        text: format!("Fallo de tarea worker: {e}"),
-                    });
+                Ok((_, Err(error))) if error == "__CANCELLED__" => {
+                    cancelled = true;
+                    continue;
                 }
+                Ok((worker, Err(error))) => (worker, error),
+                Err(error) => ("runtime".into(), error.to_string()),
+            };
+            failed_workers.insert(worker.clone());
+            let entry = board.post(&worker, vec!["coordinator".into()], &format!("[FAILED] {error}"));
+            emit(EngineEvent::SwarmBoardMessage {
+                run_id: run_id.into(), node_id: node_id.into(), seq: entry.seq,
+                from: entry.from, mentions: entry.mentions, content: entry.content, timestamp: entry.timestamp,
+            });
+            if let Some(spec) = current_roster.iter().find(|spec| spec.id == worker) {
+                emit(EngineEvent::SwarmAgentStatus {
+                    run_id: run_id.into(), node_id: node_id.into(), agent_id: worker,
+                    agent_name: spec.name.clone(), role: spec.role.clone(),
+                    status: "blocked".into(), summary: error,
+                });
             }
+        }
+        if cancelled || cancel.load(Ordering::SeqCst) {
+            return Err("__CANCELLED__".into());
         }
     }
 
@@ -1568,6 +1630,50 @@ pub async fn run_swarm_node(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn worktree_integrates_committed_staged_and_new_files_and_preserves_conflicts() {
+        let repo = tempfile::tempdir().unwrap();
+        let workspace = repo.path().to_str().unwrap();
+        run_git_cmd(workspace, &["init"]).await.unwrap();
+        run_git_cmd(workspace, &["config", "core.autocrlf", "false"]).await.unwrap();
+        let commit = ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "test"];
+        fs::write(repo.path().join("tracked"), "original\n").unwrap();
+        run_git_cmd(workspace, &["add", "."]).await.unwrap();
+        run_git_cmd(workspace, &commit).await.unwrap();
+        fs::write(repo.path().join("user-change"), "keep me\n").unwrap();
+
+        let (checkout, base) = create_worker_checkout(workspace).await.unwrap();
+        let worker = checkout.to_str().unwrap();
+        assert_eq!(fs::read_to_string(checkout.join("user-change")).unwrap(), "keep me\n");
+        fs::write(checkout.join("tracked"), "committed\n").unwrap();
+        run_git_cmd(worker, &["add", "tracked"]).await.unwrap();
+        run_git_cmd(worker, &commit).await.unwrap();
+        fs::write(checkout.join("staged"), "staged\n").unwrap();
+        run_git_cmd(worker, &["add", "staged"]).await.unwrap();
+        let binary = [0, 255, 42];
+        fs::write(checkout.join("new"), binary).unwrap();
+        integrate_worker_checkout(workspace, &checkout, &base).await.unwrap();
+        assert!(!checkout.exists());
+        assert_eq!(fs::read_to_string(repo.path().join("tracked")).unwrap(), "committed\n");
+        assert_eq!(fs::read_to_string(repo.path().join("staged")).unwrap(), "staged\n");
+        assert_eq!(fs::read(repo.path().join("new")).unwrap(), binary);
+        assert!(run_git_cmd(workspace, &["diff", "--cached", "--quiet"]).await.is_ok());
+
+        let (checkout, base) = create_worker_checkout(workspace).await.unwrap();
+        assert_eq!(fs::read(checkout.join("new")).unwrap(), binary);
+        fs::write(checkout.join("tracked"), "worker\n").unwrap();
+        fs::write(repo.path().join("tracked"), "user\n").unwrap();
+        let err = integrate_worker_checkout(workspace, &checkout, &base).await.unwrap_err();
+        assert!(err.contains("Worktree preserved"));
+        assert!(checkout.parent().unwrap().join("delivery.diff").is_file());
+        assert_eq!(fs::read_to_string(repo.path().join("tracked")).unwrap(), "user\n");
+        run_git_cmd(workspace, &["worktree", "remove", "--force", checkout.to_str().unwrap()])
+            .await.unwrap();
+        let _ = fs::remove_file(checkout.parent().unwrap().join("delivery.diff"));
+        let _ = fs::remove_file(checkout.parent().unwrap().join("snapshot.index"));
+        let _ = fs::remove_dir(checkout.parent().unwrap());
+    }
 
     #[test]
     fn board_persists_jsonl_and_tracks_deltas() {
@@ -1629,6 +1735,13 @@ mod tests {
         assert!(cfg2.use_worktrees);
         assert_eq!(cfg2.workers.len(), 1);
         assert_eq!(cfg2.workers[0].id, "backend-dev-");
+        raw.insert("workers".into(), json!([
+            { "id": "no-tools", "name": "No tools", "tools": [] },
+            { "id": "default-tools", "name": "Default tools" }
+        ]));
+        let cfg = parse_swarm_config(&raw, "Obj".into(), "Coord".into());
+        assert!(cfg.workers[0].tools.is_empty());
+        assert_eq!(cfg.workers[1].tools, default_worker_tools());
     }
 
     #[test]

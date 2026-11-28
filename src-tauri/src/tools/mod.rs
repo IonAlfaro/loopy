@@ -398,7 +398,7 @@ fn workspace_root(workspace: &str) -> Result<PathBuf, String> {
 fn resolve_safe_path(workspace: &str, rel: &str) -> Result<PathBuf, String> {
     let base = workspace_root(workspace)?;
     let rel_path = Path::new(rel);
-    if rel_path.is_absolute() {
+    if rel_path.has_root() || matches!(rel_path.components().next(), Some(Component::Prefix(_))) {
         return Err("Solo se permiten rutas relativas dentro del workspace.".to_string());
     }
     for comp in rel_path.components() {
@@ -406,7 +406,23 @@ fn resolve_safe_path(workspace: &str, rel: &str) -> Result<PathBuf, String> {
             return Err("Ruta rechazada: no se permite salir del workspace con '..'.".to_string());
         }
     }
-    Ok(base.join(rel_path))
+    let root = base.canonicalize().map_err(|err| err.to_string())?;
+    let mut resolved = root.clone();
+    for component in rel_path.components() {
+        let Component::Normal(part) = component else { continue };
+        resolved.push(part);
+        match fs::symlink_metadata(&resolved) {
+            Ok(_) => {
+                resolved = resolved.canonicalize().map_err(|err| err.to_string())?;
+                if !resolved.starts_with(&root) {
+                    return Err("Ruta rechazada: el destino queda fuera del workspace.".into());
+                }
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.to_string()),
+        }
+    }
+    Ok(resolved)
 }
 
 pub fn capture_file_state(workspace: &str, rel_path: &str) -> Result<(PathBuf, Option<String>), String> {
@@ -1896,6 +1912,16 @@ async fn run_binary_inspect(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    #[test]
+    fn file_tools_reject_links_outside_workspace() {
+        let workspace = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), workspace.path().join("external")).unwrap();
+        let root = workspace.path().to_str().unwrap();
+        assert!(super::resolve_safe_path(root, "external/new-file").is_err());
+        assert!(super::resolve_safe_path(root, "local/new-file").is_ok());
+    }
     use super::*;
 
     #[tokio::test]

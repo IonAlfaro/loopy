@@ -16,7 +16,7 @@ use crate::runtime::find_installed_binary;
 use crate::skills::{load_skill_file, LoadedSkill};
 use crate::tools::{execute_tool_cancellable, tool_definitions};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -377,6 +377,15 @@ fn execute_graph_with_depth(
 
     let node_map: HashMap<String, &GraphNode> =
         graph.nodes.iter().map(|n| (n.id.clone(), n)).collect();
+    if let Err(summary) = validate_graph_connections(&graph, &node_map) {
+        emit(EngineEvent::RunFinished {
+            run_id,
+            outcome: RunOutcomeKind::Failed,
+            total_iterations: 0,
+            summary,
+        });
+        return RunOutcomeKind::Failed;
+    }
 
     let requested_start = start_node_id
         .as_deref()
@@ -434,7 +443,10 @@ fn execute_graph_with_depth(
         }
     }
 
-    let run_started = std::time::Instant::now();
+    let run_started = tokio::time::Instant::now();
+    let run_deadline = (ctx.max_run_secs > 0)
+        .then(|| run_started.checked_add(std::time::Duration::from_secs(ctx.max_run_secs)))
+        .flatten();
     let mut current_id: Option<String> = Some(start.id.clone());
     let mut safety_steps: u32 = 0;
 
@@ -493,7 +505,7 @@ fn execute_graph_with_depth(
         });
 
         let node_started = std::time::Instant::now();
-        let step_result = run_node(
+        let step = run_node(
             &run_id,
             node,
             &graph,
@@ -505,8 +517,23 @@ fn execute_graph_with_depth(
             &mut ctx,
             &cancel,
             &emit,
-        )
-        .await;
+        );
+        let step_result = if let Some(run_deadline) = run_deadline {
+            match tokio::time::timeout_at(run_deadline, step).await {
+                Ok(result) => result,
+                Err(_) => {
+                    if let Ok(mut gate) = gate_slot.lock() {
+                        gate.take();
+                    }
+                    NodeStepOutcome::Finish(
+                        RunOutcomeKind::Exhausted,
+                        "Run budget timeout reached.".into(),
+                    )
+                }
+            }
+        } else {
+            step.await
+        };
         let elapsed_label = format_duration_ms(node_started.elapsed().as_millis());
 
         match step_result {
@@ -2687,6 +2714,10 @@ async fn run_node(
                     let mut sub_graph = graph_clone;
                     // Replace task_input so execution starts from this branch target
                     sub_graph.nodes.retain(|n| n.data.kind != "task_input");
+                    let retained: HashSet<_> = sub_graph.nodes.iter().map(|node| node.id.as_str()).collect();
+                    sub_graph.edges.retain(|edge| {
+                        retained.contains(edge.source.as_str()) && retained.contains(edge.target.as_str())
+                    });
                     let synthetic_id = format!("__fanout_in_{label}");
                     sub_graph.nodes.push(GraphNode {
                         id: synthetic_id.clone(),
@@ -2913,10 +2944,12 @@ async fn run_node(
                             res.converged
                         ),
                     );
-                    if !res.converged && find_next_node(&graph.edges, &node.id, "error").is_some() {
+                    if res.converged {
+                        NodeStepOutcome::Continue("exec".to_string())
+                    } else if find_next_node(&graph.edges, &node.id, "error").is_some() {
                         NodeStepOutcome::Continue("error".to_string())
                     } else {
-                        NodeStepOutcome::Continue("exec".to_string())
+                        NodeStepOutcome::Finish(RunOutcomeKind::Exhausted, ctx.last_swarm_output.clone())
                     }
                 }
                 Err(err) if err == "__CANCELLED__" => NodeStepOutcome::Finish(
@@ -3072,7 +3105,7 @@ where
         cmd.current_dir(workspace);
     }
 
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
 
     let mut child = cmd
         .spawn()
@@ -3088,7 +3121,9 @@ where
         tokio::spawn(async move {
             let mut reader = BufReader::new(out).lines();
             while let Ok(Some(line)) = reader.next_line().await {
-                let _ = tx_out.send((LogStreamKind::Stdout, line));
+                if tx_out.send((LogStreamKind::Stdout, line)).is_err() {
+                    break;
+                }
             }
         });
     }
@@ -3098,7 +3133,9 @@ where
         tokio::spawn(async move {
             let mut reader = BufReader::new(err).lines();
             while let Ok(Some(line)) = reader.next_line().await {
-                let _ = tx_err.send((LogStreamKind::Stderr, line));
+                if tx_err.send((LogStreamKind::Stderr, line)).is_err() {
+                    break;
+                }
             }
         });
     }
@@ -3224,6 +3261,30 @@ pub fn evaluate_condition(expr: &str, ctx: &ExecutionContext) -> bool {
     }
 
     code == 0
+}
+
+fn validate_graph_connections(
+    graph: &WorkflowGraph,
+    nodes: &HashMap<String, &GraphNode>,
+) -> Result<(), String> {
+    if nodes.len() != graph.nodes.len() {
+        return Err("El grafo contiene IDs de nodo duplicados.".into());
+    }
+    let mut flow_outputs = HashSet::new();
+    for edge in &graph.edges {
+        if !nodes.contains_key(&edge.source) || !nodes.contains_key(&edge.target) {
+            return Err(format!("Conexión inválida: {} → {}", edge.source, edge.target));
+        }
+        let source = edge.source_handle.as_deref().unwrap_or("exec");
+        let target = edge.target_handle.as_deref().unwrap_or("exec");
+        if (source.ends_with("_ref") || target.ends_with("_ref")) && source != target {
+            return Err(format!("Puertos incompatibles: {source} → {target}"));
+        }
+        if !source.ends_with("_ref") && !flow_outputs.insert((edge.source.as_str(), source)) {
+            return Err(format!("El puerto '{source}' de '{}' tiene varias salidas.", edge.source));
+        }
+    }
+    Ok(())
 }
 
 fn find_next_node(edges: &[GraphEdge], source_id: &str, source_handle: &str) -> Option<String> {
@@ -4771,8 +4832,13 @@ mod tests {
         };
 
         let finish_summary = Arc::new(Mutex::new(String::new()));
+        let slow_step_succeeded = Arc::new(AtomicBool::new(false));
         let sum_clone = finish_summary.clone();
+        let success_clone = slow_step_succeeded.clone();
         let emitter: EventEmitter = Arc::new(move |ev| {
+            if matches!(&ev, EngineEvent::NodeStatus { node_id, status: NodeStatusKind::Success, .. } if node_id == "slow") {
+                success_clone.store(true, Ordering::SeqCst);
+            }
             if let EngineEvent::RunFinished { summary, .. } = ev {
                 *sum_clone.lock().unwrap() = summary;
             }
@@ -4790,10 +4856,36 @@ mod tests {
         .await;
 
         assert!(matches!(outcome, RunOutcomeKind::Exhausted));
+        assert!(!slow_step_succeeded.load(Ordering::SeqCst));
         assert!(
             finish_summary.lock().unwrap().contains("Run budget timeout reached"),
             "Expected timeout message, got: {}",
             finish_summary.lock().unwrap()
         );
+    }
+
+    #[test]
+    fn graph_validation_rejects_ambiguous_outputs_and_allows_shared_resources() {
+        let mut graph: WorkflowGraph = serde_json::from_value(json!({
+            "nodes": [
+                {"id":"a","data":{"kind":"model","title":"A"}},
+                {"id":"b","data":{"kind":"agent","title":"B"}},
+                {"id":"c","data":{"kind":"agent","title":"C"}}
+            ],
+            "edges": [
+                {"id":"1","source":"a","sourceHandle":"model_ref","target":"b","targetHandle":"model_ref"},
+                {"id":"2","source":"a","sourceHandle":"model_ref","target":"c","targetHandle":"model_ref"}
+            ]
+        })).unwrap();
+        let nodes = graph.nodes.iter().map(|node| (node.id.clone(), node)).collect();
+        assert!(validate_graph_connections(&graph, &nodes).is_ok());
+        for edge in &mut graph.edges {
+            edge.source_handle = Some("exec".into());
+            edge.target_handle = Some("exec".into());
+        }
+        assert!(validate_graph_connections(&graph, &nodes).unwrap_err().contains("varias salidas"));
+        graph.edges.pop();
+        graph.edges[0].target = "missing".into();
+        assert!(validate_graph_connections(&graph, &nodes).unwrap_err().contains("missing"));
     }
 }

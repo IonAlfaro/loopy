@@ -1120,15 +1120,29 @@ function LoorsStudioInner() {
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
-              isValidConnection={(connection) =>
-                arePortsCompatible(connection.sourceHandle ?? null, connection.targetHandle ?? null)
-              }
+              isValidConnection={(connection) => {
+                const source = connection.sourceHandle ?? "exec";
+                return arePortsCompatible(connection.sourceHandle, connection.targetHandle)
+                  && (source.endsWith("_ref") || !displayEdges.some((edge) =>
+                    edge.source === connection.source && (edge.sourceHandle ?? "exec") === source
+                  ));
+              }}
               onConnectEnd={(_, connection) => {
                 if (connection.isValid || !connection.fromHandle || !connection.toHandle) return;
                 if (!arePortsCompatible(connection.fromHandle.id, connection.toHandle.id)) {
                   setBanner(locale === "es"
                     ? "Los puertos de recursos deben ser del mismo tipo."
                     : "Resource ports must have the same type.");
+                } else {
+                  const source = connection.fromHandle.type === "source" ? connection.fromHandle : connection.toHandle;
+                  const port = source.id ?? "exec";
+                  if (!port.endsWith("_ref") && displayEdges.some((edge) =>
+                    edge.source === source.nodeId && (edge.sourceHandle ?? "exec") === port
+                  )) {
+                    setBanner(locale === "es"
+                      ? "Este puerto ya tiene una salida de flujo."
+                      : "This port already has an outgoing flow connection.");
+                  }
                 }
               }}
               onNodeClick={(_, node) => {
