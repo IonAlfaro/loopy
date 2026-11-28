@@ -2,6 +2,13 @@
 
 All notable changes to **Loors** are documented in this file.
 
+## [0.1.8] — Harness editing and document workflows
+
+- Added JSON transformation and document nodes to create Excel, Word, PDF, and CSV files and read their contents. The agent can also work with these formats.
+- Added undo and redo to the harness editor, improved node inspection and canvas navigation, and tightened workflow validation and swarm coordination.
+- Improved agent command verification and permission handling, added configurable execution limits, and folded successful tool activity.
+- Fixed closing the model tuning dialog during a save, aligned KaTeX dependencies, and excluded generated acceptance artifacts from builds.
+
 ## [0.1.6] — Harness workspace and Agent improvements
 
 ### Added
