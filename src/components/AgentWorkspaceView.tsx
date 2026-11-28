@@ -1,4 +1,5 @@
 import { AgentExecutionCheckpoint } from "./AgentExecutionCheckpoint";
+import { AgentLimitSettings } from "./AgentLimitSettings";
 import { AgentPermissionPicker } from "./AgentPermissionPicker";
 import { AgentModelList } from "./AgentModelList";
 import { useAgentModelGroups } from "./useAgentModelGroups";
@@ -177,7 +178,7 @@ export function AgentWorkspaceView() {
       : rawHarnessModel;
 
   const sidebarOpen = useGraphStore((s) => s.leftPanelOpen);
-  const rightPanelOpen = useGraphStore((s) => s.rightPanelOpen);
+  const rightPanelOpen = useGraphStore((s) => s.appMode === "agent" && s.rightPanelOpen);
   const setRightPanelOpen = useGraphStore((s) => s.setRightPanelOpen);
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const saved = Number(localStorage.getItem("loors_agent_left_w"));
@@ -185,7 +186,15 @@ export function AgentWorkspaceView() {
   });
   const [rightPanelWidth, setRightPanelWidth] = useState<number>(() => {
     const saved = Number(localStorage.getItem("loors_agent_right_w"));
-    return Number.isFinite(saved) && saved >= 260 && saved <= 680 ? saved : 390;
+    return Number.isFinite(saved) && saved >= 260 && saved <= 680 ? saved : 290;
+  });
+  const [diffPanelWidth, setDiffPanelWidth] = useState<number>(() => {
+    const saved = Number(localStorage.getItem("loors_agent_diff_w"));
+    return Number.isFinite(saved) && saved >= 320 && saved <= 680 ? saved : 420;
+  });
+  const [browserPanelWidth, setBrowserPanelWidth] = useState<number>(() => {
+    const saved = Number(localStorage.getItem("loors_agent_browser_w"));
+    return Number.isFinite(saved) && saved >= 420 && saved <= 980 ? saved : 580;
   });
 
   const [projects, setProjects] = useState<string[]>(() => loadStoredProjects());
@@ -296,6 +305,9 @@ export function AgentWorkspaceView() {
   const [pinQuery, setPinQuery] = useState("");
   const [pinResults, setPinResults] = useState<string[]>([]);
   const [rightPanelTab, setRightPanelTab] = useState<"files" | "diff" | "browser">("files");
+  const browserPanel = rightPanelTab === "browser";
+  const diffPanel = rightPanelTab === "diff";
+  const activePanelWidth = browserPanel ? browserPanelWidth : diffPanel ? diffPanelWidth : rightPanelWidth;
   const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
   const [fileFilter, setFileFilter] = useState("");
   const [selectedPreviewFile, setSelectedPreviewFile] = useState<string | null>(null);
@@ -965,6 +977,7 @@ export function AgentWorkspaceView() {
       permissionMode: session.permissionMode,
       useRag: session.useRag,
       compactAtTokens: session.compactAtTokens ?? 0,
+      agentLimits: session.agentLimits,
       reasoningEffort: session.reasoningEffort ?? "medium",
       enabledSkills: session.enabledSkills,
       pinnedFiles: [],
@@ -1977,7 +1990,7 @@ export function AgentWorkspaceView() {
         }}
       >
         <div className="agent-session-header">
-          <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+          <div className="agent-session-identity">
             <button
               type="button"
               className="header-crumb-btn truncate-text"
@@ -2150,7 +2163,7 @@ export function AgentWorkspaceView() {
           </div>
 
           {showJumpToLatest && (
-            <div style={{ display: "flex", justifyContent: "center", padding: "4px" }}>
+            <div className="agent-jump-latest">
               <button type="button" className="btn-secondary btn-xs" onClick={() => {
                 stickToBottomRef.current = true;
                 setShowJumpToLatest(false);
@@ -2879,6 +2892,16 @@ export function AgentWorkspaceView() {
                         ? "Añade un mapa del proyecto y permite buscar fragmentos relevantes en sus archivos."
                         : "Adds a project map and lets the agent search for relevant snippets in its files."}</p>
 
+                      <AgentLimitSettings
+                        key={session.id}
+                        limits={session.agentLimits}
+                        disabled={isCurrentRunning}
+                        onSave={(agentLimits) => {
+                          const current = sessionRef.current;
+                          if (current.id === session.id) void persistSession({ ...current, agentLimits });
+                        }}
+                      />
+
                       {skills.length > 0 && (
                         <fieldset className="context-skills" aria-describedby="context-skills-help">
                           <legend>{locale === "es" ? "Skills de la conversación" : "Conversation skills"}</legend>
@@ -2919,30 +2942,25 @@ export function AgentWorkspaceView() {
 
           {rightPanelOpen && (
             <>
-              {!(rightPanelTab === "browser" && browserExpanded) && (
+              {!(browserPanel && browserExpanded) && (
               <PanelResizer
+                key={rightPanelTab}
                 label={locale === "es" ? "Ajustar panel derecho" : "Resize right panel"}
                 side="right"
-                width={rightPanelWidth}
-                min={260}
-                max={680}
-                defaultWidth={390}
-                storageKey="loors_agent_right_w"
-                onResize={setRightPanelWidth}
+                width={activePanelWidth}
+                min={browserPanel ? 420 : diffPanel ? 320 : 260}
+                max={browserPanel ? 980 : 680}
+                defaultWidth={browserPanel ? 580 : diffPanel ? 420 : 290}
+                storageKey={browserPanel ? "loors_agent_browser_w" : diffPanel ? "loors_agent_diff_w" : "loors_agent_right_w"}
+                onResize={browserPanel ? setBrowserPanelWidth : diffPanel ? setDiffPanelWidth : setRightPanelWidth}
               />
               )}
               <aside
                 className={`agent-workbench-drawer ${rightPanelTab === "browser" ? "browser-mode" : ""} ${rightPanelTab === "browser" && browserExpanded ? "expanded" : ""}`}
-                style={
-                  rightPanelTab === "browser"
-                    ? browserExpanded
-                      ? undefined
-                      : {
-                          width: Math.max(rightPanelWidth, Math.round(window.innerWidth * 0.46)),
-                          minWidth: 420,
-                        }
-                    : { width: rightPanelWidth, minWidth: rightPanelWidth }
-                }
+                style={browserPanel && browserExpanded ? undefined : {
+                  width: `min(${activePanelWidth}px, ${browserPanel ? 58 : diffPanel ? 46 : 34}vw)`,
+                  minWidth: 0,
+                }}
               >
               {rightPanelTab !== "browser" && (
               <div className="workbench-drawer-head">

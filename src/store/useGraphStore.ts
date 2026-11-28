@@ -491,6 +491,16 @@ const BOOT_TABS = loadInitialTabsState();
 const BOOT_ACTIVE =
   BOOT_TABS.tabs.find((t) => t.id === BOOT_TABS.activeId) ?? BOOT_TABS.tabs[0];
 
+const initialAppMode: AppMode = typeof window !== "undefined"
+  && window.localStorage.getItem("loors_app_mode") === "harness" ? "harness" : "agent";
+const panelStorageKey = (mode: AppMode, side: "left" | "right") => `loors_${mode}_${side}_open`;
+
+function readPanelOpen(mode: AppMode, side: "left" | "right") {
+  const saved = typeof window === "undefined"
+    ? null : window.localStorage.getItem(panelStorageKey(mode, side));
+  return saved === null ? side === "left" || mode === "harness" : saved === "true";
+}
+
 type GraphSnapshot = Pick<GraphStoreState, "nodes" | "edges">;
 type GraphEdit = Partial<GraphSnapshot & Pick<GraphStoreState, "selectedNodeId">>;
 
@@ -778,15 +788,13 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     });
   },
   customNodes: [],
-  appMode: (typeof window !== "undefined" && window.localStorage.getItem("loors_app_mode") === "harness")
-    ? "harness"
-    : "agent",
+  appMode: initialAppMode,
   locale:
     typeof window !== "undefined" && window.localStorage.getItem("loors_locale") === "es"
       ? "es"
       : "en",
-  leftPanelOpen: true,
-  rightPanelOpen: true,
+  leftPanelOpen: readPanelOpen(initialAppMode, "left"),
+  rightPanelOpen: readPanelOpen(initialAppMode, "right"),
   rightPanelTab: "inspector",
   dimResourceEdges: true,
   tuningModalModelPath: null,
@@ -802,7 +810,13 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     if (typeof window !== "undefined") {
       window.localStorage.setItem("loors_app_mode", appMode);
     }
-    set({ appMode });
+    if (get().appMode !== appMode) {
+      set({
+        appMode,
+        leftPanelOpen: readPanelOpen(appMode, "left"),
+        rightPanelOpen: readPanelOpen(appMode, "right"),
+      });
+    }
   },
   setLocale: (locale) => {
     if (typeof window !== "undefined") {
@@ -810,8 +824,14 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     }
     set({ locale });
   },
-  setLeftPanelOpen: (leftPanelOpen) => set({ leftPanelOpen }),
-  setRightPanelOpen: (rightPanelOpen) => set({ rightPanelOpen }),
+  setLeftPanelOpen: (leftPanelOpen) => {
+    if (typeof window !== "undefined") window.localStorage.setItem(panelStorageKey(get().appMode, "left"), String(leftPanelOpen));
+    set({ leftPanelOpen });
+  },
+  setRightPanelOpen: (rightPanelOpen) => {
+    if (typeof window !== "undefined") window.localStorage.setItem(panelStorageKey(get().appMode, "right"), String(rightPanelOpen));
+    set({ rightPanelOpen });
+  },
   setModelLoadProgress: (modelLoadProgress) => set({ modelLoadProgress }),
   setDownloadsDockOpen: (downloadsDockOpen) => set({ downloadsDockOpen }),
   upsertModelDownload: (ev) => {

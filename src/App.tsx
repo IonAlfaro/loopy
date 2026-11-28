@@ -4,6 +4,7 @@ import {
   Background,
   Controls,
   MiniMap,
+  MarkerType,
   Panel,
   ReactFlow,
   ReactFlowProvider,
@@ -159,6 +160,8 @@ function LoorsStudioInner() {
   });
 
   const [banner, setBanner] = useState<string | null>(null);
+  const [harnessNotice, setHarnessNotice] = useState<{ tabId: string; text: string } | null>(null);
+  const [canvasZoom, setCanvasZoom] = useState(1);
   const [inspectorEdgeId, setInspectorEdgeId] = useState<string | null>(null);
   const [pendingHarnessClose, setPendingHarnessClose] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -235,7 +238,7 @@ function LoorsStudioInner() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [appMode, consoleOpen, setAppMode, setConsoleOpen]);
+  }, [appMode, consoleOpen, leftPanelOpen, rightPanelOpen, setAppMode, setConsoleOpen, setLeftPanelOpen, setRightPanelOpen]);
 
   useEffect(() => {
     const onOpenModels = (ev: Event) => {
@@ -361,29 +364,42 @@ function LoorsStudioInner() {
     };
   }, [setModelLoadProgress]);
 
+  const focusHarnessNode = (id: string) => {
+    setSelectedNodeId(id);
+    setRightPanelTab("inspector");
+    void fitView({ nodes: [{ id }], minZoom: 0.75, maxZoom: 1.15, padding: 0.4, duration: 200 });
+  };
+
+  const showEdgeLabels = canvasZoom >= 0.7;
   const displayEdges = useMemo(() => {
     const kindById = new Map(nodes.map((node) => [node.id, node.data.kind]));
     return edges.map((edge) => {
       const sourceKind = kindById.get(edge.source);
-      const dimmed = dimResourceEdges && sourceKind && isResourceKind(sourceKind)
-        && edge.sourceHandle !== "exec";
+      const resource = Boolean(edge.sourceHandle?.endsWith("_ref")
+        || (sourceKind && isResourceKind(sourceKind) && edge.sourceHandle !== "exec"));
       const connected = edge.source === selectedNodeId || edge.target === selectedNodeId;
       const highlighted = connected && edge.id === inspectorEdgeId && rightPanelTab === "inspector" && !rightPanelCollapsed;
-      if (!dimmed && !connected) return edge;
+      const stroke = highlighted ? "#a78bfa" : edge.style?.stroke ?? (resource ? "#84849a" : "#a1a1b5");
       return {
         ...edge,
+        markerEnd: edge.markerEnd ?? (resource ? undefined : {
+          type: MarkerType.ArrowClosed, color: stroke, width: 15, height: 15,
+        }),
+        label: edge.label ?? (edge.sourceHandle === "retry" && (connected || showEdgeLabels)
+          ? (locale === "es" ? "Reintento" : "Retry") : undefined),
         className: connected
           ? [edge.className, "is-connected-to-selection"].filter(Boolean).join(" ")
           : edge.className,
         style: {
           ...edge.style,
-          opacity: connected ? 1 : 0.5,
-          stroke: highlighted ? "#a78bfa" : edge.style?.stroke,
-          strokeWidth: highlighted ? 4 : connected ? 2.6 : edge.style?.strokeWidth ?? 1.7,
+          stroke,
+          strokeDasharray: edge.style?.strokeDasharray ?? (resource ? "5 4" : undefined),
+          opacity: connected ? 1 : dimResourceEdges && resource ? 0.35 : edge.style?.opacity ?? 1,
+          strokeWidth: highlighted ? 4 : connected ? 2.6 : edge.style?.strokeWidth ?? (resource ? 1.4 : 1.9),
         },
       };
     });
-  }, [edges, nodes, dimResourceEdges, selectedNodeId, inspectorEdgeId, rightPanelTab, rightPanelCollapsed]);
+  }, [edges, nodes, dimResourceEdges, selectedNodeId, showEdgeLabels, locale, inspectorEdgeId, rightPanelTab, rightPanelCollapsed]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -644,10 +660,8 @@ function LoorsStudioInner() {
     try {
       const saved = await saveHarness(tabId);
       if (saved && !silent) {
-        const { name } = saved;
         setJustSaved(true);
         window.setTimeout(() => setJustSaved(false), 1600);
-        setBanner(locale === "es" ? `Guardado: ${name}` : `Saved: ${name}`);
       }
     } catch (error) {
       setBanner(saveFailure(error));
@@ -1055,10 +1069,19 @@ function LoorsStudioInner() {
         <div className="loors-center">
           <div className="harness-tabbar" role="tablist" aria-label="Harness tabs">
             <div className="harness-tabs-scroll">
-              {harnessTabs.map((tab) => {
+              {harnessTabs.map((tab, tabIndex) => {
                 const isActive = tab.id === activeHarnessTabId;
                 const status = isActive ? runStatus : tab.runStatus;
                 const title = isActive ? workflowName : tab.workflowName;
+                const duplicateTitle = harnessTabs.some((other) => other.id !== tab.id && (
+                  other.id === activeHarnessTabId ? workflowName : other.workflowName
+                ) === title);
+                const visibleTitle = duplicateTitle ? `${tabIndex + 1}. ${title}` : title;
+                const tabDirty = isActive ? dirty : tab.dirty;
+                const tabSavedName = isActive ? savedLibraryName : tab.savedLibraryName;
+                const documentStatus = tabDirty
+                  ? (locale === "es" ? "Cambios sin guardar" : "Unsaved changes")
+                  : tabSavedName ? (locale === "es" ? "Guardado" : "Saved") : "";
                 const hasGate = Boolean(isActive ? pendingGate : tab.pendingGate);
                 return (
                   <div
@@ -1066,7 +1089,13 @@ function LoorsStudioInner() {
                     role="tab"
                     aria-selected={isActive}
                     className={`harness-tab ${isActive ? "active" : ""} ${status === "running" ? "is-running" : ""}`}
-                    title={title}
+                    tabIndex={0}
+                    title={[visibleTitle, documentStatus].filter(Boolean).join(" · ")}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget || !["Enter", " "].includes(event.key)) return;
+                      event.preventDefault();
+                      if (!isActive) switchHarnessTab(tab.id);
+                    }}
                     onClick={() => {
                       if (!isActive) {
                         switchHarnessTab(tab.id);
@@ -1087,8 +1116,9 @@ function LoorsStudioInner() {
                       }`}
                     />
                     <span className="harness-tab-title truncate-text">
-                      {title || "harness"}
+                      {visibleTitle || (locale === "es" ? "Arnés" : "Harness")}
                     </span>
+                    {tabDirty && <span className="harness-tab-unsaved" aria-label={documentStatus} />}
                     {harnessTabs.length > 1 && (
                       <button
                         type="button"
@@ -1118,6 +1148,9 @@ function LoorsStudioInner() {
                 <Plus size={13} />
               </button>
             </div>
+            {harnessNotice?.tabId === activeHarnessTabId && (
+              <span className="harness-tab-notice" role="status" title={harnessNotice.text}>{harnessNotice.text}</span>
+            )}
           </div>
 
           <main
@@ -1128,6 +1161,7 @@ function LoorsStudioInner() {
             onDoubleClick={handlePaneDoubleClick}
           >
             <ReactFlow
+              className={canvasZoom < 0.55 ? "canvas-overview" : undefined}
               nodes={nodes}
               edges={displayEdges}
               nodeTypes={nodeTypes}
@@ -1176,6 +1210,7 @@ function LoorsStudioInner() {
                 );
                 return false;
               }}
+              onViewportChange={(viewport) => setCanvasZoom(viewport.zoom)}
               onMoveEnd={(_, viewport) => {
                 if (appMode === "harness" && canvasRef.current?.clientWidth) {
                   harnessViewports.current.set(activeHarnessTabId, viewport);
@@ -1207,11 +1242,21 @@ function LoorsStudioInner() {
                 <button
                   type="button"
                   className={`btn-secondary ${dimResourceEdges ? "btn-active" : ""}`}
+                  aria-pressed={dimResourceEdges}
+                  title={locale === "es" ? "Atenuar conexiones de recursos" : "Dim resource connections"}
                   onClick={() => setDimResourceEdges(!dimResourceEdges)}
                 >
                   {dimResourceEdges ? <EyeOff size={13} /> : <Eye size={13} />}
-                  <span>{t("canvas.wires")}</span>
+                  <span>{locale === "es" ? "Recursos" : "Resources"}</span>
                 </button>
+                {selectedNodeId && (
+                  <button type="button" className="btn-secondary" onClick={() => focusHarnessNode(selectedNodeId)}>
+                    {locale === "es" ? "Centrar selección" : "Center selection"}
+                  </button>
+                )}
+                <output className="canvas-zoom" aria-label={locale === "es" ? "Zoom del lienzo" : "Canvas zoom"}>
+                  {Math.round(canvasZoom * 100)}%
+                </output>
               </Panel>
             </ReactFlow>
 
@@ -1276,7 +1321,7 @@ function LoorsStudioInner() {
             )}
           </main>
 
-          <ConsolePanel />
+          <ConsolePanel onFocusNode={focusHarnessNode} />
         </div>
 
         {!rightPanelCollapsed && (
@@ -1339,7 +1384,7 @@ function LoorsStudioInner() {
             style={{ display: rightPanelTab === "inspector" ? "flex" : "none" }}
           >
             <Inspector key={activeHarnessTabId} onHighlightEdge={setInspectorEdgeId}
-              onRun={() => void handleRun()} onShowConsole={() => setConsoleOpen(true)} onStartHarness={() => {
+              onShowConsole={() => setConsoleOpen(true)} onStartHarness={() => {
               createHarnessTab();
               const state = useGraphStore.getState();
               state.setSelectedNodeId(state.nodes.find((node) => node.data.kind === "task_input")?.id ?? null);
@@ -1372,13 +1417,9 @@ function LoorsStudioInner() {
                   }, 30);
                 }
                 const applied = opts.summary || (locale === "es" ? `Arnés aplicado: ${wf.name}` : `Harness applied: ${wf.name}`);
-                setBanner(applied);
+                setHarnessNotice({ tabId, text: applied });
                 if (shouldSave) {
-                  void saveHarness(tabId, true).then((saved) => {
-                    if (saved && useGraphStore.getState().activeHarnessTabId === tabId) {
-                      setBanner(locale === "es" ? `Guardado: ${saved.name}` : `Saved: ${saved.name}`);
-                    }
-                  }).catch((error) => setBanner(saveFailure(error)));
+                  void saveHarness(tabId, true).catch((error) => setBanner(saveFailure(error)));
                 }
               }}
             />

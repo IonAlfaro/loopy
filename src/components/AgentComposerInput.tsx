@@ -14,7 +14,7 @@ export function AgentComposerInput({ inputRef, value, placeholder, label, onChan
   const composing = useRef(false);
   return <textarea
     ref={inputRef}
-    rows={2}
+    rows={1}
     aria-label={label}
     placeholder={placeholder}
     value={value}

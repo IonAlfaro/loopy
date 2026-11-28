@@ -330,9 +330,8 @@ function WorkerTools({ tools, label, onChange }: {
   );
 }
 
-export function Inspector({ onStartHarness, onRun, onShowConsole, onHighlightEdge }: {
+export function Inspector({ onStartHarness, onShowConsole, onHighlightEdge }: {
   onStartHarness: () => void;
-  onRun: () => void;
   onShowConsole: () => void;
   onHighlightEdge: (edgeId: string | null) => void;
 }) {
@@ -534,8 +533,7 @@ export function Inspector({ onStartHarness, onRun, onShowConsole, onHighlightEdg
       : incompleteTask ? L("Set up task", "Configurar tarea")
       : modelIssueNode === nextNode && modelIssueNode ? modelDetail
       : nextNode ? L("Review the next issue", "Revisar qué falta")
-      : issue ? L("Create a starter harness", "Crear un arnés básico")
-      : L("Run harness", "Ejecutar arnés");
+      : L("Create a starter harness", "Crear un arnés básico");
 
     return (
       <div className="loors-inspector harness-overview">
@@ -543,10 +541,9 @@ export function Inspector({ onStartHarness, onRun, onShowConsole, onHighlightEdg
           <div className="harness-overview-title">
             <h2 title={workflowName}>{workflowName}</h2>
             <span className="harness-overview-status" data-state={running ? "running" : blocked ? "blocked" : "ready"}>
-              {running ? L("Running", "En ejecución") : blocked ? L("Setup needed", "Por configurar") : L("Ready", "Listo")}
+              {running ? L("Running", "En ejecución") : blocked ? L("Setup needed", "Por configurar") : L("Ready to run", "Listo para ejecutar")}
             </span>
           </div>
-          <p>{L("A harness runs the connected steps on the canvas.", "Un arnés ejecuta los pasos conectados en el lienzo.")}</p>
         </div>
         <div className="harness-overview-rows">
           {taskNode && (
@@ -570,15 +567,14 @@ export function Inspector({ onStartHarness, onRun, onShowConsole, onHighlightEdg
           )}
         </div>
         {issue && !nextNode && <p className="harness-overview-issue">{issue.message}</p>}
-        <button type="button" className="btn-primary harness-overview-action" onClick={() => {
+        {(blocked || running) && <button type="button" className="btn-secondary harness-overview-action" onClick={() => {
           if (running) onShowConsole();
           else if (nextNode) jumpToNode(nextNode);
           else if (issue) onStartHarness();
-          else onRun();
         }}>
           {blocked && !running ? <ChevronRight size={15} /> : <Play size={14} />}
           {actionLabel}
-        </button>
+        </button>}
         {hasRun && !running && (
           <button type="button" className="harness-overview-link" onClick={onShowConsole}>
             {L("View last run", "Ver última ejecución")}

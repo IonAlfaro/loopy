@@ -20,15 +20,18 @@ const STATUS_LABELS: Record<string, { en: string; es: string }> = {
   cancelled: { en: "Stopped", es: "Detenido" },
 };
 
-export function ConsolePanel() {
+export function ConsolePanel({ onFocusNode }: { onFocusNode: (id: string) => void }) {
   const { locale } = useI18n();
   const L = (en: string, es: string) => (locale === "es" ? es : en);
   const nodes = useGraphStore((s) => s.nodes);
+  const nodeIds = useMemo(() => new Set(nodes.map((node) => node.id)), [nodes]);
   const runStatus = useGraphStore((s) => s.runStatus);
   const currentIteration = useGraphStore((s) => s.currentIteration);
   const maxIterations = useGraphStore((s) => s.maxIterations);
   const runSummary = useGraphStore((s) => s.runSummary);
   const activeActivity = useGraphStore((s) => s.activeActivity);
+  const statusLabel = STATUS_LABELS[runStatus]?.[locale] ?? runStatus;
+  const statusDetail = runStatus === "running" ? activeActivity : runSummary;
   const logs = useGraphStore((s) => s.logs);
   const swarmAgents = useGraphStore((s) => s.swarmAgents);
   const swarmMessages = useGraphStore((s) => s.swarmMessages);
@@ -268,12 +271,10 @@ export function ConsolePanel() {
 
           <span className="console-sep" aria-hidden="true" />
 
-          <div className={`console-status console-status-${runStatus}`}>
+          <div className={`console-status console-status-${runStatus}`} title={statusDetail || undefined}>
             <span className="console-status-dot" />
             <span className="console-status-text">
-              {runStatus === "running" && activeActivity
-                ? activeActivity
-                : (STATUS_LABELS[runStatus]?.[locale === "es" ? "es" : "en"] ?? runStatus)}
+              {statusLabel}
             </span>
             {currentIteration > 0 && (
               <span className="console-status-meta">
@@ -281,8 +282,8 @@ export function ConsolePanel() {
                 {maxIterations ? `/${maxIterations}` : ""}
               </span>
             )}
-            {runStatus !== "running" && runSummary && (
-              <span className="console-status-summary">· {runSummary}</span>
+            {statusDetail && (
+              <span className="console-status-summary">· {statusDetail}</span>
             )}
           </div>
         </div>
@@ -536,7 +537,13 @@ export function ConsolePanel() {
               <div key={entry.id} className={`log-line stream-${entry.stream}`}>
                 <span className="log-time">{entry.timestamp}</span>
                 <span className="log-iter">#{entry.iteration}</span>
-                <span className="log-node">{entry.nodeTitle}</span>
+                {nodeIds.has(entry.nodeId) ? (
+                  <button type="button" className="log-node log-node-link"
+                    title={`${L("Center node", "Centrar nodo")} · ${entry.nodeTitle}`}
+                    onClick={() => onFocusNode(entry.nodeId)}>
+                    {entry.nodeTitle}
+                  </button>
+                ) : <span className="log-node">{entry.nodeTitle}</span>}
                 <span className="log-text">{entry.text}</span>
               </div>
             ))

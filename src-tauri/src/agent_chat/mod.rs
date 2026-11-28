@@ -1,4 +1,4 @@
-﻿use crate::engine::executor::{compact_agent_messages, parse_inline_tool_calls};
+use crate::engine::executor::{compact_agent_messages, parse_inline_tool_calls};
 use crate::engine::executor::{
     chat_prompt_tokens, chat_tool_bytes, compact_local_agent_messages, compaction_threshold,
     local_tool_preview,
@@ -127,6 +127,8 @@ pub struct AgentSession {
     pub use_rag: bool,
     #[serde(default)]
     pub compact_at_tokens: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_limits: Option<AgentLimits>,
     #[serde(default)]
     pub reasoning_effort: Option<String>,
     #[serde(default)]
@@ -256,12 +258,12 @@ impl AgentChatState {
         self.turns.lock().map_or(true, |turns| !turns.is_empty())
     }
 
-    fn begin_turn(&self, id: &str) -> Result<Arc<AgentTurnState>, String> {
+    fn begin_turn(&self, id: &str, budget: HarnessBudget) -> Result<Arc<AgentTurnState>, String> {
         let mut turns = self.turns.lock().map_err(|_| "Agent lock poisoned")?;
         if turns.contains_key(id) {
             return Err("This conversation already has an active turn.".into());
         }
-        let turn = Arc::new(AgentTurnState::default());
+        let turn = Arc::new(AgentTurnState { budget, ..Default::default() });
         turns.insert(id.to_owned(), turn.clone());
         Ok(turn)
     }
@@ -315,6 +317,17 @@ impl AgentChatState {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AgentLimits {
+    iterations: Option<usize>,
+    total_inferences: Option<usize>,
+    verifier_steps: Option<usize>,
+    review_attempts: Option<usize>,
+    identical_results: Option<usize>,
+    recovery_attempts: Option<usize>,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct HarnessBudget {
     iterations: usize,
@@ -327,17 +340,23 @@ struct HarnessBudget {
 
 impl Default for HarnessBudget {
     fn default() -> Self {
-        fn read(name: &str, default: usize, min: usize, max: usize) -> usize {
-            std::env::var(name).ok().and_then(|v| v.parse::<usize>().ok())
+        Self::resolve(AgentLimits::default())
+    }
+}
+
+impl HarnessBudget {
+    fn resolve(limits: AgentLimits) -> Self {
+        fn read(value: Option<usize>, name: &str, default: usize, min: usize, max: usize) -> usize {
+            value.or_else(|| std::env::var(name).ok().and_then(|v| v.parse::<usize>().ok()))
                 .unwrap_or(default).clamp(min, max)
         }
         Self {
-            iterations: read("LOORS_AGENT_ITERATIONS", 40, 1, 200),
-            total_inferences: read("LOORS_AGENT_TOTAL_INFERENCES", 100, 1, 1000),
-            verifier_steps: read("LOORS_AGENT_VERIFIER_STEPS", 6, 1, 20),
-            review_attempts: read("LOORS_AGENT_REVIEW_ATTEMPTS", 3, 1, 10),
-            identical_results: read("LOORS_AGENT_IDENTICAL_RESULTS", 4, 2, 20),
-            recovery_attempts: read("LOORS_AGENT_RECOVERY_ATTEMPTS", 2, 0, 10),
+            iterations: read(limits.iterations, "LOORS_AGENT_ITERATIONS", 40, 1, 200),
+            total_inferences: read(limits.total_inferences, "LOORS_AGENT_TOTAL_INFERENCES", 100, 1, 1000),
+            verifier_steps: read(limits.verifier_steps, "LOORS_AGENT_VERIFIER_STEPS", 6, 1, 20),
+            review_attempts: read(limits.review_attempts, "LOORS_AGENT_REVIEW_ATTEMPTS", 3, 1, 10),
+            identical_results: read(limits.identical_results, "LOORS_AGENT_IDENTICAL_RESULTS", 4, 2, 20),
+            recovery_attempts: read(limits.recovery_attempts, "LOORS_AGENT_RECOVERY_ATTEMPTS", 2, 0, 10),
         }
     }
 }
@@ -875,7 +894,8 @@ pub async fn run_agent_turn<F>(
 where
     F: Fn(AgentChatEvent) + Send + Sync + 'static,
 {
-    let turn = state.begin_turn(&session.id)?;
+    let budget = HarnessBudget::resolve(session.agent_limits.unwrap_or_default());
+    let turn = state.begin_turn(&session.id, budget)?;
     struct TurnGuard<'a>(&'a AgentChatState, String);
     impl Drop for TurnGuard<'_> {
         fn drop(&mut self) {
@@ -1637,7 +1657,10 @@ where
         if !execution.begin_iteration() { break; }
         if !state.reserve_inference() {
             execution.finish(TurnOutcome::Incomplete);
-            final_summary = "Global inference budget exhausted.".into();
+            final_summary = format!(
+                "Total model call budget exhausted ({}); work may be incomplete.",
+                state.budget.total_inferences,
+            );
             break;
         }
         emit(AgentChatEvent::HarnessProgress { session_id: session.id.clone(), phase: "reasoning".into(), task_title: state.execution_plan.lock().ok().and_then(|slot| slot.as_ref().and_then(|plan| plan.tasks.iter().find(|task| task.status == PlanTaskStatus::InProgress).map(|task| task.title.clone()))), inferences: state.inference_count.load(Ordering::SeqCst), inference_limit: state.budget.total_inferences });
@@ -3286,11 +3309,24 @@ mod tests {
     #[test]
     fn active_turns_isolate_stop_and_decisions_by_session() {
         let state = AgentChatState::default();
-        let first = state.begin_turn("first").unwrap();
-        let second = state.begin_turn("second").unwrap();
-        assert!(state.begin_turn("first").is_err());
+        let first_budget = HarnessBudget::resolve(AgentLimits {
+            total_inferences: Some(1),
+            ..Default::default()
+        });
+        let second_budget = HarnessBudget::resolve(AgentLimits {
+            total_inferences: Some(2),
+            ..Default::default()
+        });
+        let first = state.begin_turn("first", first_budget).unwrap();
+        let second = state.begin_turn("second", second_budget).unwrap();
+        assert!(state.begin_turn("first", HarnessBudget::default()).is_err());
         assert!(state.with_idle_session("first", || Ok(())).is_err());
         assert!(state.with_idle_session("third", || Ok(())).is_ok());
+        assert!(first.reserve_inference());
+        assert!(!first.reserve_inference());
+        assert!(second.reserve_inference());
+        assert!(second.reserve_inference());
+        assert!(!second.reserve_inference());
 
         let (first_tx, mut first_rx) = oneshot::channel();
         let (second_tx, mut second_rx) = oneshot::channel();
@@ -3342,6 +3378,11 @@ mod tests {
             permission_mode: PermissionMode::Ask,
             use_rag: false,
             compact_at_tokens: 0,
+            agent_limits: Some(AgentLimits {
+                iterations: Some(8),
+                recovery_attempts: Some(0),
+                ..Default::default()
+            }),
             reasoning_effort: None,
             enabled_skills: Vec::new(),
             pinned_files: Vec::new(),
@@ -3383,6 +3424,9 @@ mod tests {
 
         save_session_in(&sess_dir, &sess).unwrap();
         let updated = undo_tool_call_in_dir(&sess_dir, "s1", "m1", "c1").unwrap();
+        let budget = HarnessBudget::resolve(updated.agent_limits.unwrap());
+        assert_eq!(budget.iterations, 8);
+        assert_eq!(budget.recovery_attempts, 0);
         assert!(updated.messages[0].tool_calls[0].undone);
         assert_eq!(fs::read_to_string(&target).unwrap(), "estado original\n");
 

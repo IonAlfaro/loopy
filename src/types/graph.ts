@@ -359,6 +359,15 @@ export interface AgentChatMessage {
   contextCapacity?: number | null;
 }
 
+export interface AgentLimits {
+  iterations?: number;
+  totalInferences?: number;
+  verifierSteps?: number;
+  reviewAttempts?: number;
+  identicalResults?: number;
+  recoveryAttempts?: number;
+}
+
 export interface AgentSession {
   id: string;
   title: string;
@@ -367,6 +376,7 @@ export interface AgentSession {
   permissionMode: PermissionMode;
   useRag: boolean;
   compactAtTokens?: number;
+  agentLimits?: AgentLimits;
   reasoningEffort?: ReasoningEffort;
   enabledSkills: string[];
   pinnedFiles: string[];

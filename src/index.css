@@ -5313,6 +5313,8 @@ dialog.loors-dialog::backdrop {
   right: 0;
   bottom: calc(100% + 10px);
   width: min(340px, calc(100vw - 24px));
+  max-height: min(600px, 65dvh);
+  overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--border-strong);
   border-radius: 12px;
@@ -10215,7 +10217,7 @@ dialog.loors-dialog::backdrop {
 .zero-suggestion-btn:focus-visible { outline: 2px solid var(--studio-accent); outline-offset: 2px; }
 
 .agent-workspace-root .floating-composer {
-  padding: 14px 15px 11px;
+  padding: 10px 12px 8px;
   background: var(--panel-2);
   border: 1px solid var(--border-strong);
   border-radius: 12px;
@@ -10228,6 +10230,128 @@ dialog.loors-dialog::backdrop {
   color: var(--text);
   font-size: 14px;
   line-height: 1.55;
+  field-sizing: content;
+  min-height: 2.25em;
+  max-height: min(12em, 30vh);
+}
+
+.agent-workspace-root .composer-bar {
+  margin-top: 4px;
+  padding-top: 7px;
+  border-top: 0;
+}
+
+.agent-session-identity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  margin-inline-end: 12px;
+}
+
+.agent-session-identity .header-crumb-btn { max-width: 34%; }
+
+.agent-session-identity .session-title-input {
+  flex: 1;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.agent-jump-latest {
+  position: relative;
+  height: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+.agent-jump-latest button {
+  margin-bottom: 4px;
+  pointer-events: auto;
+}
+
+.agent-feed-inner .md-table td { min-width: 8ch; }
+.agent-feed-inner .md-table td code { word-break: normal; }
+
+.harness-tab-unsaved {
+  flex: 0 0 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--studio-accent);
+}
+
+.harness-tab-notice {
+  min-width: 0;
+  max-width: 35%;
+  align-self: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-inline: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.canvas-hud {
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: calc(100% - 30px);
+}
+
+.canvas-zoom {
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: var(--studio-rail);
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.loors-node .loors-node-title { font-size: 14px; font-weight: 650; }
+.loors-node .loors-node-type { color: var(--muted); }
+
+.loors-node.status-success:not(.is-selected) {
+  border-color: var(--border-strong);
+  box-shadow: none;
+}
+
+.canvas-overview .loors-node:not(.is-selected, .is-wiring) :is(.loors-port-label, .loors-node-type) {
+  opacity: 0;
+}
+
+.canvas-overview .loors-node:not(.is-selected, .is-wiring) .loors-handle { opacity: 0.55; }
+.loors-canvas .react-flow__edge-text { fill: var(--text); }
+.loors-canvas .react-flow__edge-textbg { fill: var(--studio-rail); }
+
+.palette-item.compact-row:not(:hover, :focus-visible) {
+  background: transparent;
+  border-color: transparent;
+}
+
+.palette-item.compact-row:not(:hover, :focus-visible) .palette-plus { opacity: 0.55; }
+.console-status :is(.console-status-text, .console-status-meta) { flex-shrink: 0; }
+.console-status-summary, .console-status-meta { color: var(--muted); }
+
+button.log-node-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  text-align: start;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+:is(.harness-tab, .canvas-hud button, .palette-item, .workbench-tab-btn, .panel-resizer, .log-node-link):focus-visible {
+  outline: 2px solid var(--studio-accent);
+  outline-offset: -2px;
 }
 
 .agent-workspace-root .floating-composer textarea::placeholder { color: var(--muted); }
@@ -10856,6 +10980,49 @@ dialog.loors-dialog::backdrop {
 }
 
 .context-skills .skills-checklist { margin-top: 8px; }
+
+.agent-limit-settings summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agent-limit-settings > p { margin-top: 8px; }
+
+.agent-limit-settings fieldset {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  border: 0;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.agent-limit-settings label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5rem;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.agent-limit-settings small { display: block; }
+
+.agent-limit-settings input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--panel);
+}
+
+.agent-limit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
 
 .hf-search-toolbar { flex-wrap: wrap; }
 .hf-search-toolbar .hub-search-box { flex: 1 1 190px; }
