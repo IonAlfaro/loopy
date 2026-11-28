@@ -80,6 +80,10 @@ Usa **exactamente** estos `kind` y nombres de puertos (`sourceHandle` / `targetH
 - `loop_guard`: in `[exec, feedback]` out `[retry, exhausted]` | config: `{ maxIterations (0=Continuo infinito), feedbackTemplate }`
 - `for_each`: in `[exec]` out `[item, done]` | config: `{ sourceTemplate, itemTemplate, maxItems }`
 - `json_validator`: in `[exec]` out `[valid, invalid]` | config: `{ sourceTemplate, requiredKeys, schemaJson }`
+- `data_transform`: in `[exec]` out `[exec]` | config: `{ sourceTemplate, rootPointer, fields: [{ pointer, name }] }`. Use JSON Pointer paths (e.g. `/results`). Field rules apply to each element of the selected array or to the selected value. An empty field list preserves the selection. Reference the result with `{{node:<id>}}`.
+- `create_excel` / `create_csv`: in `[exec]` out `[exec]` | config: `{ path, sourceTemplate, columnKeys }`. Use a new workspace-relative .xlsx / .csv path, a JSON array of objects as source, and optional newline-separated column keys. Returns the file path.
+- `create_word` / `create_pdf`: in `[exec]` out `[exec]` | config: `{ path, sourceTemplate }`. Use a new workspace-relative .docx / .pdf path and a JSON report `{ title, sections: [{ heading, paragraphs: [string], table: { headers: [string], rows: [[string]] } }] }`. The creation nodes return their path via `{{node:<id>}}`.
+- `read_document`: in `[exec]` out `[exec]` | config: `{ path }`. Reads a workspace-relative .docx, .xlsx, .pdf or .csv path (or a creation node's output). Returns text.
 - `git_checkpoint`: in `[exec]` out `[exec]` | config: `{ mode ("diff"|"snapshot"|"rollback"), workspace (opcional) }`
 - `context_compactor`: in `[exec]` out `[exec]` | config: `{ maxChars, template }`
 - `human_gate`: in `[exec]` out `[approved, rejected]` | config: `{ message }`

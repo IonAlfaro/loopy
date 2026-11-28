@@ -13,6 +13,12 @@ export type LoorsNodeKind =
   | "loop_guard"
   | "for_each"
   | "json_validator"
+  | "data_transform"
+  | "create_excel"
+  | "create_csv"
+  | "create_word"
+  | "create_pdf"
+  | "read_document"
   | "git_checkpoint"
   | "context_compactor"
   | "human_gate"
@@ -1003,6 +1009,10 @@ export const NODE_BLUEPRINTS: Record<LoorsNodeKind, NodeBlueprint> = {
         "read_file",
         "edit_file",
         "write_file",
+        "create_excel",
+        "create_csv",
+        "create_word",
+        "create_pdf",
         "run_cmd",
         "git_diff",
       ],
@@ -1299,6 +1309,70 @@ export const NODE_BLUEPRINTS: Record<LoorsNodeKind, NodeBlueprint> = {
       itemsSource: "{{agent_output}}",
       splitMode: "auto",
       maxItems: 0,
+    },
+  },
+  create_excel: {
+    kind: "create_excel",
+    label: "Crear Excel",
+    category: "Salida",
+    accent: "#22c55e",
+    description: "Convierte una lista de objetos JSON en un archivo .xlsx.",
+    inputs: [{ id: "exec", label: "exec", kind: "exec" }],
+    outputs: [{ id: "exec", label: "exec", kind: "exec" }],
+    defaultConfig: { path: "datos.xlsx", sourceTemplate: "{{agent_output}}", columnKeys: "" },
+  },
+  create_csv: {
+    kind: "create_csv",
+    label: "Crear CSV",
+    category: "Salida",
+    accent: "#14b8a6",
+    description: "Convierte una lista de objetos JSON en un archivo CSV separado por comas.",
+    inputs: [{ id: "exec", label: "exec", kind: "exec" }],
+    outputs: [{ id: "exec", label: "exec", kind: "exec" }],
+    defaultConfig: { path: "datos.csv", sourceTemplate: "{{agent_output}}", columnKeys: "" },
+  },
+  create_word: {
+    kind: "create_word",
+    label: "Crear Word",
+    category: "Salida",
+    accent: "#60a5fa",
+    description: "Genera un informe .docx editable con título, secciones y tablas.",
+    inputs: [{ id: "exec", label: "exec", kind: "exec" }],
+    outputs: [{ id: "exec", label: "exec", kind: "exec" }],
+    defaultConfig: { path: "informe.docx", sourceTemplate: "{{agent_output}}" },
+  },
+  create_pdf: {
+    kind: "create_pdf",
+    label: "Crear PDF",
+    category: "Salida",
+    accent: "#fb7185",
+    description: "Genera un informe PDF con título, secciones y tablas.",
+    inputs: [{ id: "exec", label: "exec", kind: "exec" }],
+    outputs: [{ id: "exec", label: "exec", kind: "exec" }],
+    defaultConfig: { path: "informe.pdf", sourceTemplate: "{{agent_output}}" },
+  },
+  read_document: {
+    kind: "read_document",
+    label: "Leer documento",
+    category: "Entrada",
+    accent: "#a78bfa",
+    description: "Lee el contenido de archivos .docx, .xlsx, .pdf y .csv del workspace.",
+    inputs: [{ id: "exec", label: "exec", kind: "exec" }],
+    outputs: [{ id: "exec", label: "exec", kind: "exec" }],
+    defaultConfig: { path: "" },
+  },
+  data_transform: {
+    kind: "data_transform",
+    label: "Transformar datos",
+    category: "Control",
+    accent: "#38bdf8",
+    description: "Extrae un valor JSON y selecciona o renombra campos de un objeto o de cada elemento de una lista.",
+    inputs: [{ id: "exec", label: "exec", kind: "exec" }],
+    outputs: [{ id: "exec", label: "exec", kind: "exec" }],
+    defaultConfig: {
+      sourceTemplate: "{{agent_output}}",
+      rootPointer: "",
+      fields: [],
     },
   },
   json_validator: {

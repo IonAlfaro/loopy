@@ -23,7 +23,12 @@ const NODE_SECTIONS: { id: string; titleKey: TranslationKey; kinds: LoorsNodeKin
   {
     id: "essentials",
     titleKey: "sidebar.essentials",
-    kinds: ["task_input", "trigger", "agent", "shell", "llm_judge", "loop_guard", "for_each", "json_validator", "output"],
+    kinds: ["task_input", "trigger", "agent", "shell", "llm_judge", "loop_guard", "for_each", "json_validator", "data_transform", "output"],
+  },
+  {
+    id: "documents",
+    titleKey: "sidebar.documents",
+    kinds: ["read_document", "create_excel", "create_csv", "create_word", "create_pdf"],
   },
   {
     id: "context",

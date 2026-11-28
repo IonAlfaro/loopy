@@ -20,6 +20,9 @@ pub async fn read_document_or_text(path: &Path) -> Result<String, String> {
         "pptx" => extract_pptx(path),
         "epub" => extract_epub(path),
         "pdf" => extract_pdf(path).await,
+        "csv" => fs::read_to_string(path)
+            .map(|text| text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned())
+            .map_err(|e| format!("Error leyendo archivo: {e}")),
         _ => fs::read_to_string(path).map_err(|e| format!("Error leyendo archivo: {e}")),
     }
 }
@@ -255,88 +258,20 @@ fn extract_epub(path: &Path) -> Result<String, String> {
 }
 
 async fn extract_pdf(path: &Path) -> Result<String, String> {
-    let raw_bytes = fs::read(path).map_err(|e| format!("Error leyendo PDF: {e}"))?;
-    let raw_lossy = String::from_utf8_lossy(&raw_bytes);
-    let pure_rust_txt = extract_pdf_bt_et(&raw_lossy);
-
-    if pure_rust_txt.trim().len() >= 80 {
-        return Ok(pure_rust_txt);
+    let path = path.to_owned();
+    let text = tokio::task::spawn_blocking(move || {
+        let document = lopdf::Document::load(path)?;
+        let pages: Vec<u32> = document.get_pages().into_keys().collect();
+        document.extract_text(&pages)
+    })
+        .await
+        .map_err(|error| format!("No se pudo procesar el PDF: {error}"))?
+        .map_err(|error| format!("No se pudo extraer texto del PDF: {error}"))?;
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("El PDF no contiene texto extraíble. Los PDF escaneados necesitan OCR.".into());
     }
-
-    // Fallback: Python extractor supporting pypdf / fitz / pdfplumber / stdlib zlib FlateDecode streams
-    let py_script = r#"import sys, re, zlib
-p = sys.argv[1]
-try:
-    import fitz
-    doc = fitz.open(p)
-    print("\n".join(page.get_text() for page in doc))
-    sys.exit(0)
-except Exception:
-    pass
-try:
-    from pypdf import PdfReader
-    r = PdfReader(p)
-    print("\n".join((page.extract_text() or "") for page in r.pages))
-    sys.exit(0)
-except Exception:
-    pass
-data = open(p, "rb").read()
-out = []
-for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.S):
-    chunk = m.group(1)
-    try:
-        chunk = zlib.decompress(chunk)
-    except Exception:
-        pass
-    txt = chunk.decode("latin-1", errors="ignore")
-    for bt in re.finditer(r"BT(.*?)ET", txt, re.S):
-        parts = re.findall(r"\(([^()\\]*(?:\\.[^()\\]*)*)\)", bt.group(1))
-        if parts:
-            line = "".join(parts).replace("\\n", "\n").replace("\\r", "").replace("\\(", "(").replace("\\)", ")")
-            out.append(line)
-print("\n".join(out))"#;
-
-    let mut cmd = tokio::process::Command::new("python");
-    cmd.arg("-c")
-        .arg(py_script)
-        .arg(path)
-        .kill_on_drop(true);
-    if let Ok(out) = tokio::time::timeout(std::time::Duration::from_secs(15), cmd.output()).await {
-        if let Ok(o) = out {
-            let txt = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if !txt.is_empty() {
-                return Ok(txt);
-            }
-        }
-    }
-
-    if !pure_rust_txt.trim().is_empty() {
-        Ok(pure_rust_txt)
-    } else {
-        Err("El PDF está comprimido o basado en imágenes escaneadas; no se pudo extraer texto plano sin pypdf/PyMuPDF.".to_string())
-    }
-}
-
-fn extract_pdf_bt_et(raw: &str) -> String {
-    let re_bt = Regex::new(r"(?s)BT(.*?)ET").unwrap();
-    let re_str = Regex::new(r"\(([^()\\]*(?:\\.[^()\\]*)*)\)").unwrap();
-    let mut lines = Vec::new();
-    for bt in re_bt.captures_iter(raw) {
-        let mut block = String::new();
-        for s in re_str.captures_iter(&bt[1]) {
-            let clean = s[1]
-                .replace("\\n", "\n")
-                .replace("\\r", "")
-                .replace("\\(", "(")
-                .replace("\\)", ")")
-                .replace("\\\\", "\\");
-            block.push_str(&clean);
-        }
-        if !block.trim().is_empty() {
-            lines.push(block.trim().to_string());
-        }
-    }
-    lines.join("\n")
+    Ok(text.to_owned())
 }
 
 /// Extracts key article metadata (`og:image`, `twitter:image`, published date, and up to 4

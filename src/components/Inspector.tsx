@@ -118,6 +118,10 @@ const TOOL_GROUPS: { titleEn: string; titleEs: string; tools: { id: string; labe
       { id: "read_file", label: "read_file" },
       { id: "edit_file", label: "edit_file" },
       { id: "write_file", label: "write_file" },
+      { id: "create_excel", label: "create_excel" },
+      { id: "create_csv", label: "create_csv" },
+      { id: "create_word", label: "create_word" },
+      { id: "create_pdf", label: "create_pdf" },
       { id: "delete_file", label: "delete_file" },
     ],
   },
@@ -589,6 +593,9 @@ export function Inspector({ onStartHarness, onRun, onShowConsole, onHighlightEdg
 
   const cfg = node.data.config;
   const blueprint = NODE_BLUEPRINTS[node.data.kind];
+  const createsTable = node.data.kind === "create_excel" || node.data.kind === "create_csv";
+  const createsDocument = createsTable || node.data.kind === "create_word" || node.data.kind === "create_pdf";
+  const readsDocument = node.data.kind === "read_document";
   const typeLabel = getNodeLabel(node.data.kind, locale);
   const nodeTitle = node.data.title === blueprint.label ? typeLabel : node.data.title;
   const requiresModel = node.data.kind === "agent" || node.data.kind === "llm_judge";
@@ -2663,6 +2670,112 @@ export function Inspector({ onStartHarness, onRun, onShowConsole, onHighlightEdg
           </>
         )}
 
+        {(createsDocument || readsDocument) && (
+          <>
+            <label className="field">
+              <span>{readsDocument ? L("Document path", "Ruta del documento") : L("Output path", "Ruta de salida")}</span>
+              <input
+                value={String(cfg.path ?? "")}
+                placeholder={readsDocument ? "informe.docx" : String(blueprint.defaultConfig.path)}
+                onChange={(e) => updateNodeConfig(node.id, { path: e.target.value })}
+              />
+            </label>
+            {readsDocument && <VarInserter onInsert={(path) => updateNodeConfig(node.id, { path })} />}
+            {createsDocument && (
+              <>
+                <label className="field">
+                  <span>{L("JSON source", "Fuente JSON")}</span>
+                  <textarea
+                    rows={4}
+                    value={String(cfg.sourceTemplate ?? "{{agent_output}}")}
+                    onChange={(e) => updateNodeConfig(node.id, { sourceTemplate: e.target.value })}
+                  />
+                </label>
+                <VarInserter onInsert={(sourceTemplate) => updateNodeConfig(node.id, { sourceTemplate })} />
+                <details className="inspector-disclosure">
+                  <summary>{L("Input example", "Ejemplo de entrada")}</summary>
+                  <pre>{JSON.stringify(createsTable
+                    ? [{ id: 42, title: L("Report", "Informe") }]
+                    : { title: L("Report", "Informe"), sections: [{
+                      heading: L("Results", "Resultados"),
+                      paragraphs: [L("Summary of the period.", "Resumen del período.")],
+                      table: { headers: [L("Metric", "Métrica"), L("Value", "Valor")], rows: [["Total", "42"]] },
+                    }] }, null, 2)}</pre>
+                </details>
+              </>
+            )}
+            {createsTable && (
+              <label className="field">
+                <span>{L("Columns in order (one key per line)", "Columnas en orden (una clave por línea)")}</span>
+                <textarea
+                  rows={3}
+                  placeholder={L("Blank uses all keys", "Vacío para usar todas las claves")}
+                  value={String(cfg.columnKeys ?? "")}
+                  onChange={(e) => updateNodeConfig(node.id, { columnKeys: e.target.value })}
+                />
+              </label>
+            )}
+          </>
+        )}
+
+        {node.data.kind === "data_transform" && (() => {
+          const fields = Array.isArray(cfg.fields) ? cfg.fields : [];
+          const updateFields = (next: unknown[]) => updateNodeConfig(node.id, { fields: next });
+          return (
+            <>
+              <label className="field">
+                <span>{L("JSON source", "Fuente JSON")}</span>
+                <textarea
+                  rows={2}
+                  value={String(cfg.sourceTemplate ?? "{{agent_output}}")}
+                  onChange={(e) => updateNodeConfig(node.id, { sourceTemplate: e.target.value })}
+                />
+              </label>
+              <VarInserter onInsert={(token) => updateNodeConfig(node.id, { sourceTemplate: token })} />
+              <label className="field">
+                <span>{L("Root path (JSON Pointer)", "Ruta raíz (JSON Pointer)")}</span>
+                <input
+                  placeholder="/results"
+                  value={String(cfg.rootPointer ?? "")}
+                  onChange={(e) => updateNodeConfig(node.id, { rootPointer: e.target.value })}
+                />
+              </label>
+              <p>{L("Leave the root path blank to use the entire input. Field rules apply to each item when the selected value is a list.", "Deja la ruta raíz vacía para usar toda la entrada. Si el valor seleccionado es una lista, los campos se aplican a cada elemento.")}</p>
+              {fields.map((field, index) => (
+                <div key={index} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) auto", alignItems: "end", gap: 8 }}>
+                  <label className="field">
+                    <span>{L("Field path", "Ruta del campo")}</span>
+                    <input
+                      placeholder="/title"
+                      value={String(field?.pointer ?? "")}
+                      onChange={(e) => updateFields(fields.map((entry, i) =>
+                        i === index ? { ...entry, pointer: e.target.value } : entry))}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{L("Output name", "Nombre de salida")}</span>
+                    <input
+                      placeholder="title"
+                      value={String(field?.name ?? "")}
+                      onChange={(e) => updateFields(fields.map((entry, i) =>
+                        i === index ? { ...entry, name: e.target.value } : entry))}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="var-chip"
+                    aria-label={L(`Remove field ${index + 1}`, `Eliminar campo ${index + 1}`)}
+                    onClick={() => updateFields(fields.filter((_, i) => i !== index))}
+                  >×</button>
+                </div>
+              ))}
+              <button type="button" className="var-chip" onClick={() => updateFields([...fields, { pointer: "", name: "" }])}>
+                {L("Add field", "Añadir campo")}
+              </button>
+            </>
+          );
+        })()}
+
         {node.data.kind === "json_validator" && (
           <>
             <label className="field">
@@ -2724,7 +2837,7 @@ export function Inspector({ onStartHarness, onRun, onShowConsole, onHighlightEdg
         {renderPorts(L("Inputs", "Entradas"), "input", flowInputs)}
         {!hasBranches && renderPorts(L("Outputs", "Salidas"), "output", outputs)}
         {executionResult && (
-          <details key={`execution-${node.id}`} className="inspector-disclosure inspector-execution">
+          <details key={`execution-${node.id}`} className="inspector-disclosure inspector-execution" open={node.data.kind === "data_transform" || createsDocument || readsDocument || undefined}>
             <summary>{L("Last execution", "Última ejecución")}</summary>
             <dl>
               <dt>{L("Status", "Estado")}</dt>
@@ -2741,7 +2854,10 @@ export function Inspector({ onStartHarness, onRun, onShowConsole, onHighlightEdg
             </dl>
             {valuePort && executionResult.value_preview !== null && (
               <div className="inspector-execution-value">
-                <strong>{getPortLabel(valuePort, locale, node.data.kind)}</strong>
+                <strong>{createsDocument ? L("Output path", "Ruta de salida")
+                  : readsDocument ? L("Extracted text", "Texto extraído")
+                  : node.data.kind === "data_transform" ? L("Transformed JSON", "JSON transformado")
+                  : getPortLabel(valuePort, locale, node.data.kind)}</strong>
                 <pre>{executionResult.value_preview || L("Empty value", "Valor vacío")}</pre>
                 {executionResult.value_truncated && <small>{L("Preview shortened", "Vista previa recortada")}</small>}
               </div>

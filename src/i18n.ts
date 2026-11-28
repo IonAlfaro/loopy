@@ -35,6 +35,7 @@ const TRANSLATIONS = {
     "sidebar.essentials": "Essentials",
     "sidebar.contextResources": "Context & Resources",
     "sidebar.advanced": "Advanced & Integrations",
+    "sidebar.documents": "Documents",
     "sidebar.customNodes": "Custom Nodes",
     "sidebar.create": "Create",
 
@@ -198,6 +199,7 @@ const TRANSLATIONS = {
     "sidebar.essentials": "Esenciales",
     "sidebar.contextResources": "Contexto y Recursos",
     "sidebar.advanced": "Avanzados e Integraciones",
+    "sidebar.documents": "Documentos",
     "sidebar.customNodes": "Nodos Custom",
     "sidebar.create": "Crear",
 
@@ -339,6 +341,12 @@ export function translate(locale: AppLocale, key: TranslationKey): string {
 }
 
 const NODE_LABELS_EN: Partial<Record<LoorsNodeKind, string>> = {
+  data_transform: "Transform Data",
+  create_excel: "Create Excel",
+  create_csv: "Create CSV",
+  create_word: "Create Word",
+  create_pdf: "Create PDF",
+  read_document: "Read Document",
   workspace: "Workspace / Project",
   subgraph: "Sub-harness (Subgraph)",
   local_model: "Model (GGUF / API)",
@@ -361,6 +369,12 @@ const NODE_DESCRIPTIONS_EN: Record<LoorsNodeKind, string> = {
   loop_guard: "Controls maximum loop iterations and injects feedback back into the agent.",
   for_each: "Iterates over a JSON array or lines, emitting {{item}} to 'each' and finishing via 'done'.",
   json_validator: "Extracts and validates strict JSON and required keys, routing to 'valid' or 'invalid'.",
+  data_transform: "Extracts a JSON value and selects or renames fields in an object or each element of an array.",
+  create_excel: "Writes an array of JSON objects to an .xlsx workbook.",
+  create_csv: "Writes an array of JSON objects to a comma-separated CSV file.",
+  create_word: "Creates an editable .docx report with a title, sections, and tables.",
+  create_pdf: "Creates a PDF report with a title, sections, and tables.",
+  read_document: "Reads the contents of .docx, .xlsx, .pdf, and .csv files in the workspace.",
   git_checkpoint: "Creates a Git snapshot before edits or reverts changes on failure.",
   context_compactor: "Compresses long conversation history and logs to stay within context budget.",
   human_gate: "Pauses the harness so you can review the Git diff and approve or send feedback.",
@@ -432,6 +446,30 @@ const NODE_GUIDES: Record<LoorsNodeKind, { en: string; es: string }> = {
   for_each: {
     en: "Point Items source to a JSON array or lines (e.g. {{agent_output}}). Wire 'each' to your processing steps, loop back to this node's 'exec', and wire 'done' to finish.",
     es: "Apunta la fuente a un array JSON o líneas (ej. {{agent_output}}). Conecta 'each' a tus pasos, vuelve al 'exec' de este nodo y conecta 'done' al final.",
+  },
+  create_excel: {
+    en: "Use a JSON array of objects. If you leave the columns blank, all keys are included in alphabetical order. The output value is the new file's workspace-relative path.",
+    es: "Usa una lista JSON de objetos. Si dejas las columnas vacías, se incluyen todas las claves en orden alfabético. La salida es la ruta del archivo relativa al workspace.",
+  },
+  create_csv: {
+    en: "Use a JSON array of objects. Columns are optional and default to all keys in alphabetical order. The CSV uses UTF-8 and commas. The output is the file path.",
+    es: "Usa una lista JSON de objetos. Las columnas son opcionales y por defecto se incluyen todas las claves en orden alfabético. El CSV usa UTF-8 y comas. La salida es la ruta del archivo.",
+  },
+  create_word: {
+    en: "Use a JSON report with title and sections. Sections can include a heading, paragraphs, and a table with headers and rows. The output is the file path.",
+    es: "Usa un informe JSON con title y sections. Cada sección admite heading, paragraphs y una table con headers y rows. La salida es la ruta del archivo.",
+  },
+  create_pdf: {
+    en: "Uses the same JSON structure as Create Word and prints it to PDF using an available Chromium-based browser. The output is the file path.",
+    es: "Usa la misma estructura JSON que Crear Word y la imprime a PDF con un navegador Chromium disponible. La salida es la ruta del archivo.",
+  },
+  read_document: {
+    en: "Enter a workspace-relative path or insert the output of a creation node. The output is extracted text. Scanned PDFs require a text layer.",
+    es: "Escribe una ruta relativa al workspace o inserta la salida de un nodo de creación. La salida es texto extraído. Los PDF escaneados requieren una capa de texto.",
+  },
+  data_transform: {
+    en: "Use JSON Pointer paths such as /results or /metadata/title. Leave the root path blank to use the entire input. Field paths are relative to the selected value or each array element. Use the node's output variable to pass the result to For Each.",
+    es: "Usa rutas JSON Pointer como /results o /metadata/title. Deja la ruta raíz vacía para usar la entrada completa. Las rutas de los campos parten del valor seleccionado o de cada elemento de la lista. Usa la variable de salida del nodo para pasar el resultado a For Each.",
   },
   json_validator: {
     en: "Set expected JSON type and comma-separated required keys. Wire 'valid' to continue and 'invalid' to a Loop Guard for automatic repair.",

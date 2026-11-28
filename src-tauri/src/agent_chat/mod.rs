@@ -495,6 +495,10 @@ pub const ALL_MODE_TOOLS: &[&str] = &[
     "binary_inspect",
     "edit_file",
     "write_file",
+    "create_excel",
+    "create_csv",
+    "create_word",
+    "create_pdf",
     "delete_file",
     "run_cmd",
     "git_diff",
@@ -550,6 +554,10 @@ pub fn tool_requires_permission(name: &str) -> bool {
         name,
         "edit_file"
             | "write_file"
+            | "create_excel"
+            | "create_csv"
+            | "create_word"
+            | "create_pdf"
             | "delete_file"
             | "run_cmd"
             | "run_bg_cmd"
@@ -1039,7 +1047,7 @@ where
              Modo de permisos: {:?}\n\n\
              REGLAS DE TRABAJO:\n\
              - Verifica siempre leyendo archivos reales antes de afirmar comportamientos o rutas.\n\
-             - Si el usuario menciona un documento (.pdf, .docx, .xlsx, .pptx, .epub), usa `read_file` directamente.\n\
+             - Si el usuario menciona un documento (.pdf, .docx, .xlsx, .csv, .pptx, .epub), usa `read_file` directamente.\n\
              - Si te piden buscar en internet precios, productos, noticias o navegar por una web, usa `browser_action` (por ejemplo `action: \"goto\"` a `https://duckduckgo.com/?q=...` o `https://www.google.com/search?q=...` o a la tienda/web objetivo, seguido de `snapshot` / `click` / `type` / `scroll`) para que el usuario vea en tiempo real tu navegaciÃ³n y clics en el panel Navegador de la derecha. TambiÃ©n puedes complementar con `web_search` o `fetch_url`.\n\
              - Responde en espaÃ±ol claro, conciso y con rutas/lÃ­neas o enlaces verificados.",
             session.workspace, session.permission_mode
@@ -2174,7 +2182,7 @@ where
             record.output_preview = truncate_chars(&tool_output, 4000);
             if record.task_id.is_none() {
                 match (record.name.as_str(), record.status.as_str()) {
-                    ("edit_file" | "write_file" | "delete_file", "success") => {
+                    ("edit_file" | "write_file" | "delete_file" | "create_excel" | "create_csv" | "create_word" | "create_pdf", "success") => {
                         unplanned_edit = true;
                         unplanned_check_after_edit = None;
                     }
@@ -2187,7 +2195,7 @@ where
             // A file mutation invalidates earlier command verification for the active task.
             if let Some(task_id) = &record.task_id {
                 if let Ok(mut checks) = state.task_verification.lock() {
-                    if matches!(record.name.as_str(), "edit_file" | "write_file" | "delete_file")
+                    if matches!(record.name.as_str(), "edit_file" | "write_file" | "delete_file" | "create_excel" | "create_csv" | "create_word" | "create_pdf")
                         && record.status != "denied" {
                         checks.insert(task_id.clone(), false);
                     } else if record.name == "run_cmd" && record.status == "success" {
@@ -3135,6 +3143,17 @@ async fn run_single_tool(
     // Missing headers (spawn errors, cancellation) are not successful checks.
     if name == "run_cmd" && command_exit_code(&out) != Some(0) {
         record.status = "error".into();
+    }
+    if matches!(name, "create_excel" | "create_csv" | "create_word" | "create_pdf") {
+        match serde_json::from_str::<Value>(&out).ok()
+            .and_then(|result| result.get("path").and_then(Value::as_str).map(str::to_owned))
+        {
+            Some(path) => {
+                record.file_path = Some(path);
+                record.file_existed = false;
+            }
+            None => record.status = "error".into(),
+        }
     }
 
 

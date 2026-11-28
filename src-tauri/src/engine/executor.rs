@@ -543,6 +543,10 @@ fn execute_graph_with_depth(
                 let value = match node.data.kind.as_str() {
                     "agent" => Some(("response", ctx.last_agent_output.as_str())),
                     "shell" => Some(("stderr", ctx.last_stderr.as_str())),
+                    "data_transform" => ctx.node_outputs.get(&node.id).map(|value| ("exec", value.as_str())),
+                    "create_excel" | "create_csv" | "create_word" | "create_pdf" | "read_document" => {
+                        ctx.node_outputs.get(&node.id).map(|value| ("exec", value.as_str()))
+                    }
                     _ => None,
                 };
                 const PREVIEW_CHARS: usize = 2000;
@@ -3049,6 +3053,72 @@ async fn run_node(
             }
         }
 
+        "create_excel" | "create_csv" | "create_word" | "create_pdf" | "read_document" => {
+            let workspace = effective_workspace(graph, node_map, node, ctx);
+            let path = ctx.render_template(&config_str(node, "path", ""));
+            let kind = node.data.kind.as_str();
+            let result = async {
+                if kind == "read_document" {
+                    let supported = Path::new(&path).extension().is_some_and(|ext| {
+                        ["docx", "xlsx", "pdf", "csv"].iter().any(|format| ext.eq_ignore_ascii_case(format))
+                    });
+                    if !supported {
+                        return Err("La ruta debe apuntar a un archivo .docx, .xlsx, .pdf o .csv.".into());
+                    }
+                    let input = crate::tools::resolve_safe_path(&workspace, &path)?;
+                    return crate::tools::docs::read_document_or_text(&input).await;
+                }
+                let source = ctx.render_template(&config_str(node, "sourceTemplate", "{{agent_output}}"));
+                if matches!(kind, "create_excel" | "create_csv") {
+                    let rows = parse_json_output(&source, "array")?;
+                    let columns: Vec<&str> = node.data.config.get("columnKeys")
+                        .and_then(Value::as_str).unwrap_or_default()
+                        .lines().map(str::trim).filter(|column| !column.is_empty()).collect();
+                    use crate::tools::spreadsheet::{create_table, TableFormat};
+                    let format = if kind == "create_csv" { TableFormat::Csv } else { TableFormat::Excel };
+                    create_table(
+                        &workspace, &path, rows, Some(serde_json::json!(columns)), format,
+                    ).await
+                } else {
+                    let content = parse_json_output(&source, "object")?;
+                    let format = if kind == "create_word" { "docx" } else { "pdf" };
+                    crate::tools::report::create_report(&workspace, &path, format, content).await
+                }
+            }.await;
+            match result {
+                Ok(output) => {
+                    ctx.node_outputs.insert(node.id.clone(), output.clone());
+                    ctx.node_outputs.insert(node.data.title.clone(), output);
+                    NodeStepOutcome::Continue("exec".into())
+                }
+                Err(error) => {
+                    log(ctx.iteration, LogStreamKind::Stderr, error.clone());
+                    NodeStepOutcome::Finish(RunOutcomeKind::Failed, error)
+                }
+            }
+        }
+
+        "data_transform" => {
+            let source = config_str(node, "sourceTemplate", "{{agent_output}}");
+            let root = config_str(node, "rootPointer", "");
+            match transform_json(
+                &ctx.render_template(&source),
+                &root,
+                node.data.config.get("fields"),
+            ) {
+                Ok(output) => {
+                    ctx.node_outputs.insert(node.id.clone(), output.clone());
+                    ctx.node_outputs.insert(node.data.title.clone(), output);
+                    NodeStepOutcome::Continue("exec".into())
+                }
+                Err(error) => {
+                    let message = format!("Transform Data: {error}");
+                    log(ctx.iteration, LogStreamKind::Stderr, message.clone());
+                    NodeStepOutcome::Finish(RunOutcomeKind::Failed, message)
+                }
+            }
+        }
+
         "json_validator" => {
             let iter = ctx.iteration;
             let raw_src = config_str(node, "sourceTemplate", "{{agent_output}}");
@@ -3843,17 +3913,13 @@ fn parse_for_each_items(raw: &str, split_mode: &str) -> Vec<String> {
         .collect()
 }
 
-fn validate_json_output(
-    raw: &str,
-    expect_type: &str,
-    required_keys: &[String],
-) -> Result<String, String> {
+fn parse_json_output(raw: &str, expect_type: &str) -> Result<Value, String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Err("Empty output — expected valid JSON.".to_string());
     }
-    let slice = if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
-        v
+    if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
+        Ok(value)
     } else {
         let obj_span = trimmed.find('{').zip(trimmed.rfind('}')).filter(|(s, e)| e > s);
         let arr_span = trimmed.find('[').zip(trimmed.rfind(']')).filter(|(s, e)| e > s);
@@ -3871,8 +3937,70 @@ fn validate_json_output(
             return Err("No JSON object or array found in output.".to_string());
         };
         serde_json::from_str::<Value>(&trimmed[s..=e])
-            .map_err(|err| format!("Invalid JSON syntax: {err}"))?
+            .map_err(|err| format!("Invalid JSON syntax: {err}"))
+    }
+}
+
+fn transform_json(raw: &str, root: &str, fields: Option<&Value>) -> Result<String, String> {
+    #[derive(serde::Deserialize)]
+    struct Field {
+        pointer: String,
+        name: String,
+    }
+
+    let input = parse_json_output(raw, "any")?;
+    let selected = input
+        .pointer(root)
+        .ok_or_else(|| format!("Root path {root:?} was not found."))?;
+    let fields = match fields {
+        Some(fields) => serde_json::from_value::<Vec<Field>>(fields.clone())
+            .map_err(|error| format!("Invalid field rules: {error}"))?,
+        None => Vec::new(),
     };
+    if fields.is_empty() {
+        return Ok(selected.to_string());
+    }
+
+    let mut names = HashSet::new();
+    for field in &fields {
+        if field.name.trim().is_empty() {
+            return Err("Each field rule needs an output name.".into());
+        }
+        if !names.insert(&field.name) {
+            return Err(format!("Duplicate output name {:?}.", field.name));
+        }
+        if !field.pointer.is_empty() && !field.pointer.starts_with('/') {
+            return Err(format!("Field path {:?} must start with '/'.", field.pointer));
+        }
+    }
+
+    let project = |value: &Value| {
+        let mut output = serde_json::Map::new();
+        for field in &fields {
+            let value = value.pointer(&field.pointer).ok_or_else(|| {
+                format!("Field path {:?} was not found for {:?}.", field.pointer, field.name)
+            })?;
+            output.insert(field.name.clone(), value.clone());
+        }
+        Ok::<_, String>(Value::Object(output))
+    };
+    let output = match selected {
+        Value::Array(items) => Value::Array(
+            items.iter().enumerate().map(|(index, item)| {
+                project(item).map_err(|error| format!("Item {}: {error}", index + 1))
+            }).collect::<Result<Vec<_>, _>>()?,
+        ),
+        value => project(value)?,
+    };
+    Ok(output.to_string())
+}
+
+fn validate_json_output(
+    raw: &str,
+    expect_type: &str,
+    required_keys: &[String],
+) -> Result<String, String> {
+    let slice = parse_json_output(raw, expect_type)?;
 
     match expect_type {
         "object" if !slice.is_object() => {
@@ -3907,6 +4035,144 @@ fn validate_json_output(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn document_nodes_pass_the_created_path_to_the_reader() {
+        let workspace = tempfile::tempdir().unwrap();
+        let node = |id: &str, kind: &str, config: Value| GraphNode {
+            id: id.into(),
+            data: crate::engine::types::GraphNodeData {
+                kind: kind.into(),
+                title: id.into(),
+                config: serde_json::from_value(config).unwrap(),
+            },
+        };
+        let graph = WorkflowGraph {
+            name: "Document round trip".into(),
+            nodes: vec![
+                node("input", "task_input", json!({ "workspace": workspace.path() })),
+                node("excel", "create_excel", json!({
+                    "path": "datos.xlsx", "sourceTemplate": "[{\"total\":42}]"
+                })),
+                node("reader", "read_document", json!({ "path": "{{node:excel}}" })),
+                node("csv", "create_csv", json!({
+                    "path": "datos.csv", "sourceTemplate": "[{\"total\":42}]"
+                })),
+                node("csv_reader", "read_document", json!({ "path": "{{node:csv}}" })),
+                node("end", "output", json!({})),
+            ],
+            edges: [
+                ("input", "excel"),
+                ("excel", "reader"),
+                ("reader", "csv"),
+                ("csv", "csv_reader"),
+                ("csv_reader", "end"),
+            ]
+                .into_iter()
+                .map(|(source, target)| GraphEdge {
+                    id: format!("{source}-{target}"),
+                    source: source.into(),
+                    source_handle: Some("exec".into()),
+                    target: target.into(),
+                    target_handle: Some("exec".into()),
+                }).collect(),
+        };
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = events.clone();
+        let outcome = execute_graph(
+            "document-nodes-test".into(),
+            graph,
+            RuntimeBackendKind::Cpu,
+            LlamaCppManager::new(),
+            Arc::new(Mutex::new(None)),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(move |event| captured.lock().unwrap().push(event)),
+        ).await;
+        assert!(matches!(outcome, RunOutcomeKind::Completed));
+        let events = events.lock().unwrap();
+        assert!(events.iter().any(|event| matches!(event,
+            EngineEvent::NodeResult { node_id, value_preview: Some(preview), .. }
+            if node_id == "reader" && preview.contains("| total |") && preview.contains("| 42 |")
+        )));
+        assert!(events.iter().any(|event| matches!(event,
+            EngineEvent::NodeResult { node_id, value_preview: Some(preview), .. }
+            if node_id == "csv_reader" && preview == "total\r\n42\r\n"
+        )));
+    }
+
+    #[tokio::test]
+    async fn data_transform_projects_json_and_feeds_for_each() {
+        let node = |id: &str, kind: &str, config: Value| GraphNode {
+            id: id.into(),
+            data: crate::engine::types::GraphNodeData {
+                kind: kind.into(),
+                title: id.into(),
+                config: serde_json::from_value(config).unwrap(),
+            },
+        };
+        let edge = |from: &str, port: &str, to: &str| GraphEdge {
+            id: format!("{from}-{to}"),
+            source: from.into(),
+            source_handle: Some(port.into()),
+            target: to.into(),
+            target_handle: Some("exec".into()),
+        };
+        let graph = WorkflowGraph {
+            name: "Transform data".into(),
+            nodes: vec![
+                node("input", "task_input", json!({})),
+                node("transform", "data_transform", json!({
+                    "sourceTemplate": r#"{"results":[{"id":42,"metadata":{"title":"Informe"}},{"id":43,"metadata":{"title":null}}]}"#,
+                    "rootPointer": "/results",
+                    "fields": [{ "pointer": "/metadata/title", "name": "label" }]
+                })),
+                node("iterate", "for_each", json!({
+                    "itemsSource": "{{node:transform}}",
+                    "splitMode": "json_array"
+                })),
+                node("output", "output", json!({ "labelTemplate": "{{item}}" })),
+            ],
+            edges: vec![
+                edge("input", "exec", "transform"),
+                edge("transform", "exec", "iterate"),
+                edge("iterate", "each", "output"),
+            ],
+        };
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = events.clone();
+        let outcome = execute_graph(
+            "data-transform-test".into(),
+            graph,
+            RuntimeBackendKind::Cpu,
+            LlamaCppManager::new(),
+            Arc::new(Mutex::new(None)),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(move |event| captured.lock().unwrap().push(event)),
+        ).await;
+
+        assert!(matches!(outcome, RunOutcomeKind::Completed));
+        let events = events.lock().unwrap();
+        assert!(events.iter().any(|event| matches!(event,
+            EngineEvent::NodeResult { node_id, value_preview: Some(preview), .. }
+            if node_id == "transform" && preview == r#"[{"label":"Informe"},{"label":null}]"#
+        )));
+        assert!(events.iter().any(|event| matches!(event,
+            EngineEvent::RunFinished { summary, .. } if summary.starts_with(r#"{"label":"Informe"}"#)
+        )));
+    }
+
+    #[test]
+    fn data_transform_reports_missing_fields_without_treating_null_as_missing() {
+        let fields = json!([{ "pointer": "/title", "name": "title" }]);
+        assert_eq!(
+            transform_json(r#"[{"title":null},{}]"#, "", Some(&fields)).unwrap_err(),
+            "Item 2: Field path \"/title\" was not found for \"title\"."
+        );
+        assert_eq!(
+            transform_json(r#"{"results":[]}"#, "/results", None).unwrap(),
+            "[]"
+        );
+    }
 
     #[test]
     fn resolves_compaction_threshold_in_tokens() {

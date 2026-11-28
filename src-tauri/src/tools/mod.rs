@@ -2,6 +2,8 @@ pub mod bg_tasks;
 mod browser;
 pub mod docs;
 pub mod scheduler;
+pub(crate) mod report;
+pub(crate) mod spreadsheet;
 
 pub use bg_tasks::{get_bg_task_status, kill_bg_task, start_bg_task};
 pub use browser::{
@@ -88,7 +90,7 @@ pub fn tool_definitions(enabled: &[String]) -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "read_file",
-                "description": "Lee un archivo de texto o documento (.pdf, .docx, .xlsx, .pptx, .odt, .epub) del workspace con números de línea (soporta rango start_line..end_line).",
+                "description": "Lee un archivo de texto o documento (.pdf, .docx, .xlsx, .csv, .pptx, .odt, .epub) del workspace con números de línea (soporta rango start_line..end_line).",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -100,6 +102,64 @@ pub fn tool_definitions(enabled: &[String]) -> Vec<Value> {
                 }
             }
         }));
+    }
+
+    for (name, extension) in [("create_excel", "xlsx"), ("create_csv", "csv")] {
+        if !has(name) {
+            continue;
+        }
+        defs.push(json!({
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": format!("Crea un archivo .{extension} nuevo en el workspace a partir de una lista de objetos JSON. Devuelve la ruta relativa del archivo."),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": format!("Ruta relativa del nuevo archivo .{extension}") },
+                        "rows": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+                        "columns": { "type": "array", "items": { "type": "string" }, "description": "Claves de las columnas en orden. Si se omiten, se usan todas las claves." }
+                    },
+                    "required": ["path", "rows"]
+                }
+            }
+        }));
+    }
+
+    for (name, extension) in [("create_word", "docx"), ("create_pdf", "pdf")] {
+        if has(name) {
+            defs.push(json!({
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": format!("Crea un informe .{extension} nuevo en el workspace y devuelve su ruta."),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": { "type": "string", "description": format!("Ruta relativa del nuevo archivo .{extension}") },
+                            "content": {
+                                "type": "object",
+                                "properties": {
+                                    "title": { "type": "string" },
+                                    "sections": { "type": "array", "items": {
+                                        "type": "object", "properties": {
+                                            "heading": { "type": "string" },
+                                            "paragraphs": { "type": "array", "items": { "type": "string" } },
+                                            "table": { "type": "object", "properties": {
+                                                "headers": { "type": "array", "items": { "type": "string" } },
+                                                "rows": { "type": "array", "items": { "type": "array", "items": { "type": "string" } } }
+                                            }, "required": ["headers", "rows"] }
+                                        }
+                                    }}
+                                },
+                                "required": ["title", "sections"]
+                            }
+                        },
+                        "required": ["path", "content"]
+                    }
+                }
+            }));
+        }
     }
 
     if has("edit_file") {
@@ -395,7 +455,7 @@ fn workspace_root(workspace: &str) -> Result<PathBuf, String> {
     }
 }
 
-fn resolve_safe_path(workspace: &str, rel: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_safe_path(workspace: &str, rel: &str) -> Result<PathBuf, String> {
     let base = workspace_root(workspace)?;
     let rel_path = Path::new(rel);
     if rel_path.has_root() || matches!(rel_path.components().next(), Some(Component::Prefix(_))) {
@@ -641,6 +701,29 @@ pub async fn execute_tool(workspace: &str, name: &str, args: &Value) -> String {
             }
         }
 
+        "create_excel" | "create_csv" => {
+            let path = args.get("path").and_then(Value::as_str).unwrap_or_default();
+            let rows = args.get("rows").cloned().unwrap_or(Value::Null);
+            let columns = args.get("columns").cloned();
+            let format = if name == "create_csv" {
+                spreadsheet::TableFormat::Csv
+            } else {
+                spreadsheet::TableFormat::Excel
+            };
+            match spreadsheet::create_table(workspace, path, rows, columns, format).await {
+                Ok(path) => json!({ "path": path }).to_string(),
+                Err(error) => json!({ "error": error }).to_string(),
+            }
+        }
+        "create_word" | "create_pdf" => {
+            let path = args.get("path").and_then(Value::as_str).unwrap_or_default();
+            let content = args.get("content").cloned().unwrap_or(Value::Null);
+            let format = if name == "create_word" { "docx" } else { "pdf" };
+            match report::create_report(workspace, path, format, content).await {
+                Ok(path) => json!({ "path": path }).to_string(),
+                Err(error) => json!({ "error": error }).to_string(),
+            }
+        }
         "read_file" => {
             let Some(rel) = args.get("path").and_then(|v| v.as_str()) else {
                 return "Falta el parámetro obligatorio 'path'.".to_string();
@@ -1923,6 +2006,94 @@ mod tests {
         assert!(super::resolve_safe_path(root, "local/new-file").is_ok());
     }
     use super::*;
+
+    #[tokio::test]
+    async fn document_tools_write_and_read_csv_with_quoted_fields() {
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path().to_str().unwrap();
+        let args = json!({
+            "path": "datos.csv",
+            "columns": ["nombre", "nota", "total"],
+            "rows": [
+                {"total": 42, "nombre": "Revisión, Q4", "nota": "Dijo \"sí\"\nDespués"},
+                {"nombre": "Vacío", "total": null}
+            ]
+        });
+        let result = execute_tool(root, "create_csv", &args).await;
+        assert_eq!(serde_json::from_str::<Value>(&result).unwrap(), json!({"path": "datos.csv"}));
+        let path = workspace.path().join("datos.csv");
+        assert_eq!(
+            docs::read_document_or_text(&path).await.unwrap(),
+            "nombre,nota,total\r\n\"Revisión, Q4\",\"Dijo \"\"sí\"\"\nDespués\",42\r\nVacío,\"\",\"\"\r\n"
+        );
+        let read = execute_tool(root, "read_file", &json!({ "path": "datos.csv" })).await;
+        assert!(read.contains("\"Revisión, Q4\""));
+    }
+
+    #[tokio::test]
+    async fn document_tools_generate_and_read_excel_and_word() {
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path().to_str().unwrap();
+        let report = json!({
+            "title": "Informe de producción",
+            "sections": [{
+                "heading": "Resultados",
+                "paragraphs": ["Revisión & control."],
+                "table": { "headers": ["Métrica", "Valor"], "rows": [["Total", "42"]] }
+            }]
+        });
+        for (tool, args, expected) in [
+            ("create_excel", json!({
+                "path": "datos.xlsx",
+                "rows": [
+                    {"id": 42, "title": "Revisión & control.", "active": true},
+                    {"id": 43, "title": "=1+1"}
+                ],
+                "columns": ["title", "id", "active"]
+            }), "Revisión & control."),
+            ("create_word", json!({ "path": "informe.docx", "content": report }), "Informe de producción"),
+        ] {
+            let path = args["path"].as_str().unwrap();
+            let result = execute_tool(root, tool, &args).await;
+            assert_eq!(serde_json::from_str::<Value>(&result).unwrap(), json!({"path": path}), "{result}");
+            let read = execute_tool(root, "read_file", &json!({"path": path})).await;
+            assert!(read.contains(expected), "{tool}: {read}");
+            assert!(read.contains("42"), "{tool}: {read}");
+
+            let duplicate = execute_tool(root, tool, &args).await;
+            assert!(serde_json::from_str::<Value>(&duplicate).unwrap()["error"].is_string());
+        }
+        let file = fs::File::open(workspace.path().join("datos.xlsx")).unwrap();
+        let mut zip = zip::ZipArchive::new(file).unwrap();
+        let mut xml = String::new();
+        std::io::Read::read_to_string(&mut zip.by_name("xl/worksheets/sheet1.xml").unwrap(), &mut xml).unwrap();
+        assert!(xml.contains("<c><v>42</v></c>"));
+        assert!(xml.contains("<c t=\"b\"><v>1</v></c>"));
+        assert!(xml.contains(">=1+1</t>") && !xml.contains("<f>"));
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires permission to launch an installed Chromium-based browser"]
+    async fn document_tools_generate_and_read_pdf() {
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path().to_str().unwrap();
+        let result = execute_tool(root, "create_pdf", &json!({
+            "path": "informe.pdf",
+            "content": {
+                "title": "Informe de producción",
+                "sections": [{
+                    "heading": "Resultados",
+                    "paragraphs": ["Revisión & control."],
+                    "table": { "headers": ["Métrica", "Valor"], "rows": [["Total", "42"]] }
+                }]
+            }
+        })).await;
+        assert_eq!(serde_json::from_str::<Value>(&result).unwrap(), json!({"path": "informe.pdf"}), "{result}");
+        let read = execute_tool(root, "read_file", &json!({"path": "informe.pdf"})).await;
+        assert!(read.contains("Informe de producción"), "{read}");
+        assert!(read.contains("Revisión & control."), "{read}");
+        assert!(read.contains("42"), "{read}");
+    }
 
     #[tokio::test]
     async fn edit_file_and_read_file_line_ranges_work() {

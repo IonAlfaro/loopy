@@ -102,6 +102,14 @@ function getToolPresentation(
         verb: isRunning ? "Editando" : "Editado",
         icon: <FileCode2 size={s} />,
       };
+    case "create_excel":
+    case "create_csv":
+    case "create_word":
+    case "create_pdf":
+      return {
+        verb: isRunning ? "Creando documento" : "Documento creado",
+        icon: <FileText size={s} />,
+      };
     case "delete_file":
       return {
         verb: isRunning ? "Eliminando" : "Eliminado",
@@ -167,6 +175,10 @@ function toolCategory(name: string): ToolCategory {
     case "write_file":
     case "delete_file":
     case "apply_patch":
+    case "create_excel":
+    case "create_csv":
+    case "create_word":
+    case "create_pdf":
       return "write";
     case "grep_search":
     case "code_symbols":

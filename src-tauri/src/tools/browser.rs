@@ -2272,7 +2272,7 @@ async fn ensure_portable_browser() -> Result<PathBuf, String> {
     })
 }
 
-fn find_system_browser() -> Option<PathBuf> {
+pub(super) fn find_system_browser() -> Option<PathBuf> {
     let candidates: Vec<&str> = if cfg!(target_os = "windows") {
         vec![
             r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",

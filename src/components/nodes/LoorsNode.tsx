@@ -5,6 +5,8 @@ import {
   CheckCircle2,
   Cpu,
   FileText,
+  FileSpreadsheet,
+  Filter,
   Flag,
   GitBranch,
   GitCommitHorizontal,
@@ -67,6 +69,15 @@ export function NodeIcon({ kind }: { kind: LoorsNodeKind }) {
       return <Repeat {...props} />;
     case "json_validator":
       return <CheckCircle2 {...props} />;
+    case "data_transform":
+      return <Filter {...props} />;
+    case "create_excel":
+    case "create_csv":
+      return <FileSpreadsheet {...props} />;
+    case "create_word":
+    case "create_pdf":
+    case "read_document":
+      return <FileText {...props} />;
     case "git_checkpoint":
       return <GitCommitHorizontal {...props} />;
     case "context_compactor":
