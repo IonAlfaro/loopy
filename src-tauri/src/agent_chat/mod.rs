@@ -1069,6 +1069,7 @@ where
              - Work on one ready task at a time; update its status as work progresses.\n\
              - Run relevant checks and record actual results before marking a task done.\n\
              - Use run_cmd for short local checks. If permission is denied, report the blocker; do not retry the same operation through another tool.\n\
+             - If a requested pre-edit check was denied and you later edited the code, use run_cmd to request approval for the post-edit check in the workspace.\n\
              - Say that tests passed only after observing a successful test run. Label manual inspection separately.\n\
              - If checks fail, repair or report a blocker; never invent evidence.\n\
              - For simple questions or small edits, avoid unnecessary planning overhead."
@@ -1536,7 +1537,7 @@ where
     let mut mcp_sessions: Vec<McpSession> = Vec::new();
     let mut mcp_tool_routes: std::collections::HashMap<String, (usize, String)> =
         std::collections::HashMap::new();
-    if session.permission_mode != PermissionMode::ReadOnly {
+    if work_mode == AgentWorkMode::Agent && session.permission_mode != PermissionMode::ReadOnly {
         for srv in load_saved_mcp_servers().into_iter().filter(|s| s.enabled) {
             let cfg = srv.to_config();
             if let Ok(mut mcp_sess) = McpSession::connect(&cfg, &session.workspace).await {
@@ -1586,9 +1587,18 @@ where
     // A turn is only completed after an explicit non-truncated final response.
     let mut execution = ExecutionState::new(max_steps);
     let mut plan_reminders = 0usize;
-    let mut unplanned_edit = false;
-    let mut unplanned_check_after_edit = None;
-    let mut rejected_commands = HashSet::new();
+    let mut command_verification = if resume_requested {
+        session.execution_checkpoint.as_ref()
+            .and_then(|checkpoint| checkpoint.get("commandVerification"))
+            .cloned()
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(|err| format!("Invalid checkpoint command verification: {err}"))?
+            .unwrap_or_default()
+    } else {
+        TurnCommandVerification::from_prompt(&trimmed_prompt)
+    };
+    let mut rejected_commands = RejectedCommands::default();
     let mut final_summary = format!("Iteration budget exhausted ({max_steps}); work may be incomplete.");
 
     for _step in 1..=max_steps {
@@ -1886,9 +1896,9 @@ where
                 final_summary = format!("Unfinished plan: {remaining}");
                 break;
             }
-            if unplanned_check_after_edit == Some(false) {
+            if let Some(summary) = command_verification.incomplete_summary() {
                 execution.finish(TurnOutcome::Incomplete);
-                final_summary = "The changes were saved, but the attempted post-edit command did not verify them.".into();
+                final_summary = summary.into();
             } else if truncated {
                 execution.finish(TurnOutcome::Incomplete);
                 final_summary = "The model did not produce a complete final response.".to_string();
@@ -1979,11 +1989,14 @@ where
                     );
                 }
                 Ok(parsed_args) => {
-                    let commands = permission_commands(&tc.function.name, &parsed_args);
+                    let tool_name = tc.function.name.as_str();
+                    let commands = permission_commands(tool_name, &parsed_args);
+                    let permission = rejected_commands.permission(tool_name, commands.clone(), command_verification.edited);
+                    let reapproval = permission == RejectedCommandPermission::AskAfterEdit;
                     // Once a plan exists, side-effecting tools require an active task.
                     let plan_requires_task = state.execution_plan.lock()
                         .map(|slot| slot.is_some()).unwrap_or(true);
-                    if commands.clone().any(|command| rejected_commands.contains(command)) {
+                    if permission == RejectedCommandPermission::Blocked {
                         denied = true;
                         record.status = "denied".into();
                         tool_output = "El usuario ya rechazó este comando durante este turno. Informa del bloqueo y no repitas la ejecución con otra herramienta.".into();
@@ -2013,15 +2026,19 @@ where
                             "Permiso denegado: la sesiÃ³n estÃ¡ en modo Solo Lectura; '{}' no estÃ¡ permitida.",
                             tc.function.name
                         );
-                    } else if (session.permission_mode == PermissionMode::Ask
+                    } else if reapproval || ((session.permission_mode == PermissionMode::Ask
                         || session.permission_mode == PermissionMode::AutoReview)
                         && tool_requires_permission(&tc.function.name)
-                        && !session.allowed_session_tools.contains(&tc.function.name)
+                        && !session.allowed_session_tools.contains(&tc.function.name))
                     {
                         let mut needs_user_approval = true;
-                        let mut summary = format!("Ejecutar {}", tc.function.name);
+                        let mut summary = if reapproval {
+                            "Verificar después de editar en la terminal del proyecto".to_string()
+                        } else {
+                            format!("Ejecutar {}", tc.function.name)
+                        };
 
-                        if session.permission_mode == PermissionMode::AutoReview
+                        if !reapproval && session.permission_mode == PermissionMode::AutoReview
                             && !cancel.load(Ordering::SeqCst) && state.reserve_inference() {
                             let (is_safe, reason) = llm_check_tool_safety(
                                 llama,
@@ -2044,7 +2061,7 @@ where
                             }
                         }
 
-                        if session.permission_mode == PermissionMode::AutoReview
+                        if !reapproval && session.permission_mode == PermissionMode::AutoReview
                             && needs_user_approval
                             && state.inference_count.load(Ordering::SeqCst) >= state.budget.total_inferences {
                             summary = format!("{} (automatic review budget exhausted; explicit approval required)", summary);
@@ -2099,7 +2116,7 @@ where
                             if response.as_ref().is_some_and(|decision| !decision.approved)
                                 && !cancel.load(Ordering::SeqCst)
                             {
-                                rejected_commands.extend(commands.map(str::to_owned));
+                                rejected_commands.record_denial(tool_name, commands, &command_verification);
                             }
                             let decision = response.unwrap_or(PermissionDecision {
                                 approved: false,
@@ -2172,18 +2189,7 @@ where
             }
             record.duration_ms = t0.elapsed().as_millis() as u64;
             record.output_preview = truncate_chars(&tool_output, 4000);
-            if record.task_id.is_none() {
-                match (record.name.as_str(), record.status.as_str()) {
-                    ("edit_file" | "write_file" | "delete_file", "success") => {
-                        unplanned_edit = true;
-                        unplanned_check_after_edit = None;
-                    }
-                    ("run_cmd", status) if unplanned_edit && unplanned_check_after_edit != Some(true) => {
-                        unplanned_check_after_edit = Some(status == "success");
-                    }
-                    _ => {}
-                }
-            }
+            command_verification.observe(&record, &trimmed_prompt);
             // A file mutation invalidates earlier command verification for the active task.
             if let Some(task_id) = &record.task_id {
                 if let Ok(mut checks) = state.task_verification.lock() {
@@ -2257,6 +2263,7 @@ where
                         "evidence": &*evidence,
                         "failedChecks": &*failures,
                         "verification": &*verification,
+                        "commandVerification": &command_verification,
                         "reviewAttempts": &*review_attempts,
                         "telemetry": {
                             "iterations": _step,
@@ -3045,10 +3052,146 @@ fn permission_commands<'a>(tool: &str, args: &'a Value) -> impl Iterator<Item = 
     }).filter(|command| !command.is_empty())
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum RejectedCommandPermission {
+    Unrestricted,
+    Blocked,
+    AskAfterEdit,
+}
+
+#[derive(Default)]
+struct RejectedCommands {
+    // Only a denied, explicitly requested local pre-edit check can be asked again.
+    may_ask_after_edit: HashMap<String, bool>,
+}
+
+impl RejectedCommands {
+    fn permission<'a>(
+        &self,
+        tool: &str,
+        commands: impl Iterator<Item = &'a str>,
+        edited: bool,
+    ) -> RejectedCommandPermission {
+        let mut permission = RejectedCommandPermission::Unrestricted;
+        for command in commands {
+            if let Some(may_ask) = self.may_ask_after_edit.get(workspace_command(command)) {
+                if !(*may_ask && edited && tool == "run_cmd") {
+                    return RejectedCommandPermission::Blocked;
+                }
+                permission = RejectedCommandPermission::AskAfterEdit;
+            }
+        }
+        permission
+    }
+
+    fn record_denial<'a>(
+        &mut self,
+        tool: &str,
+        commands: impl Iterator<Item = &'a str>,
+        verification: &TurnCommandVerification,
+    ) {
+        for command in commands {
+            let command = workspace_command(command);
+            let may_ask = tool == "run_cmd" && !verification.edited
+                && verification.pending_before_edit.iter()
+                    .any(|requested| workspace_command(requested) == command);
+            self.may_ask_after_edit.insert(command.to_owned(), may_ask);
+        }
+    }
+}
+
+fn workspace_command(command: &str) -> &str {
+    command.trim().strip_prefix("cd . && ").unwrap_or(command.trim()).trim()
+}
+
 fn command_identity(args: &str) -> String {
     serde_json::from_str::<Value>(args).ok()
         .and_then(|value| value.get("command").and_then(Value::as_str).map(str::to_owned))
         .unwrap_or_else(|| args.to_owned())
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct TurnCommandVerification {
+    edited: bool,
+    pending_before_edit: HashSet<String>,
+    denied_before_edit: HashSet<String>,
+    unplanned_check_after_edit: Option<bool>,
+    post_edit_command_passed: bool,
+}
+
+impl TurnCommandVerification {
+    fn from_prompt(prompt: &str) -> Self {
+        // Recognize explicit commands in inline code with an adjacent ordering instruction.
+        static BEFORE_COMMAND: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+            regex::Regex::new(concat!(
+                r"(?i)\b(?:before editing|before making changes|antes de editar|antes de (?:hacer cambios|modificar))",
+                r"\s*[,:]?\s*(?:please\s+)?(?:run|execute|ejecuta|ejecute)\s+`([^`\r\n]+)`",
+                r"|\b(?:run|execute|ejecuta|ejecute)\s+`([^`\r\n]+)`\s+",
+                r"(?:before editing|before making changes|antes de editar|antes de (?:hacer cambios|modificar))\b",
+            )).expect("valid pre-edit command patterns")
+        });
+        let pending_before_edit = BEFORE_COMMAND.captures_iter(prompt)
+            .filter_map(|capture| capture.get(1).or_else(|| capture.get(2)))
+            .map(|command| command.as_str().trim())
+            .filter(|command| !command.is_empty())
+            .map(str::to_owned)
+            .collect();
+        Self { pending_before_edit, ..Self::default() }
+    }
+
+    fn observe(&mut self, record: &AgentToolCallRecord, prompt: &str) {
+        match (record.name.as_str(), record.status.as_str()) {
+            ("edit_file" | "write_file" | "delete_file", "success") => {
+                self.edited = true;
+                self.post_edit_command_passed = false;
+                if record.task_id.is_none() {
+                    self.unplanned_check_after_edit = None;
+                }
+            }
+            ("run_cmd", status) if !self.edited => {
+                let command = command_identity(&record.args_json);
+                let command = command.trim();
+                // A tool might add a redundant workspace change to a requested command.
+                let requested = command.strip_prefix("cd ")
+                    .and_then(|command| command.split_once(" && "))
+                    .map_or(command, |(_, command)| command.trim());
+                if status == "denied" && !requested.is_empty() && prompt.contains(requested) {
+                    self.denied_before_edit.insert(requested.to_owned());
+                } else if matches!(status, "success" | "error")
+                    && command_exit_code(&record.output_preview).is_some()
+                {
+                    self.pending_before_edit.remove(command);
+                    self.denied_before_edit.remove(requested);
+                }
+            }
+            ("run_cmd", status) => {
+                self.post_edit_command_passed |= status == "success";
+                if record.task_id.is_none() && self.unplanned_check_after_edit != Some(true) {
+                    self.unplanned_check_after_edit = Some(status == "success");
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn incomplete_summary(&self) -> Option<&'static str> {
+        if self.edited && !self.denied_before_edit.is_empty() {
+            return Some(if self.post_edit_command_passed {
+                "A post-edit command passed, but the requested pre-edit check was denied and remains unverified."
+            } else {
+                "The requested pre-edit check was denied and remains unverified."
+            });
+        }
+        if self.edited && !self.pending_before_edit.is_empty() {
+            return Some(if self.post_edit_command_passed {
+                "A post-edit command passed, but a requested pre-edit check was not run before editing."
+            } else {
+                "A requested pre-edit check was not run before editing."
+            });
+        }
+        (self.unplanned_check_after_edit == Some(false))
+            .then_some("The changes were saved, but the attempted post-edit command did not verify them.")
+    }
 }
 
 fn command_exit_code(output: &str) -> Option<i32> {
@@ -3057,7 +3200,10 @@ fn command_exit_code(output: &str) -> Option<i32> {
 
 #[cfg(test)]
 mod command_evidence_tests {
-    use super::{command_exit_code, permission_commands};
+    use super::{
+        command_exit_code, permission_commands, AgentToolCallRecord, RejectedCommandPermission,
+        RejectedCommands, TurnCommandVerification,
+    };
     use serde_json::json;
 
     #[test]
@@ -3082,6 +3228,85 @@ mod command_evidence_tests {
         assert_eq!(command_exit_code("exit_code: 1\nstdout:\nexit_code: 0"), Some(1));
         assert_eq!(command_exit_code("spawn failed\nexit_code: 0"), None);
         assert_eq!(command_exit_code("exit_code: -1"), Some(-1));
+    }
+
+    #[test]
+    fn only_local_post_edit_check_can_request_permission_again() {
+        use RejectedCommandPermission::{AskAfterEdit, Blocked, Unrestricted};
+
+        let mut rejected = RejectedCommands::default();
+        let mut verification = TurnCommandVerification::from_prompt(
+            "Before editing, run `cd . && node test.cjs`.",
+        );
+        let commands = || std::iter::once("node test.cjs");
+        rejected.record_denial("run_cmd", std::iter::once("cd . && node test.cjs"), &verification);
+
+        assert_eq!(rejected.permission("run_cmd", commands(), false), Blocked);
+        for tool in ["docker_exec", "run_bg_cmd", "schedule_task", "debug_crash"] {
+            assert_eq!(rejected.permission(tool, commands(), true), Blocked);
+        }
+        assert_eq!(rejected.permission("run_cmd", commands(), true), AskAfterEdit);
+        assert_eq!(
+            rejected.permission("run_cmd", std::iter::once("node other.cjs"), true),
+            Unrestricted,
+        );
+
+        verification.edited = true;
+        rejected.record_denial("run_cmd", commands(), &verification);
+        assert_eq!(rejected.permission("run_cmd", commands(), true), Blocked);
+    }
+
+    #[test]
+    fn passing_post_edit_check_does_not_replace_denied_reproduction() {
+        let prompt = "Run `node test.cjs` before editing and again after the fix.";
+        let tool = |name: &str, command: &str, status: &str, output: &str| -> AgentToolCallRecord {
+            serde_json::from_value(json!({
+                "id": name,
+                "name": name,
+                "argsJson": json!({ "command": command }).to_string(),
+                "status": status,
+                "outputPreview": output,
+                "durationMs": 0
+            })).unwrap()
+        };
+        let denied = tool("run_cmd", "cd workspace && node test.cjs", "denied", "");
+        let reproduced = tool("run_cmd", "node test.cjs", "error", "exit_code: 1\nstdout:\n");
+        let edit = tool("edit_file", "", "success", "");
+        let passed = tool("run_cmd", "node test.cjs", "success", "exit_code: 0\nstdout:\n");
+
+        let mut verification = TurnCommandVerification::from_prompt(prompt);
+        for record in [&denied, &edit, &passed] {
+            verification.observe(record, prompt);
+        }
+        assert_eq!(
+            verification.incomplete_summary(),
+            Some("A post-edit command passed, but the requested pre-edit check was denied and remains unverified.")
+        );
+
+        let mut verification = TurnCommandVerification::from_prompt(prompt);
+        for record in [&denied, &reproduced, &edit, &passed] {
+            verification.observe(record, prompt);
+        }
+        assert_eq!(verification.incomplete_summary(), None);
+
+        let prompt = "Antes de editar, ejecuta `node test.cjs`. Luego verifica el arreglo.";
+        let mut verification = TurnCommandVerification::from_prompt(prompt);
+        verification.observe(&edit, prompt);
+        // A checkpoint after editing must retain the pre-edit requirement when resumed.
+        let checkpoint = serde_json::to_value(&verification).unwrap();
+        let mut verification: TurnCommandVerification = serde_json::from_value(checkpoint).unwrap();
+        verification.observe(&passed, "/resume");
+        assert_eq!(
+            verification.incomplete_summary(),
+            Some("A post-edit command passed, but a requested pre-edit check was not run before editing.")
+        );
+
+        let prompt = "After editing, run `node test.cjs`.";
+        let mut verification = TurnCommandVerification::from_prompt(prompt);
+        for record in [&edit, &passed] {
+            verification.observe(record, prompt);
+        }
+        assert_eq!(verification.incomplete_summary(), None);
     }
 }
 
