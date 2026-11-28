@@ -35,6 +35,21 @@ src-tauri/.*.png
 .loors-test-webkit/
 webkit-audit/
 
+# .loors-acceptance generated files (untracked)
+.loors-acceptance/agent-worktree/
+.loors-acceptance/repo/
+.loors-acceptance/worktree/
+.loors-acceptance/site-browser.mjs
+.loors-acceptance/site-buttons.js
+.loors-acceptance/site-debug.js
+.loors-acceptance/site-revise.mjs
+.loors-acceptance/site-stage.mjs
+.loors-acceptance/site-style.css
+.loors-acceptance/site-edge/
+.loors-acceptance/site-edge-debug/
+.loors-acceptance/site-serve.mjs
+.loors-acceptance/site-stage/
+
 # OS & IDE files
 .DS_Store
 Thumbs.db
