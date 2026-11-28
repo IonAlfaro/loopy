@@ -107,7 +107,7 @@ export function WorkflowIoModal({ open, onClose, onNotice, onSave }: WorkflowIoM
         path: entry.path,
       });
       const wf = parseWorkflowJson(raw);
-      importWorkflow(wf, wf.name || entry.name);
+      importWorkflow(wf, entry.name);
       onNotice(L(`Loaded harness: ${wf.name}`, `Arnés cargado: ${wf.name}`));
       onClose();
     } catch (err) {

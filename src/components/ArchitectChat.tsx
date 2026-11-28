@@ -22,6 +22,7 @@ import {
   parseGraphPatch,
   parseWorkflowJson,
   summarizeGraphPatch,
+  workflowRevision,
   type CloudProviderConfig,
   type LocalModelFile,
   type LoorsGraphPatch,
@@ -40,6 +41,7 @@ import {
 
 interface ChatMsg {
   id: string;
+  tabId: string;
   role: "user" | "assistant";
   content: string;
   attachments?: string[];
@@ -48,8 +50,13 @@ interface ChatMsg {
   workflow?: LoorsWorkflowFile | null;
   patch?: LoorsGraphPatch | null;
   rawActionJson?: string | null;
-  applied?: boolean;
-  previousWorkflow?: LoorsWorkflowFile | null;
+  baseRevision?: string;
+  applied?: {
+    revision: string;
+    workflow: LoorsWorkflowFile;
+    libraryName: string | null;
+    dirty: boolean;
+  };
 }
 
 type ArchitectStreamEvent =
@@ -74,7 +81,7 @@ interface ArchitectChatProps {
   open: boolean;
   onApplyGraph: (
     wf: LoorsWorkflowFile,
-    opts?: { isPatch?: boolean; summary?: string }
+    opts: { isPatch: boolean; summary?: string; restore?: { libraryName: string | null; dirty: boolean } }
   ) => void;
 }
 
@@ -143,6 +150,7 @@ function extractGraphActionFromReply(text: string): {
 export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
   const { locale, t } = useI18n();
   const nodes = useGraphStore((s) => s.nodes);
+  const activeTabId = useGraphStore((s) => s.activeHarnessTabId);
   const selectedBackend = useGraphStore((s) => s.selectedBackend);
   const exportWorkflow = useGraphStore((s) => s.exportWorkflow);
   const architectSeedPrompt = useGraphStore((s) => s.architectSeedPrompt);
@@ -151,13 +159,16 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
   const globalActiveModelPath = useGraphStore((s) => s.activeModelPath);
   const setGlobalActiveModelPath = useGraphStore((s) => s.setActiveModelPath);
 
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [history, setMessages] = useState<ChatMsg[]>([]);
+  const messages = history.filter((m) => m.tabId === activeTabId);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const sendingTabId = useRef<string | null>(null);
   const [streamThinking, setStreamThinking] = useState("");
   const [streamContent, setStreamContent] = useState("");
   const [streamTools, setStreamTools] = useState<ActivityToolItem[]>([]);
-  const [queue, setQueue] = useState<QueuedMessageItem[]>([]);
+  const [queue, setQueue] = useState<(QueuedMessageItem & { tabId: string })[]>([]);
+  const nextQueued = queue.find((item) => item.tabId === activeTabId);
   const [pendingAttachments, setPendingAttachments] = useState<string[]>([]);
   const [stagingFiles, setStagingFiles] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -374,6 +385,7 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
   };
 
   const sendPrompt = async (promptText: string, explicitAttachments?: string[]) => {
+    const tabId = activeTabId;
     const trimmed = promptText.trim();
     const attachmentsToSend = explicitAttachments ?? pendingAttachments;
     if (!trimmed && attachmentsToSend.length === 0) return;
@@ -383,6 +395,7 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
         ...prev,
         {
           id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+          tabId,
           text: trimmed,
           attachments: attachmentsToSend.length > 0 ? [...attachmentsToSend] : undefined,
         },
@@ -396,15 +409,17 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
     setError(null);
     const userMsg: ChatMsg = {
       id: `u-${Date.now()}`,
+      tabId,
       role: "user",
       content: trimmed,
       attachments: attachmentsToSend.length > 0 ? [...attachmentsToSend] : undefined,
     };
     const nextHistory = [...messagesRef.current, userMsg];
-    setMessages(nextHistory);
+    setMessages((prev) => [...prev, userMsg]);
     stickToBottomRef.current = true;
     setInput("");
     if (!explicitAttachments) setPendingAttachments([]);
+    sendingTabId.current = tabId;
     setSending(true);
     streamThinkingRef.current = "";
     streamToolsRef.current = [];
@@ -413,7 +428,9 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
     setStreamTools([]);
 
     try {
-      const currentGraphJson = JSON.stringify(exportWorkflow(), null, 2);
+      const currentGraph = exportWorkflow();
+      const baseRevision = workflowRevision(currentGraph);
+      const currentGraphJson = JSON.stringify(currentGraph, null, 2);
       const reply = await invoke<string>("architect_chat", {
         backend: selectedBackend,
         modelPath: activeModelPath,
@@ -437,6 +454,8 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
         ...prev,
         {
           id: `a-${Date.now()}`,
+          tabId,
+          baseRevision,
           role: "assistant",
           content: parsedWf || parsedPatch ? displayText : reply,
           thinking: streamThinkingRef.current || undefined,
@@ -454,6 +473,7 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
             ...prev,
             {
               id: `a-${Date.now()}`,
+              tabId,
               role: "assistant",
               content: "Generación detenida por el usuario.",
               thinking: streamThinkingRef.current || undefined,
@@ -476,12 +496,60 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
   };
 
   useEffect(() => {
-    if (!sending && !manualStopRef.current && queue.length > 0) {
-      const [next, ...rest] = queue;
-      setQueue(rest);
-      void sendPrompt(next.text, next.attachments ?? []);
+    if (!sending && !manualStopRef.current && nextQueued) {
+      setQueue((prev) => prev.filter((item) => item.id !== nextQueued.id));
+      void sendPrompt(nextQueued.text, nextQueued.attachments ?? []);
     }
-  }, [sending, queue]);
+  }, [sending, nextQueued]);
+
+  const applyProposal = (message: ChatMsg, undo = false) => {
+    const state = useGraphStore.getState();
+    const current = exportWorkflow();
+    const revision = workflowRevision(current);
+    setError(null);
+    if (state.activeHarnessTabId !== message.tabId || state.runStatus === "running") {
+      setError(locale === "es"
+        ? "Abre la pestaña original y detén cualquier ejecución antes de cambiar el arnés."
+        : "Open the original tab and stop any run before changing the harness.");
+      return;
+    }
+    const applied = message.applied;
+    if (undo && applied) {
+      if (revision !== applied.revision) {
+        setError(locale === "es"
+          ? "El arnés cambió después de aplicar la propuesta. Deshacer reemplazaría esas ediciones."
+          : "The harness changed after the proposal was applied. Undo would replace those edits.");
+        return;
+      }
+      onApplyGraph(applied.workflow, {
+        isPatch: Boolean(message.patch),
+        summary: locale === "es" ? "Cambios deshechos" : "Changes reverted",
+        restore: applied,
+      });
+      setMessages((prev) => prev.map((item) => item.id === message.id ? { ...item, applied: undefined } : item));
+      return;
+    }
+    if (applied) return;
+    if (revision !== message.baseRevision) {
+      setError(locale === "es"
+        ? "El arnés cambió desde que se pidió la propuesta. Pide una nueva propuesta para el grafo actual."
+        : "The harness changed since this proposal was requested. Ask for a new proposal for the current graph.");
+      return;
+    }
+    const workflow = message.patch ? applyGraphPatch(current, message.patch) : message.workflow;
+    if (!workflow) return;
+    onApplyGraph(workflow, {
+      isPatch: Boolean(message.patch),
+      summary: message.patch?.summary || (message.patch ? summarizeGraphPatch(message.patch, locale) : undefined),
+    });
+    const snapshot = {
+      revision: workflowRevision(exportWorkflow()),
+      workflow: current,
+      libraryName: state.savedLibraryName,
+      dirty: state.dirty,
+    };
+    setMessages((prev) => prev.map((item) => item.id === message.id ? { ...item, applied: snapshot } : item));
+  };
 
   const handleStop = async () => {
     manualStopRef.current = true;
@@ -526,7 +594,7 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
               type="button"
               className="icon-btn"
               title={locale === "es" ? "Limpiar conversación" : "Clear conversation"}
-              onClick={() => setMessages([])}
+              onClick={() => setMessages((prev) => prev.filter((m) => m.tabId !== activeTabId))}
             >
               <Trash2 size={13} />
             </button>
@@ -697,25 +765,8 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
                     <button
                       type="button"
                       className="btn-primary apply-graph-btn"
-                      onClick={() => {
-                        const currentWf = exportWorkflow();
-                        const patched = applyGraphPatch(currentWf, m.patch!);
-                        const summary =
-                          m.patch!.summary ||
-                          summarizeGraphPatch(m.patch!, locale === "es" ? "es" : "en");
-                        onApplyGraph(patched, { isPatch: true, summary });
-                        setMessages((prev) =>
-                          prev.map((item) =>
-                            item.id === m.id
-                              ? {
-                                  ...item,
-                                  applied: true,
-                                  previousWorkflow: item.previousWorkflow ?? currentWf,
-                                }
-                              : item
-                          )
-                        );
-                      }}
+                      onClick={() => applyProposal(m)}
+                      disabled={Boolean(m.applied)}
                     >
                       {m.applied ? <Check size={14} /> : <Wand2 size={14} />}
                       <span>
@@ -728,27 +779,12 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
                             : `Apply patch (${summarizeGraphPatch(m.patch, "en")})`}
                       </span>
                     </button>
-                    {m.applied && m.previousWorkflow && (
+                    {m.applied && (
                       <button
                         type="button"
                         className="btn-secondary architect-undo-btn"
                         title={locale === "es" ? "Deshacer este parche" : "Undo this patch"}
-                        onClick={() => {
-                          onApplyGraph(m.previousWorkflow!, {
-                            isPatch: true,
-                            summary:
-                              locale === "es"
-                                ? "Parche deshecho"
-                                : "Patch reverted",
-                          });
-                          setMessages((prev) =>
-                            prev.map((item) =>
-                              item.id === m.id
-                                ? { ...item, applied: false, previousWorkflow: null }
-                                : item
-                            )
-                          );
-                        }}
+                        onClick={() => applyProposal(m, true)}
                       >
                         <Undo2 size={13} />
                         <span>{locale === "es" ? "Deshacer" : "Undo"}</span>
@@ -772,21 +808,8 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
                     <button
                       type="button"
                       className="btn-primary apply-graph-btn"
-                      onClick={() => {
-                        const currentWf = exportWorkflow();
-                        onApplyGraph(m.workflow!, { isPatch: false });
-                        setMessages((prev) =>
-                          prev.map((item) =>
-                            item.id === m.id
-                              ? {
-                                  ...item,
-                                  applied: true,
-                                  previousWorkflow: item.previousWorkflow ?? currentWf,
-                                }
-                              : item
-                          )
-                        );
-                      }}
+                      onClick={() => applyProposal(m)}
+                      disabled={Boolean(m.applied)}
                     >
                       {m.applied ? <Check size={14} /> : <Wand2 size={14} />}
                       <span>
@@ -795,27 +818,12 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
                           : `Apply "${m.workflow.name}" to Canvas (${m.workflow.nodes.length} nodes)`}
                       </span>
                     </button>
-                    {m.applied && m.previousWorkflow && (
+                    {m.applied && (
                       <button
                         type="button"
                         className="btn-secondary architect-undo-btn"
                         title={locale === "es" ? "Restaurar arnés anterior" : "Restore previous harness"}
-                        onClick={() => {
-                          onApplyGraph(m.previousWorkflow!, {
-                            isPatch: true,
-                            summary:
-                              locale === "es"
-                                ? "Arnés anterior restaurado"
-                                : "Previous harness restored",
-                          });
-                          setMessages((prev) =>
-                            prev.map((item) =>
-                              item.id === m.id
-                                ? { ...item, applied: false, previousWorkflow: null }
-                                : item
-                            )
-                          );
-                        }}
+                        onClick={() => applyProposal(m, true)}
                       >
                         <Undo2 size={13} />
                         <span>{locale === "es" ? "Deshacer" : "Undo"}</span>
@@ -836,7 +844,7 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
           );
         })}
 
-        {sending && (
+        {sending && sendingTabId.current === activeTabId && (
           <div className="chat-bubble role-assistant">
             <div className="chat-role">
               {locale === "es" ? "Arquitecto Loors" : "Loors Architect"}
@@ -890,14 +898,13 @@ export function ArchitectChat({ open, onApplyGraph }: ArchitectChatProps) {
       </div>
 
       <MessageQueueTray
-        items={queue}
+        items={queue.filter((item) => item.tabId === activeTabId)}
         isBusy={sending}
         onRemove={(id) => setQueue((prev) => prev.filter((q) => q.id !== id))}
         onRunNext={() => {
-          if (queue.length === 0) return;
-          const [next, ...rest] = queue;
-          setQueue(rest);
-          void sendPrompt(next.text, next.attachments ?? []);
+          if (sending || !nextQueued) return;
+          setQueue((prev) => prev.filter((item) => item.id !== nextQueued.id));
+          void sendPrompt(nextQueued.text, nextQueued.attachments ?? []);
         }}
       />
 

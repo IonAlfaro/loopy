@@ -104,7 +104,11 @@ fn list_saved_workflows() -> Vec<SavedWorkflowEntry> {
 }
 
 #[tauri::command]
-fn save_workflow_to_library(name: String, content: String) -> Result<String, String> {
+fn save_workflow_to_library(
+    name: String,
+    content: String,
+    create_only: Option<bool>,
+) -> Result<String, String> {
     let dir = workflows_dir();
     fs::create_dir_all(&dir).map_err(|e| format!("No se pudo crear carpeta workflows: {e}"))?;
     let safe_name: String = name
@@ -123,8 +127,46 @@ fn save_workflow_to_library(name: String, content: String) -> Result<String, Str
         safe_name
     };
     let path = dir.join(format!("{final_name}.loors.json"));
-    fs::write(&path, content).map_err(|e| format!("Error guardando flujo: {e}"))?;
+    write_library_workflow(&path, &content, create_only.unwrap_or(false))?;
     Ok(path.to_string_lossy().to_string())
+}
+
+fn write_library_workflow(path: &std::path::Path, content: &str, create_only: bool) -> Result<(), String> {
+    if create_only {
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    format!("Ya existe un arnés guardado en «{}».", path.display())
+                } else {
+                    format!("Error guardando flujo: {e}")
+                }
+            })?;
+        if let Err(error) = file.write_all(content.as_bytes()) {
+            drop(file);
+            let _ = fs::remove_file(path);
+            return Err(format!("Error guardando flujo: {error}"));
+        }
+    } else {
+        fs::write(path, content).map_err(|e| format!("Error guardando flujo: {e}"))?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[test]
+fn new_library_workflow_preserves_existing_file_on_collision() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("harness.loors.json");
+    write_library_workflow(&path, "original", true).unwrap();
+    let error = write_library_workflow(&path, "replacement", true).unwrap_err();
+    assert!(error.contains("Ya existe"));
+    assert_eq!(fs::read_to_string(&path).unwrap(), "original");
+    write_library_workflow(&path, "update", false).unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), "update");
 }
 
 #[tauri::command]

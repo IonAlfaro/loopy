@@ -544,7 +544,8 @@ pub async fn dispatch_rpc(
         "save_workflow_to_library" => {
             let name = get_str(&args, &["name"]);
             let content = get_str(&args, &["content"]);
-            let path = crate::save_workflow_to_library(name, content)?;
+            let create_only = args.get("createOnly").and_then(Value::as_bool);
+            let path = crate::save_workflow_to_library(name, content, create_only)?;
             Ok(json!(path))
         }
         "load_workflow_from_library" => {

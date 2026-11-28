@@ -280,7 +280,7 @@ interface GraphStoreState {
   importWorkflow: (
     file: LoorsWorkflowFile,
     libraryName?: string | null,
-    opts?: { preserveModels?: boolean; preserveLibraryLink?: boolean; preserveSelection?: boolean }
+    opts?: { preserveModels?: boolean; preserveLibraryLink?: boolean; preserveSelection?: boolean; dirty?: boolean }
   ) => void;
 }
 
@@ -1536,7 +1536,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     set({
       workflowName: resolvedName,
       savedLibraryName: resolvedLib,
-      dirty: false,
+      dirty: opts?.dirty ?? false,
       nodes: nextNodes,
       edges: file.edges || [],
       selectedNodeId: nextSelected,
@@ -1549,7 +1549,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
               ...t,
               workflowName: resolvedName,
               savedLibraryName: resolvedLib,
-              dirty: false,
+              dirty: opts?.dirty ?? false,
               runStatus: "idle",
               pendingGate: null,
             }

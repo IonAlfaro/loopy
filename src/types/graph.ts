@@ -525,6 +525,17 @@ export interface LoorsWorkflowFile {
   edges: LoorsFlowEdge[];
 }
 
+export function workflowRevision({ name, nodes, edges }: LoorsWorkflowFile): string {
+  return JSON.stringify({
+    name,
+    nodes: nodes.map(({ selected, dragging, resizing, measured, data: { status, ...data }, ...node }) => ({
+      ...node,
+      data,
+    })),
+    edges: edges.map(({ selected, ...edge }) => edge),
+  });
+}
+
 export function parseWorkflowJson(raw: string): LoorsWorkflowFile {
   const parsed = JSON.parse(raw) as Partial<LoorsWorkflowFile>;
   if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {

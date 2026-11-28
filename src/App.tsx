@@ -61,6 +61,7 @@ import {
   parseGgufMetadata,
   parseWorkflowJson,
   validateGraphBeforeRun,
+  workflowRevision,
   type EngineEvent,
   type LoorsNodeKind,
   type ModelLoadProgressEvent,
@@ -585,16 +586,24 @@ function LoorsStudioInner() {
       : state.harnessTabs.find((tab) => tab.id === tabId);
   };
 
-  const saveHarness = (tabId: string) => {
+  const saveHarness = (tabId: string, fromArchitect = false) => {
+    const revision = (snapshot: NonNullable<ReturnType<typeof getHarnessSnapshot>>) =>
+      workflowRevision({ schemaVersion: 1, name: snapshot.workflowName, nodes: snapshot.nodes, edges: snapshot.edges });
+    const applied = fromArchitect ? getHarnessSnapshot(tabId) : null;
     const save = saveQueue.current.then(async () => {
       const snapshot = getHarnessSnapshot(tabId);
       if (!snapshot) return false;
-      const name = snapshot.workflowName.trim() || snapshot.savedLibraryName || "harness";
+      if (applied && (revision(snapshot) !== revision(applied)
+        || snapshot.savedLibraryName !== applied.savedLibraryName)) return false;
+      const linkedName = snapshot.savedLibraryName;
+      const workflowName = snapshot.workflowName.trim() || linkedName || "harness";
+      const name = linkedName || workflowName;
       const path = await invoke<string>("save_workflow_to_library", {
         name,
+        createOnly: !linkedName,
         content: JSON.stringify({
           schemaVersion: 1,
-          name,
+          name: workflowName,
           exportedAt: new Date().toISOString(),
           nodes: snapshot.nodes,
           edges: snapshot.edges,
@@ -602,8 +611,10 @@ function LoorsStudioInner() {
       });
       const current = getHarnessSnapshot(tabId);
       if (!current) return false;
-      const unchanged = current.nodes === snapshot.nodes && current.edges === snapshot.edges
-        && current.workflowName === snapshot.workflowName;
+      const unchanged = current.savedLibraryName === linkedName && (fromArchitect
+        ? revision(current) === revision(snapshot)
+        : current.nodes === snapshot.nodes && current.edges === snapshot.edges
+          && current.workflowName === snapshot.workflowName);
       if (!unchanged) return false;
       const state = useGraphStore.getState();
       if (state.activeHarnessTabId === tabId) {
@@ -1305,43 +1316,33 @@ function LoorsStudioInner() {
             <ArchitectChat
               open={true}
               onApplyGraph={(wf, opts) => {
-                if (opts?.isPatch) {
-                  const targetLib = useGraphStore.getState().savedLibraryName || wf.name || "arnes";
-                  importWorkflow(wf, targetLib, {
-                    preserveModels: true,
-                    preserveLibraryLink: true,
-                    preserveSelection: true,
-                  });
-                  invoke("save_workflow_to_library", {
-                    name: targetLib,
-                    content: JSON.stringify(wf, null, 2),
-                  }).catch(() => {});
-                  setBanner(
-                    opts.summary
-                      ? locale === "es"
-                        ? `Cambios aplicados: ${opts.summary}`
-                        : `Changes applied: ${opts.summary}`
-                      : locale === "es"
-                        ? `Cambios quirúrgicos aplicados a ${wf.name}`
-                        : `Surgical changes applied to ${wf.name}`
-                  );
-                } else {
-                  const targetLib = wf.name || "arnes";
-                  importWorkflow(wf, targetLib, { preserveModels: true });
-                  invoke("save_workflow_to_library", {
-                    name: targetLib,
-                    content: JSON.stringify(wf, null, 2),
-                  }).catch(() => {});
+                const state = useGraphStore.getState();
+                const { activeHarnessTabId: tabId, savedLibraryName } = state;
+                const restore = opts.restore;
+                const libraryName = restore ? restore.libraryName : opts.isPatch ? savedLibraryName : null;
+                const shouldSave = !restore || (opts.isPatch && Boolean(libraryName));
+                importWorkflow(wf, libraryName, {
+                  preserveModels: true,
+                  preserveSelection: opts.isPatch || Boolean(restore),
+                  dirty: shouldSave || Boolean(restore?.dirty),
+                });
+                if (!opts.isPatch && !restore) {
+                  autoLayout();
                   setRightPanelTab("inspector");
                   setTimeout(() => {
-                    autoLayout();
-                    setTimeout(() => fitView({ padding: 0.16, duration: 250 }), 30);
+                    if (useGraphStore.getState().activeHarnessTabId === tabId) {
+                      fitView({ padding: 0.16, duration: 250 });
+                    }
                   }, 30);
-                  setBanner(
-                    locale === "es"
-                      ? `Arnés aplicado y guardado: ${wf.name}`
-                      : `Harness applied and saved: ${wf.name}`
-                  );
+                }
+                const applied = opts.summary || (locale === "es" ? `Arnés aplicado: ${wf.name}` : `Harness applied: ${wf.name}`);
+                setBanner(applied);
+                if (shouldSave) {
+                  void saveHarness(tabId, true).then((saved) => {
+                    if (saved && useGraphStore.getState().activeHarnessTabId === tabId) {
+                      setBanner(locale === "es" ? `Guardado: ${saved.name}` : `Saved: ${saved.name}`);
+                    }
+                  }).catch((error) => setBanner(saveFailure(error)));
                 }
               }}
             />
