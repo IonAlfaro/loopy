@@ -30,23 +30,11 @@ import {
   NODE_BLUEPRINTS,
   type LoorsFlowNode,
   type LoorsNodeKind,
-  type PortKind,
   type PortSpec,
 } from "../../types/graph";
 import { getNodeLabel } from "../../i18n";
-import { arePortsCompatible, getPortLabel } from "../nodePorts";
+import { arePortsCompatible, getPortLabel, getVisibleNodePorts, PORT_COLORS } from "../nodePorts";
 import { useGraphStore } from "../../store/useGraphStore";
-
-const PORT_COLORS: Record<PortKind, string> = {
-  exec: "#94a3b8",
-  model: "#a855f7",
-  skill: "#2dd4bf",
-  mcp: "#fb923c",
-  data: "#38bdf8",
-  true: "#22c55e",
-  false: "#ef4444",
-  retry: "#4ade80",
-};
 
 export function NodeIcon({ kind }: { kind: LoorsNodeKind }) {
   const props = { size: 13, strokeWidth: 2.1 };
@@ -126,22 +114,7 @@ export function LoorsNode({ id, data, selected }: NodeProps<LoorsFlowNode>) {
       ? data.config.accent
       : bp.accent;
 
-  const hasExecEdge = edges.some(
-    (e) =>
-      (e.source === id && e.sourceHandle === "exec") ||
-      (e.target === id && e.targetHandle === "exec")
-  );
-  const hideExec =
-    (data.kind === "workspace" || data.kind === "knowledge_rag") &&
-    data.config.inlineExec !== true &&
-    !hasExecEdge;
-
-  const visibleInputs = hideExec
-    ? bp.inputs.filter((p) => p.kind !== "exec")
-    : bp.inputs;
-  const visibleOutputs = hideExec
-    ? bp.outputs.filter((p) => p.kind !== "exec")
-    : bp.outputs;
+  const { inputs: visibleInputs, outputs: visibleOutputs } = getVisibleNodePorts(id, data, edges);
   const rows = Math.max(visibleInputs.length, visibleOutputs.length);
   const typeLabel = getNodeLabel(data.kind, locale);
   const title = data.title === bp.label ? typeLabel : data.title;

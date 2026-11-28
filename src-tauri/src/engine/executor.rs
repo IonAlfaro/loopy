@@ -504,6 +504,7 @@ fn execute_graph_with_depth(
             message: None,
         });
 
+        let step_iteration = ctx.iteration;
         let node_started = std::time::Instant::now();
         let step = run_node(
             &run_id,
@@ -539,6 +540,28 @@ fn execute_graph_with_depth(
         match step_result {
             NodeStepOutcome::Continue(out_port) => {
                 record_node_output(&mut ctx, node);
+                let value = match node.data.kind.as_str() {
+                    "agent" => Some(("response", ctx.last_agent_output.as_str())),
+                    "shell" => Some(("stderr", ctx.last_stderr.as_str())),
+                    _ => None,
+                };
+                const PREVIEW_CHARS: usize = 2000;
+                let (value_preview, value_truncated) = value.map_or((None, false), |(_, text)| {
+                    let mut chars = text.chars();
+                    let preview = chars.by_ref().take(PREVIEW_CHARS).collect();
+                    (Some(preview), chars.next().is_some())
+                });
+                emit(EngineEvent::NodeResult {
+                    run_id: run_id.clone(),
+                    node_id: node.id.clone(),
+                    status: NodeStatusKind::Success,
+                    iteration: step_iteration,
+                    step: safety_steps,
+                    out_port: Some(out_port.clone()),
+                    value_port: value.map(|(port, _)| port.into()),
+                    value_preview,
+                    value_truncated,
+                });
                 if let Ok(mut snap) = last_run_snapshot_cache().lock() {
                     *snap = LastRunSnapshot::from_ctx(&ctx);
                 }
@@ -557,6 +580,17 @@ fn execute_graph_with_depth(
                     RunOutcomeKind::Exhausted => NodeStatusKind::Paused,
                     RunOutcomeKind::Failed | RunOutcomeKind::Cancelled => NodeStatusKind::Error,
                 };
+                emit(EngineEvent::NodeResult {
+                    run_id: run_id.clone(),
+                    node_id: node.id.clone(),
+                    status: node_status.clone(),
+                    iteration: step_iteration,
+                    step: safety_steps,
+                    out_port: None,
+                    value_port: None,
+                    value_preview: None,
+                    value_truncated: false,
+                });
                 emit(EngineEvent::NodeStatus {
                     run_id: run_id.clone(),
                     node_id: node.id.clone(),
@@ -3576,6 +3610,7 @@ fn write_event_to_log(
                 message.as_deref().map(|m| format!(" ({m})")).unwrap_or_default()
             )
         }
+        EngineEvent::NodeResult { .. } => return,
         EngineEvent::NodeLog { node_title, iteration, stream, text, .. } => {
             format!("[#{iteration} | {node_title} | {:?}] {text}\n", stream)
         }
@@ -4646,6 +4681,17 @@ mod tests {
             matches!(ev, EngineEvent::NodeLog { node_id, text, .. } if node_id == "val" && text.contains("JSON invalid"))
         });
         assert!(saw_invalid_log, "Expected json_validator to log an invalid JSON error for beta");
+
+        // A retry reports the iteration that chose it, before the guard advances the counter.
+        let retry = recorded.iter().find_map(|event| match event {
+            EngineEvent::NodeResult { node_id, iteration, step, out_port: Some(port), .. }
+                if node_id == "guard" && port == "retry" => Some((*iteration, *step)),
+            _ => None,
+        }).expect("Expected a recorded retry decision");
+        assert!(recorded.iter().any(|event| matches!(event,
+            EngineEvent::NodeResult { node_id, iteration, step, .. }
+                if node_id == "worker" && *iteration == retry.0 + 1 && *step > retry.1
+        )));
 
         // 3. Verify per-node latency metrics were emitted on Success status events
         let success_durations: Vec<(String, String)> = recorded

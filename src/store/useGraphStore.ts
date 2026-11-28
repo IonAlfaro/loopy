@@ -20,6 +20,7 @@ import {
   type ModelDownloadEvent,
   type ModelDownloadItem,
   type ModelLoadProgressEvent,
+  type NodeExecutionResult,
   type RunLogEntry,
   type RunStatus,
   type RuntimeBackendKind,
@@ -179,6 +180,7 @@ export interface HarnessTabState {
   selectedNodeId: string | null;
   runStatus: RunStatus;
   activeRunId: string | null;
+  nodeResults: Record<string, NodeExecutionResult>;
   currentIteration: number;
   maxIterations: number | null;
   runSummary: string | null;
@@ -205,6 +207,7 @@ interface GraphStoreState {
   selectedBackend: RuntimeBackendKind;
   runStatus: RunStatus;
   activeRunId: string | null;
+  nodeResults: Record<string, NodeExecutionResult>;
   currentIteration: number;
   maxIterations: number | null;
   runSummary: string | null;
@@ -304,6 +307,7 @@ function snapshotActiveTab(s: GraphStoreState): HarnessTabState {
     selectedNodeId: s.selectedNodeId,
     runStatus: s.runStatus,
     activeRunId: s.activeRunId,
+    nodeResults: s.nodeResults,
     currentIteration: s.currentIteration,
     maxIterations: s.maxIterations,
     runSummary: s.runSummary,
@@ -319,10 +323,16 @@ function applyEventToTabState(tab: HarnessTabState, event: EngineEvent): Harness
       return {
         ...tab,
         activeRunId: event.run_id,
+        nodeResults: {},
         runStatus: "running",
         currentIteration: 1,
         runSummary: null,
       };
+    case "node_result": {
+      if (tab.activeRunId !== event.run_id || !tab.nodes.some((node) => node.id === event.node_id)
+        || (tab.nodeResults[event.node_id]?.step ?? 0) >= event.step) return tab;
+      return { ...tab, nodeResults: { ...tab.nodeResults, [event.node_id]: event } };
+    }
     case "node_status": {
       const targetNode = tab.nodes.find((n) => n.id === event.node_id);
       const activity =
@@ -417,6 +427,7 @@ function loadInitialTabsState(): { tabs: HarnessTabState[]; activeId: string } {
     selectedNodeId: null,
     runStatus: "idle",
     activeRunId: null,
+    nodeResults: {},
     currentIteration: 0,
     maxIterations: null,
     runSummary: null,
@@ -453,6 +464,7 @@ function loadInitialTabsState(): { tabs: HarnessTabState[]; activeId: string } {
         selectedNodeId: null,
         runStatus: "idle",
         activeRunId: null,
+        nodeResults: {},
         currentIteration: 0,
         maxIterations: null,
         runSummary: null,
@@ -498,6 +510,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   selectedBackend: "auto",
   runStatus: "idle",
   activeRunId: null,
+  nodeResults: {},
   currentIteration: 0,
   maxIterations: null,
   runSummary: null,
@@ -601,6 +614,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       selectedNodeId: null,
       runStatus: "idle",
       activeRunId: null,
+      nodeResults: {},
       currentIteration: 0,
       maxIterations: null,
       runSummary: null,
@@ -619,6 +633,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       selectedNodeId: null,
       runStatus: "idle",
       activeRunId: null,
+      nodeResults: {},
       currentIteration: 0,
       maxIterations: null,
       runSummary: null,
@@ -648,6 +663,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       selectedNodeId: target.selectedNodeId,
       runStatus: target.runStatus,
       activeRunId: target.activeRunId,
+      nodeResults: target.nodeResults,
       currentIteration: target.currentIteration,
       maxIterations: target.maxIterations,
       runSummary: target.runSummary,
@@ -683,6 +699,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       selectedNodeId: next.selectedNodeId,
       runStatus: next.runStatus,
       activeRunId: next.activeRunId,
+      nodeResults: next.nodeResults,
       currentIteration: next.currentIteration,
       maxIterations: next.maxIterations,
       runSummary: next.runSummary,
@@ -1303,6 +1320,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
         ...(event.type === "run_started" ? { swarmAgents: {}, swarmMessages: [] } : {}),
         runStatus: updated.runStatus,
         activeRunId: updated.activeRunId,
+        nodeResults: updated.nodeResults,
         currentIteration: updated.currentIteration,
         maxIterations: updated.maxIterations,
         runSummary: updated.runSummary,
@@ -1541,6 +1559,8 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       edges: file.edges || [],
       selectedNodeId: nextSelected,
       runStatus: "idle",
+      activeRunId: null,
+      nodeResults: {},
       runSummary: null,
       pendingGate: null,
       harnessTabs: get().harnessTabs.map((t) =>
@@ -1551,6 +1571,8 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
               savedLibraryName: resolvedLib,
               dirty: opts?.dirty ?? false,
               runStatus: "idle",
+              activeRunId: null,
+              nodeResults: {},
               pendingGate: null,
             }
           : t

@@ -55,7 +55,21 @@ export type RunStatus =
   | "failed"
   | "cancelled";
 
+export interface NodeExecutionResult {
+  type: "node_result";
+  run_id: string;
+  node_id: string;
+  status: NodeRunStatus;
+  iteration: number;
+  step: number;
+  out_port: string | null;
+  value_port: string | null;
+  value_preview: string | null;
+  value_truncated: boolean;
+}
+
 export type EngineEvent =
+  | NodeExecutionResult
   | {
       type: "run_started";
       run_id: string;
@@ -495,6 +509,8 @@ export interface GraphValidationIssue {
   nodeId: string;
   title: string;
   message: string;
+  port?: { direction: "input" | "output"; id: string };
+  field?: "botToken" | "workspace" | "modelPath";
 }
 
 export function isResourceKind(kind: LoorsNodeKind): boolean {
@@ -1331,12 +1347,13 @@ export function validateGraphBeforeRun(
     });
   }
   if (triggerNode) {
-    const hasOut = edges.some((e) => e.source === triggerNode.id);
+    const hasOut = edges.some((e) => e.source === triggerNode.id && (!e.sourceHandle || e.sourceHandle === "exec"));
     if (!hasOut) {
       issues.push({
         nodeId: triggerNode.id,
         title: triggerNode.data.title,
         message: "Conecta la salida 'exec' del Trigger al siguiente paso.",
+        port: { direction: "output", id: "exec" },
       });
     }
     if (
@@ -1347,6 +1364,7 @@ export function validateGraphBeforeRun(
         nodeId: triggerNode.id,
         title: triggerNode.data.title,
         message: "Introduce el Bot Token de Telegram (@BotFather) o ${TELEGRAM_BOT_TOKEN}.",
+        field: "botToken",
       });
     }
   }
@@ -1357,14 +1375,16 @@ export function validateGraphBeforeRun(
         nodeId: taskInput.id,
         title: taskInput.data.title,
         message: "Elige una carpeta de proyecto (Workspace) válida.",
+        field: "workspace",
       });
     }
-    const hasOut = edges.some((e) => e.source === taskInput.id);
+    const hasOut = edges.some((e) => e.source === taskInput.id && (!e.sourceHandle || e.sourceHandle === "exec"));
     if (!hasOut) {
       issues.push({
         nodeId: taskInput.id,
         title: taskInput.data.title,
         message: "Conecta la salida 'exec' de Task Input al primer paso.",
+        port: { direction: "output", id: "exec" },
       });
     }
   }
@@ -1377,6 +1397,7 @@ export function validateGraphBeforeRun(
           nodeId: n.id,
           title: n.data.title,
           message: "Selecciona un modelo GGUF local o un modelo Cloud/API en este nodo.",
+          field: "modelPath",
         });
       }
     }
@@ -1389,6 +1410,7 @@ export function validateGraphBeforeRun(
           nodeId: n.id,
           title: n.data.title,
           message: "Falta conectar un nodo Local Model al puerto 'model'.",
+          port: { direction: "input", id: "model_ref" },
         });
       }
     }
@@ -1401,6 +1423,7 @@ export function validateGraphBeforeRun(
           nodeId: n.id,
           title: n.data.title,
           message: "Conecta el puerto 'retry' del Loop Guard hacia atrás para cerrar el bucle.",
+          port: { direction: "output", id: "retry" },
         });
       }
     }

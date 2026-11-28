@@ -255,6 +255,9 @@ pub async fn run_workflow_headless(opts: HeadlessRunOptions) -> i32 {
     }
 
     let start_res = engine.start_run(graph, opts.backend, move |ev| {
+        if matches!(&ev, EngineEvent::NodeResult { .. }) {
+            return;
+        }
         if jsonl {
             if let Ok(line) = serde_json::to_string(&ev) {
                 println!("{line}");

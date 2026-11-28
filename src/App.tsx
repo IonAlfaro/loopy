@@ -159,6 +159,7 @@ function LoorsStudioInner() {
   });
 
   const [banner, setBanner] = useState<string | null>(null);
+  const [inspectorEdgeId, setInspectorEdgeId] = useState<string | null>(null);
   const [pendingHarnessClose, setPendingHarnessClose] = useState<string | null>(null);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [closingHarnessId, setClosingHarnessId] = useState<string | null>(null);
@@ -367,6 +368,7 @@ function LoorsStudioInner() {
       const dimmed = dimResourceEdges && sourceKind && isResourceKind(sourceKind)
         && edge.sourceHandle !== "exec";
       const connected = edge.source === selectedNodeId || edge.target === selectedNodeId;
+      const highlighted = connected && edge.id === inspectorEdgeId && rightPanelTab === "inspector" && !rightPanelCollapsed;
       if (!dimmed && !connected) return edge;
       return {
         ...edge,
@@ -376,11 +378,12 @@ function LoorsStudioInner() {
         style: {
           ...edge.style,
           opacity: connected ? 1 : 0.5,
-          strokeWidth: connected ? 2.6 : edge.style?.strokeWidth ?? 1.7,
+          stroke: highlighted ? "#a78bfa" : edge.style?.stroke,
+          strokeWidth: highlighted ? 4 : connected ? 2.6 : edge.style?.strokeWidth ?? 1.7,
         },
       };
     });
-  }, [edges, nodes, dimResourceEdges, selectedNodeId]);
+  }, [edges, nodes, dimResourceEdges, selectedNodeId, inspectorEdgeId, rightPanelTab, rightPanelCollapsed]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1317,7 +1320,8 @@ function LoorsStudioInner() {
             className="right-panel-pane"
             style={{ display: rightPanelTab === "inspector" ? "flex" : "none" }}
           >
-            <Inspector onRun={() => void handleRun()} onShowConsole={() => setConsoleOpen(true)} onStartHarness={() => {
+            <Inspector key={activeHarnessTabId} onHighlightEdge={setInspectorEdgeId}
+              onRun={() => void handleRun()} onShowConsole={() => setConsoleOpen(true)} onStartHarness={() => {
               createHarnessTab();
               const state = useGraphStore.getState();
               state.setSelectedNodeId(state.nodes.find((node) => node.data.kind === "task_input")?.id ?? null);

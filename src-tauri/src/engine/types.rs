@@ -77,6 +77,17 @@ pub enum EngineEvent {
         iteration: u32,
         message: Option<String>,
     },
+    NodeResult {
+        run_id: String,
+        node_id: String,
+        status: NodeStatusKind,
+        iteration: u32,
+        step: u32,
+        out_port: Option<String>,
+        value_port: Option<String>,
+        value_preview: Option<String>,
+        value_truncated: bool,
+    },
     NodeLog {
         run_id: String,
         node_id: String,

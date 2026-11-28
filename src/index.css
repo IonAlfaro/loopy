@@ -9742,31 +9742,124 @@ dialog.loors-dialog::backdrop {
   margin: 6px 0 0;
 }
 
-.inspector-connection > span { flex: 1; min-width: 0; }
-.inspector-connection svg, .inspector-connection small { flex-shrink: 0; }
+.inspector-connection {
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel-2);
+}
+
+.inspector-connection:hover,
+.inspector-connection:focus-visible {
+  border-color: var(--inspector-port-color, #a78bfa);
+}
+
+.inspector-connection-node {
+  display: grid;
+  place-items: center;
+  flex: 0 0 23px;
+  height: 23px;
+  border-radius: 5px;
+  color: var(--inspector-port-color, #a78bfa);
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.inspector-connection-text {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.inspector-connection-text > strong { font-weight: 600; }
+.inspector-connection > svg { flex-shrink: 0; color: var(--muted); }
 
 :is(.inspector-head-actions button, .inspector-node-actions summary, .inspector-node-menu button, .inspector-connection):focus-visible {
   outline: 2px solid #a78bfa;
   outline-offset: 2px;
 }
 
-.inspector-judge-branches {
-  display: grid;
-  gap: 4px;
+.inspector-name {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+}
+
+.inspector-port-group {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.inspector-port-group > h3 {
   margin: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.inspector-port-row {
+  display: grid;
+  grid-template-columns: minmax(76px, 1fr) minmax(0, 2fr);
+  align-items: start;
+  gap: 9px;
+  padding: 4px 0;
   color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.inspector-port-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  padding-block: 8px;
+  color: var(--text);
+}
+
+.inspector-port-label > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--inspector-port-color);
+}
+
+.inspector-port-connections { display: grid; gap: 5px; min-width: 0; }
+.inspector-port-empty, .inspector-port-connections > .inspector-port-warning { padding-block: 8px; }
+.inspector-port-warning { color: var(--warning, #f6b96d); }
+
+.inspector-port-result {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.inspector-execution dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 5px 10px;
   font-size: 12px;
 }
 
-.inspector-judge-branches > div {
-  display: grid;
-  grid-template-columns: minmax(82px, auto) minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-}
+.inspector-execution dt { color: var(--muted); }
+.inspector-execution dd { margin: 0; overflow-wrap: anywhere; }
 
-.inspector-judge-branches dt { color: var(--text); }
-.inspector-judge-branches dd { margin: 0; min-width: 0; }
+.inspector-execution-value pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 5px 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
 .harness-overview {
   display: flex;

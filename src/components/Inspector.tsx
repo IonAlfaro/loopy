@@ -1,12 +1,15 @@
 import { useReactFlow } from "@xyflow/react";
-﻿import { useEffect, useState } from "react";
+﻿import { useEffect, useState, type CSSProperties } from "react";
 import {
   ArrowDownLeft,
+  ArrowLeft,
   ArrowUpRight,
   Check,
   ChevronRight,
   Circle,
   Copy,
+  Database,
+  GitBranch,
   MoreHorizontal,
   FolderOpen,
   FolderSearch,
@@ -24,6 +27,7 @@ import {
   NODE_BLUEPRINTS,
   validateGraphBeforeRun,
   type LoorsFlowNode,
+  type PortSpec,
   type CustomFieldDef,
   type CustomNodeDef,
   type CloudProviderConfig,
@@ -36,7 +40,7 @@ import { useGraphStore } from "../store/useGraphStore";
 import { getNodeDescription, getNodeGuide, getNodeLabel, useI18n } from "../i18n";
 
 import { NodeIcon } from "./nodes/LoorsNode";
-import { getPortLabel } from "./nodePorts";
+import { getPortLabel, getVisibleNodePorts, PORT_COLORS } from "./nodePorts";
 
 const TEMPLATE_VARS = [
   "{{prompt}}",
@@ -322,10 +326,11 @@ function WorkerTools({ tools, label, onChange }: {
   );
 }
 
-export function Inspector({ onStartHarness, onRun, onShowConsole }: {
+export function Inspector({ onStartHarness, onRun, onShowConsole, onHighlightEdge }: {
   onStartHarness: () => void;
   onRun: () => void;
   onShowConsole: () => void;
+  onHighlightEdge: (edgeId: string | null) => void;
 }) {
   const { locale } = useI18n();
   const { getZoom, setCenter } = useReactFlow();
@@ -336,6 +341,7 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
   const edges = useGraphStore((s) => s.edges);
   const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
   const setSelectedNodeId = useGraphStore((s) => s.setSelectedNodeId);
+  const executionResult = useGraphStore((s) => s.selectedNodeId ? s.nodeResults[s.selectedNodeId] : undefined);
   const updateNodeTitle = useGraphStore((s) => s.updateNodeTitle);
   const updateNodeConfig = useGraphStore((s) => s.updateNodeConfig);
   const deleteNode = useGraphStore((s) => s.deleteNode);
@@ -348,6 +354,11 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
   const selectedBackend = useGraphStore((s) => s.selectedBackend);
 
   const [openWorker, setOpenWorker] = useState<{ nodeId: string; index: number } | null>(null);
+  const [navigation, setNavigation] = useState<{ current: string; previous: string[] } | null>(null);
+  useEffect(() => {
+    setNavigation((history) => history?.current === selectedNodeId ? history : null);
+    onHighlightEdge(null);
+  }, [selectedNodeId, onHighlightEdge]);
 
   const [scannedModels, setScannedModels] = useState<LocalModelFile[] | null>(
     null
@@ -466,6 +477,12 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
       { zoom: Math.max(0.7, getZoom()), duration: 180 }
     );
   };
+  const followConnection = (target: LoorsFlowNode) => {
+    if (!node || target.id === node.id) return;
+    const previous = navigation?.current === node.id ? navigation.previous : [];
+    setNavigation({ current: target.id, previous: [...previous, node.id] });
+    jumpToNode(target);
+  };
 
   if (!node) {
     if (!nodes.length) {
@@ -578,6 +595,92 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
   const nodeEdges = edges.filter((edge) => edge.source === node.id || edge.target === node.id);
   const modelEdge = nodeEdges.find((edge) => edge.target === node.id && edge.targetHandle === "model_ref");
   const connectedModel = nodes.find((item) => item.id === modelEdge?.source);
+  const nodeIssues = validateGraphBeforeRun(nodes, edges).filter((issue) => issue.nodeId === node.id);
+  const fieldWarning = (field: "botToken" | "workspace" | "modelPath", english: string) => {
+    const issue = nodeIssues.find((item) => item.field === field);
+    return issue && <small className="inspector-port-warning">{L(english, issue.message)}</small>;
+  };
+  const previousId = navigation?.current === node.id ? navigation.previous[navigation.previous.length - 1] : undefined;
+  const previousNode = nodes.find((item) => item.id === previousId);
+  const displayTitle = (item: LoorsFlowNode) => item.data.title === NODE_BLUEPRINTS[item.data.kind].label
+    ? getNodeLabel(item.data.kind, locale) : item.data.title;
+  const renderConnection = (peer: LoorsFlowNode, edgeId: string, incoming: boolean, peerPort?: PortSpec) => (
+    <button key={edgeId} type="button" className="inspector-connection"
+      onMouseEnter={() => onHighlightEdge(edgeId)}
+      onMouseLeave={(event) => { if (!event.currentTarget.matches(":focus-visible")) onHighlightEdge(null); }}
+      onFocus={() => onHighlightEdge(edgeId)} onBlur={() => onHighlightEdge(null)}
+      onClick={() => followConnection(peer)}>
+      <span className="inspector-connection-node" aria-hidden="true"><NodeIcon kind={peer.data.kind} /></span>
+      <span className="inspector-connection-text">
+        <strong>{displayTitle(peer)}</strong>
+        {peerPort && <small>{getPortLabel(peerPort, locale, peer.data.kind)}</small>}
+      </span>
+      {incoming ? <ArrowDownLeft size={14} aria-hidden="true" /> : <ArrowUpRight size={14} aria-hidden="true" />}
+    </button>
+  );
+  const renderPorts = (title: string, direction: "input" | "output", ports: PortSpec[]) => {
+    if (!ports.length) return null;
+    const incoming = direction === "input";
+    return (
+      <section className="inspector-port-group" aria-label={title}>
+        <h3>{title}</h3>
+        <ul className="inspector-connections">
+          {ports.map((port) => {
+            const isResource = port.id.endsWith("_ref");
+            const isBranch = port.kind === "true" || port.kind === "false" || port.kind === "retry";
+            const Icon = isResource ? PlugZap : isBranch ? GitBranch : port.kind === "data" ? Database : Play;
+            const connections = nodeEdges.filter((edge) => incoming
+              ? edge.target === node.id && (edge.targetHandle ?? blueprint.inputs[0]?.id) === port.id
+              : edge.source === node.id && (edge.sourceHandle ?? blueprint.outputs[0]?.id) === port.id);
+            const issue = nodeIssues.find((item) => item.port?.direction === direction && item.port.id === port.id);
+            return (
+              <li key={port.id} className="inspector-port-row"
+                style={{ "--inspector-port-color": PORT_COLORS[port.kind] } as CSSProperties}>
+                <span className="inspector-port-label">
+                  <Icon size={13} aria-hidden="true" />
+                  <span>
+                    {getPortLabel(port, locale, node.data.kind)}
+                    {!incoming && isBranch && executionResult?.out_port === port.id && (
+                      <small className="inspector-port-result">{L("Last selected", "Última elegida")}</small>
+                    )}
+                  </span>
+                </span>
+                <div className="inspector-port-connections">
+                  {connections.map((edge) => {
+                    const peer = nodes.find((item) => item.id === (incoming ? edge.source : edge.target));
+                    if (!peer) return null;
+                    const peerPorts = incoming ? NODE_BLUEPRINTS[peer.data.kind].outputs : NODE_BLUEPRINTS[peer.data.kind].inputs;
+                    const peerHandle = incoming ? edge.sourceHandle : edge.targetHandle;
+                    const peerPort = peerHandle ? peerPorts.find((item) => item.id === peerHandle) : peerPorts[0];
+                    return renderConnection(peer, edge.id, incoming, peerPort);
+                  })}
+                  {!connections.length && !issue && <small className="inspector-port-empty">{L("Unconnected", "Sin conectar")}</small>}
+                  {issue && <small className="inspector-port-warning">{L(
+                    node.data.kind === "loop_guard" ? "Connect this port back to close the loop." : "Connect this port to the next step.",
+                    issue.message,
+                  )}</small>}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    );
+  };
+  const visiblePorts = getVisibleNodePorts(node.id, node.data, nodeEdges);
+  const inputs = visiblePorts.inputs.filter((port) => !(requiresModel && port.id === "model_ref"));
+  const resourceInputs = inputs.filter((port) => port.id.endsWith("_ref"));
+  const flowInputs = inputs.filter((port) => !resourceInputs.includes(port));
+  const configuredResources = resourceInputs.filter((port) => nodeEdges.some(
+    (edge) => edge.target === node.id && edge.targetHandle === port.id,
+  ));
+  const availableResources = resourceInputs.filter((port) => !configuredResources.includes(port));
+  const consumers = visiblePorts.outputs.filter((port) => isResourceKind(node.data.kind) && port.id.endsWith("_ref"));
+  const outputs = visiblePorts.outputs.filter((port) => !consumers.includes(port));
+  const hasBranches = outputs.length > 1 && !outputs.some((port) => port.kind === "exec");
+  const branches = hasBranches && renderPorts(L("Branches", "Ramas"), "output", outputs);
+  const valuePort = blueprint.outputs.find((port) => port.id === executionResult?.value_port);
+  const selectedPort = blueprint.outputs.find((port) => port.id === executionResult?.out_port);
   const addModel = () => {
     attachResourceToNode(node.id, "local_model");
     const state = useGraphStore.getState();
@@ -647,11 +750,21 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
         <div className="inspector-identity">
           <span className="inspector-node-icon" style={{ color: blueprint.accent }}><NodeIcon kind={node.data.kind} /></span>
           <div>
-            <h2 className="inspector-kind" title={nodeTitle}>{nodeTitle}</h2>
-            {nodeTitle !== typeLabel && <span>{typeLabel}</span>}
+            <input className="inspector-name" type="text" aria-label={L("Node name", "Nombre del nodo")}
+              value={nodeTitle} onChange={(event) => updateNodeTitle(node.id, event.target.value)} />
+            <span>{typeLabel}</span>
           </div>
         </div>
         <div className="inspector-head-actions">
+          {!isResourceKind(node.data.kind) && (
+            <button type="button" className="btn-secondary"
+              title={L("Reuses previous outputs", "Reutiliza salidas previas")}
+              onClick={() => window.dispatchEvent(new CustomEvent("loors:run-workflow", {
+                detail: { startNodeId: node.id },
+              }))}>
+              <Play size={13} /> {L("Run from here", "Ejecutar desde aquí")}
+            </button>
+          )}
           <details key={node.id} className="inspector-node-actions">
             <summary className="icon-btn" title={L("Node actions", "Acciones del nodo")} aria-label={L("Node actions", "Acciones del nodo")}>
               <MoreHorizontal size={16} />
@@ -661,27 +774,6 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
                 event.currentTarget.closest("details")?.removeAttribute("open");
               }
             }}>
-              {!isResourceKind(node.data.kind) && (
-                <button
-                  type="button"
-
-                  title={
-                    locale === "es"
-                      ? "Ejecutar arnés desde este nodo (reutilizando salidas previas)"
-                      : "Run harness from this node (reusing previous outputs)"
-                  }
-                  onClick={() =>
-                    window.dispatchEvent(
-                      new CustomEvent("loors:run-workflow", {
-                        detail: { startNodeId: node.id },
-                      })
-                    )
-                  }
-                >
-                  <Play size={13} />
-                  {L("Run from here", "Ejecutar desde aquí")}
-                </button>
-              )}
               {canConvertCustom && (
                 <button type="button" onClick={handleConvertToCustom}>
                   <Star size={14} /> {L("Save as reusable node", "Guardar como nodo reutilizable")}
@@ -702,19 +794,20 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
         <button type="button" className="harness-overview-link" onClick={() => setSelectedNodeId(null)}>
           <ArrowDownLeft size={13} /> {L("Harness overview", "Resumen del arnés")}
         </button>
+        {previousNode && (
+          <button type="button" className="harness-overview-link" onClick={() => {
+            setNavigation({ current: previousNode.id, previous: navigation?.previous.slice(0, -1) ?? [] });
+            jumpToNode(previousNode);
+          }}>
+            <ArrowLeft size={13} /> {L("Back to", "Volver a")} {displayTitle(previousNode)}
+          </button>
+        )}
         {requiresModel && (
           <div className="inspector-model-link" data-missing={!connectedModel}>
             <span>{L("Model", "Modelo")}</span>
-            {connectedModel ? (
-              <button type="button" className="btn-secondary" onClick={() => jumpToNode(connectedModel)}>
-                <NodeIcon kind="local_model" />
-                <span className="truncate-text">{connectedModel.data.title === NODE_BLUEPRINTS.local_model.label
-                  ? getNodeLabel("local_model", locale) : connectedModel.data.title}</span>
-                <ArrowUpRight size={13} />
-              </button>
-            ) : (
+            {connectedModel && modelEdge ? renderConnection(connectedModel, modelEdge.id, true) : (
               <>
-                <strong>{L("Connect a model", "Conecta un modelo")}</strong>
+                <strong>{L("Connect a model", "Falta conectar un modelo")}</strong>
                 {nodes.some((item) => item.data.kind === "local_model") && (
                   <select aria-label={L("Connect an existing model", "Conectar un modelo existente")} value="" onChange={(event) => {
                     if (event.target.value) connect({
@@ -734,6 +827,13 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
               </>
             )}
           </div>
+        )}
+        {renderPorts(L("Resources", "Recursos"), "input", configuredResources)}
+        {availableResources.length > 0 && (
+          <details key={`available-resources-${node.id}`} className="inspector-disclosure">
+            <summary>{L("Available resource ports", "Puertos de recursos disponibles")}</summary>
+            {renderPorts(L("Resources", "Recursos"), "input", availableResources)}
+          </details>
         )}
 
         {node.data.kind === "workspace" && (
@@ -780,6 +880,7 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
               placeholder="Ej: C:\Users\...\mi-proyecto"
               onChange={(val) => updateNodeConfig(node.id, { workspace: val })}
             />
+            {fieldWarning("workspace", "Choose a valid project folder.")}
             <label className="field">
               <span>{L("What should the agent do?", "¿Qué debe hacer el agente?")}</span>
               <textarea
@@ -914,6 +1015,7 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
                         updateNodeConfig(node.id, { botToken: e.target.value })
                       }
                     />
+                    {fieldWarning("botToken", "Enter a Telegram bot token or reference a token variable.")}
                   </label>
                   <label className="field">
                     <span>{L("Allowed Chat ID (optional)", "Chat ID permitido (opcional)")}</span>
@@ -1031,6 +1133,7 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
               </div>
             </div>
 
+            {fieldWarning("modelPath", "Select a local GGUF or API model.")}
             <div className="hw-note">
               {locale === "es"
                 ? "El tamaño de contexto, KV Cache, capas GPU, temperatura y umbral de compactación se gestionan desde el botón de opciones (⚙) junto al modelo."
@@ -1445,6 +1548,7 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
         )}
 
         {node.data.kind === "condition" && (
+          <>
           <div className="field">
             <span>{locale === "es" ? "Expresión condicional" : "Condition expression"}</span>
             <input
@@ -1473,6 +1577,8 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
               ))}
             </div>
           </div>
+          {branches}
+          </>
         )}
 
         {node.data.kind === "loop_guard" && (
@@ -1793,24 +1899,7 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
                 }
               />
             </label>
-            <dl className="inspector-judge-branches">
-              {blueprint.outputs.map((port) => {
-                const destinations = nodeEdges.filter((edge) => edge.source === node.id && edge.sourceHandle === port.id)
-                  .flatMap((edge) => nodes.filter((item) => item.id === edge.target));
-                return (
-                  <div key={port.id}>
-                    <dt>{getPortLabel(port, locale, node.data.kind)}</dt>
-                    <dd>
-                      {destinations.length ? destinations.map((target) => (
-                        <button type="button" className="inspector-connection" key={target.id} onClick={() => jumpToNode(target)}>
-                          <span className="truncate-text">{target.data.title}</span><ArrowUpRight size={13} />
-                        </button>
-                      )) : L("Unconnected", "Sin conectar")}
-                    </dd>
-                  </div>
-                );
-              })}
-            </dl>
+            {branches}
             <details key={node.id} className="inspector-disclosure">
               <summary>{L("Advanced settings", "Ajustes avanzados")}</summary>
               <div className="inspector-advanced-fields">
@@ -2630,45 +2719,35 @@ export function Inspector({ onStartHarness, onRun, onShowConsole }: {
             />
           </label>
         )}
-        <details key={`connections-${node.id}`} className="inspector-disclosure">
-          <summary>{L("Connections", "Conexiones")}</summary>
-          <ul className="inspector-connections">
-            {nodeEdges.map((edge) => {
-              const incoming = edge.target === node.id;
-              const peer = nodes.find((item) => item.id === (incoming ? edge.source : edge.target));
-              if (!peer) return null;
-              const handleId = incoming ? edge.targetHandle : edge.sourceHandle;
-              const port = (incoming ? blueprint.inputs : blueprint.outputs).find((item) => item.id === handleId);
-              const portLabel = port ? getPortLabel(port, locale, node.data.kind) : handleId;
-              return (
-                <li key={edge.id}>
-                  <button type="button" className="inspector-connection" onClick={() => jumpToNode(peer)}>
-                    {incoming ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}
-                    <span className="truncate-text">{peer.data.title}</span>
-                    <small>{portLabel}</small>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          {nodeEdges.length === 0 && (
-            <p>{L("No connections yet.", "Todavía no hay conexiones.")}</p>
-          )}
-        </details>
-
-        <details key={`rename-${node.id}`} className="inspector-disclosure">
-          <summary>{L("Rename node", "Renombrar nodo")}</summary>
-          <div className="inspector-advanced-fields">
-          <label className="field">
-            <span>{locale === "es" ? "Nombre del nodo" : "Node name"}</span>
-            <input
-              type="text"
-              value={node.data.title}
-              onChange={(e) => updateNodeTitle(node.id, e.target.value)}
-            />
-          </label>
-          </div>
-        </details>
+        {renderPorts(L("Used by", "Usado por"), "output", consumers)}
+        {hasBranches && node.data.kind !== "llm_judge" && node.data.kind !== "condition" && branches}
+        {renderPorts(L("Inputs", "Entradas"), "input", flowInputs)}
+        {!hasBranches && renderPorts(L("Outputs", "Salidas"), "output", outputs)}
+        {executionResult && (
+          <details key={`execution-${node.id}`} className="inspector-disclosure inspector-execution">
+            <summary>{L("Last execution", "Última ejecución")}</summary>
+            <dl>
+              <dt>{L("Status", "Estado")}</dt>
+              <dd>{executionResult.status === "success" ? L("Step completed", "Paso completado")
+                : executionResult.status === "paused" ? L("Limit reached", "Límite alcanzado")
+                : L("Interrupted", "Interrumpido")}</dd>
+              <dt>{L("Run", "Ejecución")}</dt><dd><code>{executionResult.run_id}</code></dd>
+              <dt>{L("Iteration", "Iteración")}</dt><dd>{executionResult.iteration}</dd>
+              <dt>{L("Step in run", "Paso en la ejecución")}</dt><dd>{executionResult.step}</dd>
+              {selectedPort && <>
+                <dt>{L("Selected output", "Salida elegida")}</dt>
+                <dd>{getPortLabel(selectedPort, locale, node.data.kind)}</dd>
+              </>}
+            </dl>
+            {valuePort && executionResult.value_preview !== null && (
+              <div className="inspector-execution-value">
+                <strong>{getPortLabel(valuePort, locale, node.data.kind)}</strong>
+                <pre>{executionResult.value_preview || L("Empty value", "Valor vacío")}</pre>
+                {executionResult.value_truncated && <small>{L("Preview shortened", "Vista previa recortada")}</small>}
+              </div>
+            )}
+          </details>
+        )}
         <details key={node.id} className="inspector-disclosure">
           <summary>{L("Node guide", "Guía del nodo")}</summary>
           <p>{getNodeDescription(node.data.kind, locale)}</p>
