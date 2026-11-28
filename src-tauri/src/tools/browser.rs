@@ -2319,8 +2319,12 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+    // Both tests drive and close the same process-wide browser session.
+    static BROWSER_TEST_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
+
     #[tokio::test]
     async fn e2e_browser_goto_type_click_and_screenshot() {
+        let _browser = BROWSER_TEST_LOCK.lock().await;
         // Spin up a local test page on 127.0.0.1 with an input and clickable button
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -2428,6 +2432,7 @@ mod tests {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::net::TcpListener;
 
+        let _browser = BROWSER_TEST_LOCK.lock().await;
         if find_system_browser().is_none() && find_portable_browser().is_none() {
             eprintln!("Skipping E2E browser_interact test: no local browser installed");
             return;
