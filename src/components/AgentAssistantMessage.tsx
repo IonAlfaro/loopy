@@ -93,6 +93,7 @@ export const AgentAssistantMessage = memo(function AgentAssistantMessage({ msg, 
                     {active && isLastMsg && hasRunningTools && <div className="agent-typing-hint"><RefreshCw size={12} className="spin" /><span>{locale === "es" ? "Ejecutando herramientas…" : "Running tools…"}</span></div>}
                     {msg.toolCalls.length > 0 && (
                       <ToolCallGroup
+                        collapseSuccessful
                         calls={msg.toolCalls}
                         expandedTools={expandedTools}
                         onToggleTool={(id, next) =>

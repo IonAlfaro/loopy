@@ -2446,10 +2446,6 @@ export function AgentWorkspaceView() {
                       {harnessProgress[session.id].task_title}
                     </span>
                   )}
-                  <progress aria-label={locale === "es" ? "Presupuesto de inferencias" : "Inference budget"}
-                    value={harnessProgress[session.id].inferences} max={Math.max(1, harnessProgress[session.id].inference_limit)}
-                    style={{ width: 80 }} />
-                  <span>{harnessProgress[session.id].inferences}/{harnessProgress[session.id].inference_limit}</span>
                 </div>
               )}
               {!isCurrentRunning && turnOutcomes[session.id] && (
