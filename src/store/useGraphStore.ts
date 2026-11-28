@@ -279,6 +279,9 @@ interface GraphStoreState {
   updateNodeTitle: (id: string, title: string) => void;
   updateNodeConfig: (id: string, patch: Record<string, unknown>) => void;
   deleteNode: (id: string) => void;
+  deleteGraphElements: (nodeIds: string[], edgeIds: string[]) => void;
+  undoGraphEdit: () => void;
+  redoGraphEdit: () => void;
   exportWorkflow: () => LoorsWorkflowFile;
   importWorkflow: (
     file: LoorsWorkflowFile,
@@ -488,6 +491,71 @@ const BOOT_TABS = loadInitialTabsState();
 const BOOT_ACTIVE =
   BOOT_TABS.tabs.find((t) => t.id === BOOT_TABS.activeId) ?? BOOT_TABS.tabs[0];
 
+type GraphSnapshot = Pick<GraphStoreState, "nodes" | "edges">;
+type GraphEdit = Partial<GraphSnapshot & Pick<GraphStoreState, "selectedNodeId">>;
+
+interface GraphHistory {
+  undo: GraphSnapshot[];
+  redo: GraphSnapshot[];
+  dragStart?: GraphSnapshot;
+}
+
+const graphHistories = new Map<string, GraphHistory>();
+
+function getGraphHistory(tabId: string): GraphHistory {
+  let history = graphHistories.get(tabId);
+  if (!history) {
+    history = { undo: [], redo: [] };
+    graphHistories.set(tabId, history);
+  }
+  return history;
+}
+
+function graphSnapshot({ nodes, edges }: GraphSnapshot): GraphSnapshot {
+  return { nodes, edges };
+}
+
+function editGraph(patch: GraphEdit, before?: GraphSnapshot) {
+  const state = useGraphStore.getState();
+  const history = getGraphHistory(state.activeHarnessTabId);
+  history.undo.push(before ?? graphSnapshot(state));
+  if (history.undo.length > 100) history.undo.shift();
+  history.redo = [];
+  useGraphStore.setState({ ...patch, dirty: true });
+}
+
+function restoreGraphEdit(direction: "undo" | "redo") {
+  const state = useGraphStore.getState();
+  const history = getGraphHistory(state.activeHarnessTabId);
+  if (history.dragStart) return;
+  const snapshot = history[direction].pop();
+  if (!snapshot) return;
+
+  history[direction === "undo" ? "redo" : "undo"].push(graphSnapshot(state));
+  const liveNodes = new Map(state.nodes.map((node) => [node.id, node]));
+  const selectedEdges = new Set(state.edges.filter((edge) => edge.selected).map((edge) => edge.id));
+  useGraphStore.setState({
+    nodes: snapshot.nodes.map((node) => {
+      const live = liveNodes.get(node.id);
+      return {
+        ...node,
+        dragging: false,
+        selected: live?.selected ?? false,
+        data: {
+          ...node.data,
+          status: live?.data.status ?? "idle",
+          statusMessage: live?.data.statusMessage ?? null,
+        },
+      };
+    }),
+    edges: snapshot.edges.map((edge) => ({ ...edge, selected: selectedEdges.has(edge.id) })),
+    selectedNodeId: state.selectedNodeId && snapshot.nodes.some((node) => node.id === state.selectedNodeId)
+      ? state.selectedNodeId
+      : null,
+    dirty: true,
+  });
+}
+
 export const useGraphStore = create<GraphStoreState>((set, get) => ({
   harnessTabs: BOOT_TABS.tabs,
   activeHarnessTabId: BOOT_ACTIVE.id,
@@ -682,6 +750,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     );
     const idx = syncedTabs.findIndex((t) => t.id === tabId);
     if (idx === -1) return;
+    graphHistories.delete(tabId);
     const remaining = syncedTabs.filter((t) => t.id !== tabId);
     if (tabId !== s.activeHarnessTabId) {
       set({ harnessTabs: remaining });
@@ -953,7 +1022,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
         config: { ...src.data.config },
       },
     };
-    set({
+    editGraph({
       nodes: [...get().nodes, copy],
       selectedNodeId: copyId,
     });
@@ -993,9 +1062,8 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
         },
       },
     };
-    set({
+    editGraph({
       nodes: [...get().nodes, newNode],
-      dirty: true,
       selectedNodeId: id,
     });
   },
@@ -1050,10 +1118,9 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       type: "smoothstep",
     };
 
-    set({
+    editGraph({
       nodes: [...state.nodes, newNode],
       edges: [...state.edges, newEdge],
-      dirty: true,
       selectedNodeId: id,
     });
   },
@@ -1161,6 +1228,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       { id: "e-agent-out", source: "agent-1", sourceHandle: "exec", target: "out-1", targetHandle: "exec" },
     ];
 
+    graphHistories.delete(get().activeHarnessTabId);
     set({
       workflowName: "nuevo-arnes",
       nodes: baseNodes,
@@ -1198,6 +1266,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
     const hasRealPrevWorkspace =
       prevWorkspace.trim().length > 0 && prevWorkspace.trim() !== ".";
 
+    graphHistories.delete(get().activeHarnessTabId);
     set({
       workflowName: tpl.name,
       nodes: tpl.nodes.map((n) => {
@@ -1341,21 +1410,45 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   },
 
   onNodesChange: (changes) => {
-    const mutated = changes.some(
-      (c) => c.type === "remove" || c.type === "add" || (c.type === "position" && c.dragging === false)
-    );
-    set({
-      nodes: applyNodeChanges(changes, get().nodes),
-      ...(mutated ? { dirty: true } : {}),
+    const state = get();
+    const nodes = applyNodeChanges(changes, state.nodes);
+    const positions = changes.filter((change) => change.type === "position");
+    const moved = positions.some((change) => {
+      const previous = state.nodes.find((node) => node.id === change.id)?.position;
+      return previous && change.position
+        && (previous.x !== change.position.x || previous.y !== change.position.y);
     });
+    const history = getGraphHistory(state.activeHarnessTabId);
+    if (moved && positions.some((change) => change.dragging === true)) {
+      history.dragStart ??= graphSnapshot(state);
+    }
+
+    if (history.dragStart && positions.some((change) => change.dragging === false)) {
+      const before = history.dragStart;
+      delete history.dragStart;
+      const originalPositions = new Map(before.nodes.map((node) => [node.id, node.position]));
+      if (nodes.some((node) => {
+        const original = originalPositions.get(node.id);
+        return original && (original.x !== node.position.x || original.y !== node.position.y);
+      })) {
+        editGraph({ nodes }, before);
+        return;
+      }
+    } else if (changes.some((change) => change.type === "add" || change.type === "remove" || change.type === "replace")
+      || (moved && !history.dragStart)) {
+      editGraph({ nodes });
+      return;
+    }
+    set({ nodes });
   },
 
   onEdgesChange: (changes) => {
-    const mutated = changes.some((c) => c.type === "remove" || c.type === "add");
-    set({
-      edges: applyEdgeChanges(changes, get().edges),
-      ...(mutated ? { dirty: true } : {}),
-    });
+    const edges = applyEdgeChanges(changes, get().edges);
+    if (changes.some((change) => change.type !== "select")) {
+      editGraph({ edges });
+      return;
+    }
+    set({ edges });
   },
 
   onConnect: (connection) => {
@@ -1391,10 +1484,9 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
                   : undefined,
     };
 
-    set({
-      edges: addEdge(nextEdge, get().edges),
-      dirty: true,
-    });
+    const currentEdges = get().edges;
+    const edges = addEdge(nextEdge, currentEdges);
+    if (edges !== currentEdges) editGraph({ edges });
   },
 
   addNode: (kind, position) => {
@@ -1415,7 +1507,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
         config: { ...bp.defaultConfig },
       },
     };
-    set({
+    editGraph({
       nodes: [...get().nodes, newNode],
       selectedNodeId: id,
     });
@@ -1471,22 +1563,29 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
       };
     });
 
-    set({ nodes: positioned, dirty: true });
+    if (positioned.some((node, index) =>
+      node.position.x !== nodes[index].position.x || node.position.y !== nodes[index].position.y
+    )) {
+      editGraph({ nodes: positioned });
+    }
   },
 
-  updateNodeTitle: (id, title) =>
-    set({
-      dirty: true,
-      nodes: get().nodes.map((node) =>
-        node.id === id ? { ...node, data: { ...node.data, title } } : node
-      ),
-    }),
+  updateNodeTitle: (id, title) => {
+    const { nodes } = get();
+    const target = nodes.find((node) => node.id === id);
+    if (!target || target.data.title === title) return;
+    editGraph({
+      nodes: nodes.map((node) => node === target ? { ...node, data: { ...node.data, title } } : node),
+    });
+  },
 
-  updateNodeConfig: (id, patch) =>
-    set({
-      dirty: true,
-      nodes: get().nodes.map((node) =>
-        node.id === id
+  updateNodeConfig: (id, patch) => {
+    const { nodes } = get();
+    const target = nodes.find((node) => node.id === id);
+    if (!target || Object.entries(patch).every(([key, value]) => Object.is(target.data.config[key], value))) return;
+    editGraph({
+      nodes: nodes.map((node) =>
+        node === target
           ? {
               ...node,
               data: {
@@ -1496,15 +1595,31 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
             }
           : node
       ),
-    }),
+    });
+  },
 
-  deleteNode: (id) =>
-    set({
-      dirty: true,
-      nodes: get().nodes.filter((n) => n.id !== id),
-      edges: get().edges.filter((e) => e.source !== id && e.target !== id),
-      selectedNodeId: get().selectedNodeId === id ? null : get().selectedNodeId,
-    }),
+  deleteNode: (id) => get().deleteGraphElements([id], []),
+
+  deleteGraphElements: (nodeIds, edgeIds) => {
+    const state = get();
+    const removedNodes = new Set(nodeIds);
+    const removedEdges = new Set(edgeIds);
+    const nodes = state.nodes.filter((node) => !removedNodes.has(node.id));
+    const edges = state.edges.filter((edge) =>
+      !removedEdges.has(edge.id) && !removedNodes.has(edge.source) && !removedNodes.has(edge.target)
+    );
+    if (nodes.length === state.nodes.length && edges.length === state.edges.length) return;
+    editGraph({
+      nodes,
+      edges,
+      selectedNodeId: state.selectedNodeId && removedNodes.has(state.selectedNodeId)
+        ? null
+        : state.selectedNodeId,
+    });
+  },
+
+  undoGraphEdit: () => restoreGraphEdit("undo"),
+  redoGraphEdit: () => restoreGraphEdit("redo"),
 
   exportWorkflow: () => ({
     schemaVersion: 1,
@@ -1514,6 +1629,7 @@ export const useGraphStore = create<GraphStoreState>((set, get) => ({
   }),
 
   importWorkflow: (file, libraryName, opts) => {
+    graphHistories.delete(get().activeHarnessTabId);
     const activeModel = get().activeModelPath.trim();
     const shortModelTitle =
       activeModel.split(/[\\/]/).pop()?.replace(/\.gguf$/i, "") || "";

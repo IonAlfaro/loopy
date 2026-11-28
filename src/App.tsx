@@ -707,14 +707,25 @@ function LoorsStudioInner() {
     return () => window.clearTimeout(id);
   }, [activeHarnessTabId, autoSaveHarnesses, dirty, savedLibraryName, nodes, edges, workflowName]);
 
-  // Ctrl+S / Cmd+S shortcut in Harness mode
+  // Harness keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (document.querySelector("dialog.loors-dialog[open]")) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s" && appMode === "harness") {
+      if (appMode !== "harness" || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+      if (e.defaultPrevented || e.isComposing || document.querySelector("dialog.loors-dialog[open]")) return;
+      const key = e.key.toLowerCase();
+      if (key === "s") {
         e.preventDefault();
         void handleSaveWorkflow(false);
+        return;
       }
+      if (key !== "z" && key !== "y") return;
+      if (e.target instanceof HTMLElement
+        && (e.target.isContentEditable || e.target.closest("input, textarea, select, [role='textbox']"))) return;
+
+      e.preventDefault();
+      const store = useGraphStore.getState();
+      if (key === "y" || e.shiftKey) store.redoGraphEdit();
+      else store.undoGraphEdit();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -1158,6 +1169,13 @@ function LoorsStudioInner() {
                 setQuickAdd(null);
               }}
               deleteKeyCode={["Backspace", "Delete"]}
+              onBeforeDelete={async ({ nodes, edges }) => {
+                useGraphStore.getState().deleteGraphElements(
+                  nodes.map((node) => node.id),
+                  edges.map((edge) => edge.id),
+                );
+                return false;
+              }}
               onMoveEnd={(_, viewport) => {
                 if (appMode === "harness" && canvasRef.current?.clientWidth) {
                   harnessViewports.current.set(activeHarnessTabId, viewport);
