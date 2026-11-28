@@ -24,8 +24,6 @@ export function AgentExecutionCheckpoint({ checkpoint, workspace, locale, disabl
   const telemetry = object(data.telemetry);
   const outcome = object(data.outcome);
   const counters = [
-    [es ? "Inferencias" : "Inferences", telemetry?.inferences, telemetry?.inferenceLimit],
-    [es ? "Iteraciones" : "Iterations", telemetry?.iterations, telemetry?.iterationLimit],
     [es ? "Recuperaciones" : "Recoveries", telemetry?.recoveries, telemetry?.recoveryLimit],
   ] as const;
   return (

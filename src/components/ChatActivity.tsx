@@ -258,11 +258,13 @@ export function ToolCallGroup({
   expandedTools,
   onToggleTool,
   extras,
+  collapseSuccessful = false,
 }: {
   calls: ActivityToolItem[];
   expandedTools: Record<string, boolean>;
   onToggleTool: (id: string, next: boolean) => void;
   extras?: (call: ActivityToolItem) => { shotB64?: string; onUndo?: () => void };
+  collapseSuccessful?: boolean;
 }) {
   const { locale } = useI18n();
   const [groupOpen, setGroupOpen] = useState(false);
@@ -272,11 +274,13 @@ export function ToolCallGroup({
   const isEs = locale === "es";
   const labels = isEs ? CATEGORY_LABELS_ES : CATEGORY_LABELS_EN;
   const running = calls.filter((c) => c.status === "running").length;
-  const failed = calls.filter((c) => c.status === "error" || c.status === "rejected").length;
+  const failed = calls.filter((c) => c.status === "error" || c.status === "rejected" || c.status === "denied").length;
   const totalMs = calls.reduce((acc, c) => acc + (c.durationMs ?? 0), 0);
-  const hasOverflow = calls.length > GROUP_VISIBLE_TAIL;
-  const hiddenCount = hasOverflow ? calls.length - GROUP_VISIBLE_TAIL : 0;
-  const visible = groupOpen || !hasOverflow ? calls : calls.slice(-GROUP_VISIBLE_TAIL);
+  const collapsedCalls = collapseSuccessful
+    ? calls.filter((call) => call.status !== "success")
+    : calls.slice(-GROUP_VISIBLE_TAIL);
+  const hiddenCount = calls.length - collapsedCalls.length;
+  const visible = groupOpen ? calls : collapsedCalls;
 
   const renderRow = (call: ActivityToolItem) => {
     const isOpen = expandedTools[call.id] ?? Boolean(call.diffPreview);
@@ -293,7 +297,7 @@ export function ToolCallGroup({
     );
   };
 
-  if (!hasOverflow) {
+  if (!hiddenCount) {
     return <div className="codex-tool-list">{calls.map(renderRow)}</div>;
   }
 
@@ -302,6 +306,7 @@ export function ToolCallGroup({
       <button
         type="button"
         className="codex-tool-group-head"
+        aria-expanded={groupOpen}
         onClick={() => setGroupOpen((v) => !v)}
         title={
           groupOpen
@@ -340,7 +345,7 @@ export function ToolCallGroup({
         </span>
       </button>
 
-      {!groupOpen && hiddenCount > 0 && (
+      {!collapseSuccessful && !groupOpen && hiddenCount > 0 && (
         <button
           type="button"
           className="codex-tool-group-more"
@@ -359,7 +364,7 @@ export function ToolCallGroup({
 
       <div className="codex-tool-list codex-tool-list--grouped">{visible.map(renderRow)}</div>
 
-      {groupOpen && hiddenCount > 0 && (
+      {!collapseSuccessful && groupOpen && hiddenCount > 0 && (
         <button
           type="button"
           className="codex-tool-group-more is-collapse"
