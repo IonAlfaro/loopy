@@ -29,7 +29,7 @@ export default defineConfig({
         }
       : undefined,
     watch: {
-      ignored: ["**/src-tauri/**", "**/.loors/**"],
+      ignored: ["**/src-tauri/**", "**/.loors/**", "**/.loors-acceptance/site-edge-debug/**"],
     },
   },
 });
