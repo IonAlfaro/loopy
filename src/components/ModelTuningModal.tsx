@@ -211,7 +211,7 @@ export function ModelTuningModal() {
   };
 
   return (
-    <ModalBackdrop label={L("Model options", "Opciones del modelo")} onClose={saving ? undefined : () => openTuningModal(null)}>
+    <ModalBackdrop label={L("Model options", "Opciones del modelo")} onClose={() => openTuningModal(null)}>
       <div className="sheet-modal" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-header">
           <div className="sheet-title-col">
@@ -228,7 +228,6 @@ export function ModelTuningModal() {
             type="button"
             className="icon-btn"
             aria-label={L("Close", "Cerrar")}
-            disabled={saving}
             onClick={() => openTuningModal(null)}
           >
             <X size={16} />
@@ -599,7 +598,6 @@ export function ModelTuningModal() {
             <button
               type="button"
               className="btn-secondary"
-              disabled={saving}
               onClick={() => openTuningModal(null)}
             >
               {L("Close", "Cerrar")}
